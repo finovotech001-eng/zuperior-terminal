@@ -2,12 +2,11 @@
   "name": "terminal-app",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
-    "start": "next start",
-    "lint": "eslint"
-  },
+   "scripts": {
+    "dev": "next dev",
+    "build": "next build && npx prisma generate",
+    "start": "next start"
+   },
   "dependencies": {
     "@klinecharts/pro": "^0.1.1",
     "@prisma/client": "^6.17.1",
