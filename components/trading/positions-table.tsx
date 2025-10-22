@@ -4,7 +4,7 @@
 
 import * as React from "react"
 import { useAtom } from "jotai"
-import { X, MoreVertical, Layers, ChevronUp, Edit2, LayersIcon, Layers2Icon } from "lucide-react"
+import { X, MoreVertical, ChevronUp, Edit2, LayersIcon, Layers2Icon } from "lucide-react"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { IconButton } from "@/components/ui/icon-button"
@@ -53,7 +53,6 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   pendingPositions = [],
   closedPositions = [],
   onClose,
-  onHide,
 }) => {
   const [activeTab, setActiveTab] = useAtom(positionsActiveTabAtom)
   const [isGrouped, setIsGrouped] = useAtom(positionsIsGroupedAtom)

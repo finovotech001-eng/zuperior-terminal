@@ -144,7 +144,7 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
     if (deferredSearchQuery.trim() === "" && deferredCategoryFilter === "favorites") {
       // Reorder items based on the order stored in the atom (which is already done by the atom itself),
       // then filter again to ensure only favorites are shown.
-      return filteredItems.slice().sort((a, b) => {
+      return filteredItems.slice().sort(() => {
         // Maintain the order received from the Jotai store after filtering.
         return 0;
       })

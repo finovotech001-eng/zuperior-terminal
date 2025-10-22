@@ -133,7 +133,13 @@ export function generateSampleData(basePrice: number, numPoints: number = 100) {
 }
 
 // Generate sample volume data
-export function generateVolumeData(candleData: any[]) {
+export function generateVolumeData(candleData: Array<{
+  time: string
+  open: number
+  high: number
+  low: number
+  close: number
+}>) {
   return candleData.map(candle => ({
     time: candle.time,
     value: Math.random() * 1000000,

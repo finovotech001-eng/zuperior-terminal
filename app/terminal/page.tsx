@@ -22,11 +22,11 @@ import {
 } from "lucide-react"
 import { Sidebar, SidebarItem } from "@/components/navigation/sidebar"
 import { InstrumentTabs, InstrumentTab } from "@/components/navigation/instrument-tabs"
-import { InstrumentList } from "@/components/trading/instrument-list"
+import { InstrumentList, Instrument } from "@/components/trading/instrument-list"
 import { EconomicCalendar, EventsByDate } from "@/components/trading/economic-calendar"
 import { ChartContainer } from "@/components/chart/chart-container"
 import { PositionsTable, Position } from "@/components/trading/positions-table"
-import { OrderPanel } from "@/components/trading/order-panel"
+import { OrderPanel, OrderData } from "@/components/trading/order-panel"
 import { SettingsPanel } from "@/components/trading/settings-panel"
 import { IconButton } from "@/components/ui/icon-button"
 import { Button } from "@/components/ui/button"
@@ -919,9 +919,10 @@ function TerminalContent() {
         } else {
           throw new Error(result.error || "Failed to load initial instrument data.");
         }
-      } catch (e: any) {
-        console.error('Error fetching initial instruments:', e.message);
-        setError(`Failed to load instruments. Error: ${e.message}`);
+      } catch (e: unknown) {
+        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+        console.error('Error fetching initial instruments:', errorMessage);
+        setError(`Failed to load instruments. Error: ${errorMessage}`);
       } finally {
         setIsLoadingInitial(false);
       }
@@ -1012,7 +1013,7 @@ function TerminalContent() {
 
     fetchRemainingChunks();
 
-  }, [isLoadingInitial, isFetchingBackground, instruments.length, totalSymbolsCount, setInstruments]);
+  }, [isLoadingInitial, isFetchingBackground, instruments, totalSymbolsCount, setInstruments]);
   // --- END EFFECT 2 ---
 
   // --- DERIVED SELECTED INSTRUMENT DATA ---
@@ -1108,7 +1109,7 @@ function TerminalContent() {
         id: instrument.id,
         symbol: instrument.symbol,
         // countryCode is not a required property on Instrument, use a placeholder
-        countryCode: (instrument as any).countryCode || "US",
+        countryCode: "US",
       };
       if (!instrumentTabs.some(tab => tab.id === newTab.id)) {
         setInstrumentTabs([...instrumentTabs, newTab]);
@@ -1125,7 +1126,7 @@ function TerminalContent() {
         // ✅ Build the payload using the current active instrument
         const order = {
           symbol: 'BTC/USD',
-          side: "buy",
+          side: "buy" as const,
           volume: data.volume * 100, // ⬅️ UPDATED: Volume is multiplied by 100
           orderType: data.orderType,
           openPrice: data.openPrice,
@@ -1152,13 +1153,13 @@ function TerminalContent() {
         // ✅ Build the payload with all required fields for backend
         const order = {
           symbol: selectedInstrument.symbol,
-          side: "sell",
+          side: "sell" as const,
           volume: data.volume * 100, // ⬅️ UPDATED: Volume is multiplied by 100
           orderType: data.orderType,
           openPrice: data.openPrice,
           stopLoss: data.stopLoss,
           takeProfit: data.takeProfit,
-          accountId: localStorage.getItem("accountId"),
+          accountId: localStorage.getItem("accountId") || "",
           price: data.openPrice || selectedInstrument.bid || 0,
         };
 

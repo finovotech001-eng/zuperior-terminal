@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { Minus, Plus } from "lucide-react"
-import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { IconButton } from "@/components/ui/icon-button"
 

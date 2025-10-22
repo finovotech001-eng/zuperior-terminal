@@ -15,15 +15,13 @@ export interface SidebarItem {
 // ✨ FIX 1: Add the missing props to the interface
 export interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   items: SidebarItem[]
-  isCollapsed: boolean // <-- Prop that was causing the warning
-  onCollapseToggle: () => void // <-- Prop that was also passed from parent
+  isCollapsed?: boolean // <-- Optional prop
+  onCollapseToggle?: () => void // <-- Optional prop
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
   items,
   className,
-  isCollapsed, // ✨ FIX 2: Destructure 'isCollapsed'
-  onCollapseToggle, // ✨ FIX 3: Destructure 'onCollapseToggle'
   ...props
 }) => {
   return (

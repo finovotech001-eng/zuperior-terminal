@@ -20,7 +20,12 @@ export interface OrderPanelProps extends React.HTMLAttributes<HTMLDivElement> {
   onClose?: () => void
   onBuy?: (data: OrderData) => void
   onSell?: (data: OrderData) => void
-  activeInstrument?: any
+  activeInstrument?: {
+    symbol: string
+    bid?: number
+    ask?: number
+    [key: string]: unknown
+  }
 }
 
 export interface OrderData {
