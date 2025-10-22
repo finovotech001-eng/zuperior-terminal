@@ -27,18 +27,17 @@ async function getMasterToken(): Promise<string | null> {
     return null;
   }
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${MANAGER_LOGIN_PATH}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      agent: agent, // <-- FIX APPLIED
-      body: JSON.stringify({
-        Username: MANAGER_USERNAME,
-        Password: MANAGER_PASSWORD,
-        Server: MANAGER_SERVER_IP,
-        Port: parseInt(MANAGER_PORT || '443', 10),
-      }),
-    });
+ try {
+  const response = await fetch(`${API_BASE_URL}${MANAGER_LOGIN_PATH}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      Username: MANAGER_USERNAME,
+      Password: MANAGER_PASSWORD,
+      Server: MANAGER_SERVER_IP,
+      Port: parseInt(MANAGER_PORT || '443', 10),
+    }),
+  });
 
     if (!response.ok) {
       const errorDetails = await response.text();
@@ -95,7 +94,6 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${masterToken}`,
       },
-      agent: agent, // <-- FIX APPLIED
       body: JSON.stringify({
         AccountId: parseInt(username, 10),
         Password: password,

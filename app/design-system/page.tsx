@@ -79,10 +79,41 @@ export default function DesignSystemPage() {
     return () => clearInterval(interval)
   }, [priceValue])
 
-  const accounts = [
-    { id: "1", name: "Demo", type: "demo" as const, balance: 8136.40, number: "259404456" },
-    { id: "2", name: "Real", type: "real" as const, balance: 0.00, number: "251329575" },
-  ]
+  interface MT5Account {
+  id: string;
+  accountId: string;
+  displayAccountId: string;
+  linkedAt: string; // ISO string or Date
+  name: string;
+  type: "demo" | "real";
+  balance: number;
+  number: string;
+}
+
+// Example:
+  const accounts: MT5Account[] = [
+    {
+      id: "1",
+      accountId: "MT50001",
+      displayAccountId: "Demo 0001",
+      linkedAt: new Date().toISOString(),
+      name: "Demo Account 1",
+      type: "demo",
+      balance: 10000,
+      number: "12345678",
+    },
+    {
+      id: "2",
+      accountId: "MT50002",
+      displayAccountId: "Real 0001",
+      linkedAt: new Date().toISOString(),
+      name: "Real Account 1",
+      type: "real",
+      balance: 5000,
+      number: "87654321",
+    },
+  ];
+
 
   const balanceInfo = {
     balance: 10000.00,
@@ -451,22 +482,7 @@ export default function DesignSystemPage() {
   ]
 
   // Initialize instruments data only if empty (first load)
-  React.useEffect(() => {
-    const checkAndInitialize = () => {
-      const stored = localStorage.getItem('zuperior-instruments')
-      if (!stored || stored === '[]') {
-        setInstruments([
-          { id: "1", symbol: "BTC", signal: "down" as const, bid: 108401.45, ask: 108419.45, change1d: -194.84, changePercent1d: -0.19, isFavorite: true },
-          { id: "2", symbol: "XAU/USD", signal: "down" as const, bid: 4358.213, ask: 4358.379, change1d: -7.68, changePercent1d: -0.17, pnl: -1735.80, isFavorite: true },
-          { id: "3", symbol: "AAPL", signal: "down" as const, bid: 246.94, ask: 247.08, change1d: -0.12, changePercent1d: -0.05, isFavorite: false },
-          { id: "4", symbol: "EUR/USD", signal: "up" as const, bid: 1.17005, ask: 1.17013, change1d: 0.00013, changePercent1d: 0.01, isFavorite: true },
-          { id: "5", symbol: "GBP/USD", signal: "up" as const, bid: 1.34467, ask: 1.34477, change1d: 0.00027, changePercent1d: 0.02, isFavorite: false },
-        ])
-      }
-    }
-    
-    checkAndInitialize()
-  }, [setInstruments])
+  
 
   // Sample data for PositionsTable
   const openPositions = [
@@ -485,7 +501,7 @@ export default function DesignSystemPage() {
       pnl: -1626.80,
     },
   ]
-
+  
   const samplePosition = {
     id: "1",
     symbol: "XAU/USD",
@@ -832,7 +848,7 @@ export default function DesignSystemPage() {
                 spread="0.16 USD"
               />
             </ShowcaseCard>
-
+            
             <ShowcaseCard title="Account Switcher" description="Demo/Real account selector">
               <AccountSwitcher
                 accounts={accounts}

@@ -752,11 +752,13 @@ function TerminalContent() {
     }
     return 'No User';
   });
+  const [isUserLoading, setIsUserLoading] = React.useState(true);
 
   // Fetch user data on mount
   React.useEffect(() => {
     const fetchUser = async () => {
       try {
+        setIsUserLoading(true);
         const response = await fetch('/apis/auth/me', {
           method: 'GET',
           headers: {
@@ -764,7 +766,7 @@ function TerminalContent() {
           },
           credentials: 'include', // Important: includes cookies for session
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.user) {
@@ -786,6 +788,8 @@ function TerminalContent() {
       } catch (error) {
         console.error('Error fetching user:', error);
         setUserName('No User');
+      } finally {
+        setIsUserLoading(false);
       }
     };
 
@@ -1202,7 +1206,7 @@ function TerminalContent() {
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-white/60">
                         <span className="bg-warning/20 text-warning">Live&nbsp;&nbsp;</span>
-                            {userName}
+                            {isUserLoading ? 'Loading...' : userName}
                       </span>
 
                     </div>
