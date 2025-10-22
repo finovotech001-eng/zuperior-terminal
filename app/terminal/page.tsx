@@ -186,7 +186,28 @@ function useAccountDataPolling(accountId: string | null): { data: BalanceData, i
       const result = await response.json();
 
       if (result.success && result.data) {
-        const apiData = result.data as any; // Data object from the response
+        const apiData = result.data as {
+          Balance?: number;
+          balance?: number;
+          Equity?: number;
+          equity?: number;
+          Margin?: number;
+          MarginUsed?: number;
+          marginUsed?: number;
+          FreeMargin?: number;
+          freeMargin?: number;
+          MarginLevel?: number;
+          marginLevel?: number;
+          profit?: number;
+          Leverage?: string;
+          leverage?: string;
+          Name?: string;
+          name?: string;
+          Group?: string;
+          group?: string;
+          AccountType?: string;
+          accountType?: string;
+        }; // Data object from the response
 
         // 🔑 MAPPING LOGIC: Handle common casing (PascalCase/CamelCase)
         const balance = apiData.Balance ?? apiData.balance ?? 0;
@@ -304,7 +325,28 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
       const result = await response.json();
 
       if (result.success && result.data) {
-        const apiData = result.data as any;
+        const apiData = result.data as {
+          Balance?: number;
+          balance?: number;
+          Equity?: number;
+          equity?: number;
+          Margin?: number;
+          MarginUsed?: number;
+          marginUsed?: number;
+          FreeMargin?: number;
+          freeMargin?: number;
+          MarginLevel?: number;
+          marginLevel?: number;
+          profit?: number;
+          Leverage?: string;
+          leverage?: string;
+          Name?: string;
+          name?: string;
+          Group?: string;
+          group?: string;
+          AccountType?: string;
+          accountType?: string;
+        };
 
         const balance = apiData.Balance ?? apiData.balance ?? 0;
         const equity = apiData.Equity ?? apiData.equity ?? 0;
@@ -1132,7 +1174,7 @@ function TerminalContent() {
           openPrice: data.openPrice,
           stopLoss: data.stopLoss,
           takeProfit: data.takeProfit,
-          accountId: localStorage.getItem("accountId"),
+          accountId: localStorage.getItem("accountId") || "0",
           price: data.openPrice || selectedInstrument.ask || 0,
         };
 
@@ -1159,7 +1201,7 @@ function TerminalContent() {
           openPrice: data.openPrice,
           stopLoss: data.stopLoss,
           takeProfit: data.takeProfit,
-          accountId: localStorage.getItem("accountId") || "",
+          accountId: localStorage.getItem("accountId") || "0",
           price: data.openPrice || selectedInstrument.bid || 0,
         };
 
