@@ -6,12 +6,7 @@ import { Eye, EyeOff } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-module.exports = {
-  extends: "next/core-web-vitals",
-  rules: {
-    "react/no-unescaped-entities": "off",
-  },
-}
+
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = React.useState(false)

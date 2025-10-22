@@ -6,7 +6,7 @@
   "dev": "next dev",
   "build": "npx prisma generate && next build --no-lint",
   "start": "next start"
-}
+  },
   "dependencies": {
     "@klinecharts/pro": "^0.1.1",
     "@prisma/client": "^6.17.1",
