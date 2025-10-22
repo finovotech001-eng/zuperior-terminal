@@ -1,0 +1,304 @@
+/* KLineChart Pro Overrides for Zuperior Theme */
+
+/* Override Pro UI colors to match dark theme */
+.klinecharts-pro {
+  background-color: #01040D !important;
+  font-family: 'Manrope', sans-serif !important;
+}
+
+/* Toolbar styling */
+.klinecharts-pro-toolbar {
+  background-color: rgba(13, 17, 23, 0.3) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+/* Button styling */
+.klinecharts-pro-toolbar-button {
+  color: #9CA3AF !important;
+  transition: all 0.2s ease !important;
+}
+
+.klinecharts-pro-toolbar-button:hover {
+  color: #FAFAFA !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.klinecharts-pro-toolbar-button.active {
+  color: #8B5CF6 !important;
+  background-color: rgba(139, 92, 246, 0.1) !important;
+}
+
+/* Drawing toolbar */
+.klinecharts-pro-drawing-bar {
+  background-color: rgba(13, 17, 23, 0.2) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.klinecharts-pro-drawing-bar-button {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.klinecharts-pro-drawing-bar-button:hover {
+  color: #FFFFFF !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.klinecharts-pro-drawing-bar-button.active {
+  color: #8B5CF6 !important;
+  background-color: rgba(139, 92, 246, 0.2) !important;
+  border-left: 2px solid #8B5CF6 !important;
+}
+
+/* Dropdown menus */
+.klinecharts-pro-dropdown {
+  background-color: #1F2937 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+}
+
+.klinecharts-pro-dropdown-item {
+  color: #FAFAFA !important;
+}
+
+.klinecharts-pro-dropdown-item:hover {
+  background-color: rgba(139, 92, 246, 0.1) !important;
+  color: #8B5CF6 !important;
+}
+
+/* Input fields */
+.klinecharts-pro-input {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #FAFAFA !important;
+  border-radius: 6px !important;
+}
+
+.klinecharts-pro-input:focus {
+  border-color: #8B5CF6 !important;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.1) !important;
+}
+
+/* Scrollbars */
+.klinecharts-pro ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.klinecharts-pro ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+}
+
+.klinecharts-pro ::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.3);
+  border-radius: 4px;
+}
+
+.klinecharts-pro ::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.5);
+}
+
+/* Modal/Dialog */
+.klinecharts-pro-modal {
+  background-color: rgba(0, 0, 0, 0.8) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.klinecharts-pro-modal-content {
+  background-color: #1F2937 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* Timeframe selector */
+.klinecharts-pro-period-selector {
+  background-color: rgba(13, 17, 23, 0.3) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.klinecharts-pro-period-button {
+  color: #9CA3AF !important;
+}
+
+.klinecharts-pro-period-button:hover {
+  color: #FAFAFA !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.klinecharts-pro-period-button.active {
+  color: #8B5CF6 !important;
+  background-color: rgba(139, 92, 246, 0.2) !important;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+}
+
+/* Remove/Hide Watermark */
+.klinecharts-pro canvas[style*="pointer-events: none"] {
+  display: none !important;
+}
+
+/* Hide any watermark or logo overlays */
+.klinecharts-pro-watermark,
+.klinecharts-watermark {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+/* Header/Toolbar Height - Match Zuperior Design System */
+.klinecharts-pro-toolbar {
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: 8px 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+/* Toolbar items sizing */
+.klinecharts-pro-toolbar-button,
+.klinecharts-pro-toolbar select,
+.klinecharts-pro-toolbar input {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+}
+
+/* Symbol/ticker display */
+.klinecharts-pro-symbol {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #FAFAFA !important;
+}
+
+/* Timeframe buttons sizing */
+.klinecharts-pro-period-button {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+  border-radius: 6px !important;
+}
+
+/* Drawing toolbar sizing */
+.klinecharts-pro-drawing-bar {
+  width: 48px !important;
+  min-width: 48px !important;
+  padding: 8px 4px !important;
+}
+
+.klinecharts-pro-drawing-bar-button {
+  width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  margin: 4px auto !important;
+  border-radius: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Tooltips */
+.klinecharts-pro [title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 8px;
+  padding: 6px 12px;
+  background-color: #1F2937;
+  color: #FAFAFA;
+  font-size: 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Chart info overlay (OHLCV display) */
+.klinecharts-pro-chart-info {
+  font-family: 'Manrope', sans-serif !important;
+  font-size: 12px !important;
+  color: #9CA3AF !important;
+  padding: 8px 12px !important;
+  background-color: rgba(13, 17, 23, 0.3) !important;
+  backdrop-filter: blur(8px) !important;
+  border-radius: 6px !important;
+  margin: 8px !important;
+}
+
+.klinecharts-pro-chart-info span {
+  font-weight: 500 !important;
+  margin-right: 12px !important;
+}
+
+/* Indicator labels */
+.klinecharts-pro-indicator-label {
+  font-family: 'Manrope', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  color: #9CA3AF !important;
+}
+
+/* Price labels on Y-axis */
+.klinecharts-pro canvas {
+  font-family: 'Manrope', sans-serif !important;
+}
+
+/* Crosshair info */
+.klinecharts-pro-crosshair-info {
+  font-family: 'Manrope', sans-serif !important;
+  font-size: 11px !important;
+  background-color: #1F2937 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
+}
+
+/* Better spacing and layout */
+.klinecharts-pro-content {
+  padding: 0 !important;
+}
+
+/* Symbol info display */
+.klinecharts-pro-symbol-info {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 8px !important;
+}
+
+.klinecharts-pro-symbol-name {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #FAFAFA !important;
+}
+
+.klinecharts-pro-symbol-price {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #9CA3AF !important;
+}
+
+.klinecharts-pro-symbol-change {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+}
+
+.klinecharts-pro-symbol-change.positive {
+  color: #10B981 !important;
+  background-color: rgba(16, 185, 129, 0.1) !important;
+}
+
+.klinecharts-pro-symbol-change.negative {
+  color: #EF4444 !important;
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}

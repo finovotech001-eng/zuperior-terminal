@@ -1,0 +1,179 @@
+// server/prisma/schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id               String      @id @default(uuid())
+  clientId         String      @unique @default(cuid())
+  email            String      @unique
+  password         String      // Hashed password
+  name             String?
+  phone            String?
+  country          String?
+  role             String      @default("user") // "admin", "user", "moderator"
+  status           String      @default("active") // "active", "banned", "suspended"
+  emailVerified    Boolean     @default(false)
+  lastLoginAt      DateTime?
+  createdAt        DateTime    @default(now())
+  accounts         Account[]
+  transactions     Transaction[]
+  kyc              KYC?
+  mt5Accounts      MT5Account[]
+  manualDeposits   ManualDeposit[]
+  withdrawals      Withdrawal[]
+  activityLogs     ActivityLog[]
+}
+
+
+model KYC {
+  id                    String      @id @default(uuid())
+  isDocumentVerified    Boolean     @default(false)
+  isAddressVerified     Boolean     @default(false)
+  verificationStatus    String      @default("Pending")
+  documentReference     String?
+  addressReference      String?
+  amlReference          String?
+  documentSubmittedAt   DateTime?
+  addressSubmittedAt    DateTime?
+  rejectionReason       String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  user                  User        @relation(fields: [userId], references: [id])
+  userId                String      @unique
+}
+
+model MT5Account {
+      id               String           @id @default(uuid())
+      accountId        String           @unique // MT5 Account ID from API response
+      userId           String           // Link to User table
+      user             User             @relation(fields: [userId], references: [id])
+      createdAt        DateTime         @default(now())
+
+      mt5Transactions  MT5Transaction[]
+      manualDeposits   ManualDeposit[]
+  }
+model MT5Transaction {
+  id               String      @id @default(uuid())
+  type             String      // "Deposit" or "Withdrawal"
+  amount           Float
+  status           String      @default("pending") // "pending", "completed", "failed"
+  paymentMethod    String?     // "crypto", "card", "bank"
+  transactionId    String?     // External payment gateway ID
+  comment          String?
+  mt5Account       MT5Account  @relation(fields: [mt5AccountId], references: [id])
+  mt5AccountId     String
+  createdAt        DateTime    @default(now())
+}
+
+// Add the missing Account Model
+model Account {
+  id              String    @id @default(uuid())
+  // A foreign key back to the User model
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  accountType     String    // e.g., 'trading', 'wallet'
+  balance         Float     @default(0)
+  // ... other account fields
+}
+
+// Add the missing Transaction Model
+model Transaction {
+  id              String    @id @default(uuid())
+  // A foreign key back to the User model
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  type            String    // e.g., 'deposit', 'withdrawal', 'transfer'
+  amount          Float
+  status          String    @default("pending")
+  // ... other transaction fields
+}
+
+// Manual Deposit Model for USDT Manual deposits
+model ManualDeposit {
+  id                String      @id @default(uuid())
+  userId            String
+  user              User        @relation(fields: [userId], references: [id])
+  mt5AccountId      String      // MT5 Account ID
+  mt5Account        MT5Account  @relation(fields: [mt5AccountId], references: [accountId])
+  amount            Float       // Deposit amount
+  depositAddress    String      // Twinxa7902309skjhfsdlhflksjdhlkLL
+  transactionHash   String?     // User provided transaction hash
+  proofFileUrl      String?     // Uploaded proof file URL
+  status            String      @default("pending") // "pending", "approved", "rejected"
+  rejectionReason   String?     // Reason for rejection
+  approvedAt        DateTime?   // When approved
+  rejectedAt        DateTime?   // When rejected
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+// Withdrawal Model for withdrawal requests
+model Withdrawal {
+  id                String      @id @default(uuid())
+  userId            String
+  user              User        @relation(fields: [userId], references: [id])
+  mt5AccountId      String      // MT5 Account ID
+  amount            Float       // Withdrawal amount
+  method            String      // "bank", "crypto", "card"
+  bankDetails       String?     // JSON string for bank details
+  cryptoAddress     String?     // Crypto wallet address
+  status            String      @default("pending") // "pending", "approved", "rejected"
+  rejectionReason   String?     // Reason for rejection
+  approvedBy        String?     // Admin user ID who approved
+  approvedAt        DateTime?   // When approved
+  rejectedAt        DateTime?   // When rejected
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+// Activity Log Model for admin actions
+model ActivityLog {
+  id                String      @id @default(uuid())
+  userId            String?     // User affected by the action
+  adminId           String      // Admin who performed the action
+  admin             User        @relation(fields: [adminId], references: [id])
+  action            String      // "create", "update", "delete", "approve", "reject"
+  entity            String      // "user", "deposit", "withdrawal", "kyc"
+  entityId          String?     // ID of the affected entity
+  ipAddress         String?     // IP address of admin
+  userAgent         String?     // User agent of admin
+  oldValues         String?     // JSON string of old values
+  newValues         String?     // JSON string of new values
+  createdAt         DateTime    @default(now())
+}
+
+// System Settings Model for admin configurations
+model SystemSetting {
+  id                String      @id @default(uuid())
+  key               String      @unique // Setting key
+  value             String      // JSON string value
+  category          String      // "smtp", "payment", "limits", "general"
+  description       String?     // Description of the setting
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+// Role Model for user roles and permissions
+model Role {
+  id                String      @id @default(uuid())
+  name              String      @unique // Role name
+  permissions       String      // JSON array of permissions
+  description       String?     // Role description
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+// User Role Model for many-to-many relationship
+model UserRole {
+  id                String      @id @default(uuid())
+  userId            String
+  roleId            String
+  assignedAt        DateTime    @default(now())
+  assignedBy        String      // Admin who assigned the role
+}

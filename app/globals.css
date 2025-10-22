@@ -1,0 +1,227 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* Fonts */
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-jetbrains-mono);
+  
+  /* Zuperior Premium Dark Theme - Colors */
+  /* Base Background - Deep Blue Black */
+  --color-background: #01040D;
+  --color-foreground: #FAFAFA;
+  
+  /* Brand Colors - Premium Purple/Blue Gradient */
+  --color-primary: #8B5CF6; /* Vibrant purple */
+  --color-primary-foreground: #FFFFFF;
+  
+  /* Secondary Brand - Blue */
+  --color-secondary: #3B82F6; /* Electric blue */
+  --color-secondary-foreground: #FFFFFF;
+  
+  /* Accent Colors - Trading */
+  --color-success: #16A34A; /* Profit Green */
+  --color-success-foreground: #FFFFFF;
+  
+  --color-danger: #EF4444; /* Loss Red */
+  --color-danger-foreground: #FFFFFF;
+  
+  --color-warning: #F59E0B; /* Warning Amber */
+  --color-warning-foreground: #000000;
+  
+  --color-info: #3B82F6; /* Info Blue */
+  --color-info-foreground: #FFFFFF;
+  
+  /* Card & Panel */
+  --color-card: #0D1117;
+  --color-card-foreground: #FAFAFA;
+  
+  /* Popover */
+  --color-popover: #0D1117;
+  --color-popover-foreground: #FAFAFA;
+  
+  /* Muted */
+  --color-muted: #161B22;
+  --color-muted-foreground: #9CA3AF;
+  
+  /* Accent */
+  --color-accent: #161B22;
+  --color-accent-foreground: #FAFAFA;
+  
+  /* Destructive */
+  --color-destructive: #EF4444;
+  --color-destructive-foreground: #FFFFFF;
+  
+  /* Border - Subtle Dark Tone */
+  --color-border: rgb(255 255 255 / 0.08);
+  
+  /* Input */
+  --color-input: #0D1117;
+  --color-ring: #8B5CF6;
+  
+  /* Chart Colors */
+  --color-chart-1: #16A34A; /* Green */
+  --color-chart-2: #EF4444; /* Red */
+  --color-chart-3: #3B82F6; /* Blue */
+  --color-chart-4: #F59E0B; /* Amber */
+  --color-chart-5: #8B5CF6; /* Purple */
+  
+  /* Radius */
+  --radius-sm: calc(0.375rem - 4px);
+  --radius-md: 0.375rem;
+  --radius-lg: calc(0.375rem + 4px);
+  --radius-xl: calc(0.375rem + 8px);
+}
+
+:root {
+  /* Custom CSS variables (not Tailwind utilities) */
+  /* Only keep variables that are used directly in custom CSS */
+  
+  /* Shadows - Used in custom CSS */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+  --shadow: 0 2px 4px 0 rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 4px 8px 0 rgb(0 0 0 / 0.15);
+  --shadow-xl: 0 8px 16px 0 rgb(0 0 0 / 0.2);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    background: linear-gradient(180deg, var(--color-background) 0%, #020610 100%);
+    background-attachment: fixed;
+    font-family: var(--font-manrope), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  
+  /* Ensure dark mode is always active */
+  html.dark {
+    color-scheme: dark;
+  }
+}
+
+/* Subtle Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Custom thin scrollbar for specific elements */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox scrollbar */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+/* Number formatting for prices */
+.price-font {
+  font-family: var(--font-jetbrains-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Glassmorphism Card - Corporate Minimal */
+.glass-card {
+  background: rgba(255, 255, 255, 0.01);
+  backdrop-filter: blur(12px) saturate(100%);
+  -webkit-backdrop-filter: blur(12px) saturate(100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+/* 
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.08);
+  transition: all 0.3s ease;
+} */
+
+/* Flat Color Text */
+.brand-text {
+  color: var(--color-primary);
+}
+
+/* Utility classes for trading colors - use Tailwind colors */
+.text-profit {
+  @apply text-success;
+}
+
+.text-loss {
+  @apply text-danger;
+}
+
+.bg-profit {
+  @apply bg-success;
+}
+
+.bg-loss {
+  @apply bg-danger;
+}
+
+.border-profit {
+  @apply border-success;
+}
+
+.border-loss {
+  @apply border-danger;
+}
+
+/* Subtle Hover Effect */
+.hover-lift:hover {
+  transform: translateY(-1px);
+  transition: transform 0.2s ease;
+}
+
+/* TradingView Chart Integration - Make it feel native */
+.tradingview-widget-container {
+  background-color: #01040D !important;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.tradingview-widget-container iframe {
+  border: none !important;
+  border-radius: 0.5rem;
+}
+
+/* Hide TradingView branding */
+.tradingview-widget-copyright {
+  display: none !important;
+}
+
+/* Style the widget to match our design system */
+.tradingview-widget-container__widget {
+  font-family: var(--font-sans) !important;
+}
