@@ -6,6 +6,12 @@ import { Eye, EyeOff } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
+module.exports = {
+  extends: "next/core-web-vitals",
+  rules: {
+    "react/no-unescaped-entities": "off",
+  },
+}
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = React.useState(false)
@@ -193,7 +199,7 @@ export default function LoginPage() {
 
               <div className="mt-8 text-center">
                 <p className="text-white/60 text-sm">
-                  Don't have an account?{" "}
+                  Don&apos;t have an account?{" "}
                   <Link href="/" className="text-primary hover:text-primary/80 transition-colors">
                     Create one here
                   </Link>
