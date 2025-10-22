@@ -6,7 +6,6 @@ import { Eye, EyeOff } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { cn } from "@/lib/utils"
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = React.useState(false)
@@ -50,7 +49,7 @@ export default function LoginPage() {
           } else {
             setError(data.message || "Auto-login failed. Please login manually.")
           }
-        } catch (err) {
+        } catch {
           setError("Auto-login error. Please login manually.")
         } finally {
           setIsLoading(false)
@@ -90,7 +89,7 @@ export default function LoginPage() {
       } else {
         setError(data.message || "Login failed. Please try again.")
       }
-    } catch (err) {
+    } catch {
       setError("An error occurred. Please try again.")
     } finally {
       setIsLoading(false)

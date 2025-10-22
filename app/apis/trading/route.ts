@@ -4,15 +4,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const EXTERNAL_API_BASE_URL = 'http://18.130.5.209:5003/api/client';
 
-interface OrderData {
-  symbol: string;
-  volume: number;
-  price: number;
-  stopLoss?: number;
-  takeProfit?: number;
-  comment?: string;
-  accountId: string | number;
-}
 
 interface CloseData {
   Volume?: number;
@@ -25,7 +16,7 @@ interface CloseData {
 async function proxyRequest(
   endpoint: string,
   method: 'POST' | 'DELETE',
-  body: any = null,
+  body: Record<string, unknown> | null = null,
   authToken: string | null = null
 ) {
   const url = `${EXTERNAL_API_BASE_URL}/${endpoint}`;

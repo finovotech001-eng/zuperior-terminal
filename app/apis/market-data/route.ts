@@ -2,7 +2,18 @@ import { NextResponse } from 'next/server';
 
 // 1. 🚀 CACHE: Define a global variable to hold the full instrument list and its timestamp
 let instrumentCache: {
-  data: any[] | null;
+  data: Array<{
+    id: string;
+    symbol: string;
+    description: string;
+    category: string;
+    signal: 'up' | 'down';
+    bid: number;
+    ask: number;
+    change1d: number;
+    changePercent1d: number;
+    isFavorite: boolean;
+  }> | null;
   timestamp: number;
   total: number;
 } = {
@@ -63,9 +74,9 @@ async function getMasterToken(): Promise<{ token: string | null; error: string |
     }
 
     return { token: token, error: null };
-  } catch (error: any) {
+  } catch (error: unknown) {
     let errorMessage = 'Network/SSL Error connecting to trading platform.';
-    if (error.code) {
+    if (error instanceof Error && 'code' in error) {
       errorMessage = `Network/SSL Error: ${error.code}. Ensure API_BASE_URL is correct and platform is running.`;
     }
     console.error('Master Token Fetch Network Error:', error);
@@ -118,7 +129,18 @@ export async function GET(request: Request) {
   const isCacheValid =
     instrumentCache.data && Date.now() - instrumentCache.timestamp < CACHE_TTL_MS;
 
-  let zuperiorInstruments: any[] = [];
+  let zuperiorInstruments: Array<{
+    id: string;
+    symbol: string;
+    description: string;
+    category: string;
+    signal: 'up' | 'down';
+    bid: number;
+    ask: number;
+    change1d: number;
+    changePercent1d: number;
+    isFavorite: boolean;
+  }> = [];
   let totalCount = 0;
 
   if (isCacheValid && instrumentCache.data) {
@@ -160,7 +182,7 @@ export async function GET(request: Request) {
     let rawData = await instrumentsResponse.json();
 
     if (!Array.isArray(rawData)) {
-      let dataArray = rawData.Data || rawData.Symbols || rawData.data;
+      const dataArray = rawData.Data || rawData.Symbols || rawData.data;
 
       if (Array.isArray(dataArray)) {
         rawData = dataArray;
@@ -169,7 +191,11 @@ export async function GET(request: Request) {
       }
     }
 
-    zuperiorInstruments = rawData.map((item: any) => {
+    zuperiorInstruments = rawData.map((item: {
+      Symbol?: string;
+      Name?: string;
+      Description?: string;
+    }) => {
       const symbol = item.Symbol || item.Name || 'UNKNOWN';
       const id = symbol.toLowerCase().replace('/', '').replace('.', '');
       const category = determineCategory(symbol);

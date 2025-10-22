@@ -33,9 +33,8 @@ import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Separator } from "@/components/ui/separator"
 import { Toggle } from "@/components/ui/toggle"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizeHandle } from "@/components/ui/resize-handle"
-import { BalanceDisplay } from "@/components/trading/balance-display"
 import { 
   instrumentsAtom, 
   positionsIsCollapsedAtom,
@@ -153,121 +152,6 @@ function useMockBalancePolling(initialData: BalanceData): BalanceData {
 }
 
 
-// Hook for single account balance polling
-function useAccountDataPolling(accountId: string | null): { data: BalanceData, isLoading: boolean, error: string | null } {
-  // ✅ Always call hooks first - never conditionally
-  const [data, setData] = React.useState<BalanceData>(initialBalanceData);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(accountId ? null : "Account ID not set.");
-  const mockData = useMockBalancePolling(initialBalanceData);
-
-  const fetchBalance = React.useCallback(async (isInitial = false) => {
-    // Early return inside the callback is fine
-    if (!accountId) {
-      setIsLoading(false);
-      setError("Account ID not set.");
-      return;
-    }
-
-    const API_PATH = `/apis/user/${accountId}/getClientProfile`;
-
-    if (isInitial) {
-        setIsLoading(true);
-    }
-
-    try {
-      const response = await fetch(API_PATH, { cache: 'no-store' });
-
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({ error: `HTTP status ${response.status}` }));
-        throw new Error(result.error || `HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      if (result.success && result.data) {
-        const apiData = result.data as {
-          Balance?: number;
-          balance?: number;
-          Equity?: number;
-          equity?: number;
-          Margin?: number;
-          MarginUsed?: number;
-          marginUsed?: number;
-          FreeMargin?: number;
-          freeMargin?: number;
-          MarginLevel?: number;
-          marginLevel?: number;
-          profit?: number;
-          Leverage?: string;
-          leverage?: string;
-          Name?: string;
-          name?: string;
-          Group?: string;
-          group?: string;
-          AccountType?: string;
-          accountType?: string;
-        }; // Data object from the response
-
-        // 🔑 MAPPING LOGIC: Handle common casing (PascalCase/CamelCase)
-        const balance = apiData.Balance ?? apiData.balance ?? 0;
-        const equity = apiData.Equity ?? apiData.equity ?? 0;
-        const margin = apiData.Margin ?? apiData.MarginUsed ?? apiData.marginUsed ?? 0;
-        const freeMargin = apiData.FreeMargin ?? apiData.freeMargin ?? 0;
-        const totalPL = equity - balance;
-        const name = apiData.Name ?? apiData.name ?? 'Test';
-        const rawGroup = apiData.Group ?? apiData.group ?? 'Standard';
-        const lowerCaseGroup = rawGroup.split('\\').pop()?.toLowerCase() || 'standard';
-        const accountGroup = lowerCaseGroup.charAt(0).toUpperCase() + lowerCaseGroup.slice(1);
-
-        setData({
-          balance: balance,
-          equity: equity,
-          margin: margin,
-          freeMargin: freeMargin,
-          marginLevel: apiData.MarginLevel ?? apiData.marginLevel ?? 0,
-          profit: apiData.profit ?? apiData.profit ?? 0,
-          leverage: apiData.Leverage ?? apiData.leverage ?? "1:200",
-          totalPL: parseFloat(totalPL.toFixed(2)),
-          name:name,
-          accountGroup:accountGroup,
-          accountType: (apiData.AccountType === 'Live' || apiData.accountType === 'Live') ? 'Live' : 'Demo',
-        });
-        setError(null);
-      } else {
-        throw new Error(result.error || "Failed to load account data: API success=false or missing data.");
-      }
-    } catch (e) {
-      const errorMessage = `Failed to fetch balance from ${API_PATH}: ${e instanceof Error ? e.message : 'Unknown error'}`;
-      console.error(errorMessage);
-      setError(errorMessage);
-      // Fallback to mock data on error
-      if (isInitial) {
-        setData(mockData);
-        setError(`API Error: ${e instanceof Error ? e.message : 'Unknown error'}. Using mock data.`);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [accountId, mockData]);
-
-  // Initial fetch and set up polling - only when accountId is available
-  React.useEffect(() => {
-    if (!accountId) {
-      setIsLoading(false);
-      return;
-    }
-
-    fetchBalance(true);
-    const interval = setInterval(() => fetchBalance(false), 6000);
-
-    return () => clearInterval(interval);
-  }, [accountId, fetchBalance]);
-
-  const finalData = error && !isLoading ? mockData : data;
-
-  return { data: finalData, isLoading, error };
-}
 
 // Hook for multiple account balance polling
 function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record<string, BalanceData>, isLoading: Record<string, boolean>, errors: Record<string, string | null> } {
@@ -311,7 +195,7 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
   }, [accountIds]);
 
   // Fetch balance for a specific account
-  const fetchAccountBalance = React.useCallback(async (accountId: string, isInitial = false) => {
+  const fetchAccountBalance = React.useCallback(async (accountId: string, _isInitial = false) => {
     const API_PATH = `/apis/user/${accountId}/getClientProfile`;
 
     try {
@@ -419,7 +303,7 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
         intervalRef.current = null;
       }
     };
-  }, [accountIds.length]); // Only depend on length, not the function or array
+  }, [accountIds, fetchAccountBalance]); // Include missing dependencies
 
   return { balances, isLoading, errors };
 }
@@ -722,7 +606,7 @@ function TerminalContent() {
   const [activeInstrumentTab, setActiveInstrumentTab] = React.useState("eurusd")
   // State for MT5 accounts and selected account
   const [mt5Accounts, setMt5Accounts] = React.useState<MT5Account[]>([]);
-  const [isLoadingAccounts, setIsLoadingAccounts] = React.useState(true);
+  // const [isLoadingAccounts, setIsLoadingAccounts] = React.useState(true);
 
   // Initialize account ID from localStorage or use default (first account)
   const [currentAccountId, setCurrentAccountId] = React.useState<string | null>(() => {
@@ -743,7 +627,6 @@ function TerminalContent() {
   React.useEffect(() => {
     const fetchMT5Accounts = async () => {
       try {
-        setIsLoadingAccounts(true);
         const response = await fetch('/apis/auth/mt5-account');
 
         if (response.ok) {
@@ -759,8 +642,6 @@ function TerminalContent() {
         }
       } catch (error) {
         console.error('Error fetching MT5 accounts:', error);
-      } finally {
-        setIsLoadingAccounts(false);
       }
     };
 
@@ -775,7 +656,7 @@ function TerminalContent() {
   ])
   const [hideBalance, setHideBalance] = React.useState(false)
   // 💥 FIX: Define the missing state for the right panel
-  const [activePanel, setActivePanel] = React.useState<"order" | "settings" | "calendar">("order"); // ⬅️ NEW STATE DEFINITION
+  // const [activePanel, setActivePanel] = React.useState<"order" | "settings" | "calendar">("order"); // ⬅️ NEW STATE DEFINITION
 
   // Hook for multiple account balances
   const accountIds = useMemo(() => mt5Accounts.map(account => account.accountId), [mt5Accounts]);
@@ -836,7 +717,7 @@ function TerminalContent() {
     };
 
     fetchUser();
-  }, []);
+  }, [currentAccountId]);
   const formatBalanceDisplay = (value: number) =>
     isBalanceLoading
       ? "Loading..."
@@ -846,19 +727,19 @@ function TerminalContent() {
           ? "••••••"
           : formatCurrency(value, 2);
 
-  const displayEquity = formatBalanceDisplay(balanceData.equity);
-  const displayBalance = formatBalanceDisplay(balanceData.balance);
-  const displayMargin = formatBalanceDisplay(balanceData.margin);
-  const displayFreeMargin = formatBalanceDisplay(balanceData.freeMargin);
-  const displayMarginLevel = isBalanceLoading
-    ? "Loading..."
-    : balanceError
-      ? "Error"
-      : hideBalance
-        ? "••••••"
-        : `${balanceData.marginLevel.toFixed(2)} %`;
+  // const displayEquity = formatBalanceDisplay(balanceData.equity);
+  // const displayBalance = formatBalanceDisplay(balanceData.balance);
+  // const displayMargin = formatBalanceDisplay(balanceData.margin);
+  // const displayFreeMargin = formatBalanceDisplay(balanceData.freeMargin);
+  // const displayMarginLevel = isBalanceLoading
+  //   ? "Loading..."
+  //   : balanceError
+  //     ? "Error"
+  //     : hideBalance
+  //       ? "••••••"
+  //       : `${balanceData.marginLevel.toFixed(2)} %`;
 
-  const displayTotalPL = formatBalanceDisplay(balanceData.totalPL);
+  // const displayTotalPL = formatBalanceDisplay(balanceData.totalPL);
   const [instruments, setInstruments] = useAtom(instrumentsAtom)
   const [isPositionsCollapsed] = useAtom(positionsIsCollapsedAtom)
 
@@ -866,7 +747,7 @@ function TerminalContent() {
   const [totalSymbolsCount, setTotalSymbolsCount] = React.useState(0);
   const [isLoadingInitial, setIsLoadingInitial] = React.useState(true);
   const [isFetchingBackground, setIsFetchingBackground] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  // const [error, setError] = React.useState<string | null>(null);
   const isInitialLoadRef = React.useRef(true);
 
   // --- Utility Function to Merge Data (RE-INTRODUCED) ---
@@ -896,8 +777,8 @@ function TerminalContent() {
 
   const [openTabs] = useAtom(openTabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
-  const [, addTab] = useAtom(addTabAtom)
-  const [, removeTab] = useAtom(removeTabAtom)
+  // const [, addTab] = useAtom(addTabAtom)
+  // const [, removeTab] = useAtom(removeTabAtom)
 
 
    // --- EFFECT 1: INITIAL LOAD (Cache Check or First Chunk) - RE-INTRODUCED ---
@@ -906,7 +787,6 @@ function TerminalContent() {
     isInitialLoadRef.current = false;
 
     setIsLoadingInitial(true);
-    setError(null);
 
     // 1. Check Local Storage Cache
     const cachedData = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -964,7 +844,6 @@ function TerminalContent() {
       } catch (e: unknown) {
         const errorMessage = e instanceof Error ? e.message : 'Unknown error';
         console.error('Error fetching initial instruments:', errorMessage);
-        setError(`Failed to load instruments. Error: ${errorMessage}`);
       } finally {
         setIsLoadingInitial(false);
       }
@@ -1080,9 +959,9 @@ function TerminalContent() {
   // --- END DERIVED SELECTED INSTRUMENT DATA ---
 
   // Get selected MT5 account
-  const selectedAccount = React.useMemo(() => {
-    return mt5Accounts.find(account => account.accountId === currentAccountId);
-  }, [mt5Accounts, currentAccountId]);
+  // const selectedAccount = React.useMemo(() => {
+  //   return mt5Accounts.find(account => account.accountId === currentAccountId);
+  // }, [mt5Accounts, currentAccountId]);
 
 
   // Sidebar items definition (left as is)

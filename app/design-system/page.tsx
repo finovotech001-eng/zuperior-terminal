@@ -68,7 +68,7 @@ import { instrumentsAtom } from "@/lib/store"
 export default function DesignSystemPage() {
   const [priceValue, setPriceValue] = React.useState(1.0850)
   const [previousPrice, setPreviousPrice] = React.useState(1.0850)
-  const setInstruments = useSetAtom(instrumentsAtom)
+  // const setInstruments = useSetAtom(instrumentsAtom)
 
   // Simulate price changes
   React.useEffect(() => {
@@ -852,7 +852,8 @@ export default function DesignSystemPage() {
             <ShowcaseCard title="Account Switcher" description="Demo/Real account selector">
               <AccountSwitcher
                 accounts={accounts}
-                currentAccountId="1"
+                selectedAccountId="1"
+                onAccountChange={(id) => console.log('Account changed:', id)}
                 className="w-full"
               />
             </ShowcaseCard>
@@ -860,6 +861,7 @@ export default function DesignSystemPage() {
             <ShowcaseCard title="Balance Display" description="Account metrics panel">
               <BalanceDisplay
                 balanceInfo={balanceInfo}
+                hideBalance={false}
                 className="w-full"
               />
             </ShowcaseCard>

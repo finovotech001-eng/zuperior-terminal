@@ -14,9 +14,9 @@ const CLIENT_LOGIN_PATH = process.env.CLIENT_LOGIN_PATH;
 
 // --- SSL Bypass Agent ---
 // FIX: This agent bypasses certificate verification for untrusted/self-signed hosts.
-const agent = new https.Agent({
-  rejectUnauthorized: false,
-});
+// const agent = new https.Agent({
+//   rejectUnauthorized: false,
+// });
 
 /**
  * 1. Internal function to get the Master Token using Manager Credentials.
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       try {
         const errorData = await clientAuthResponse.json();
         errorMessage = errorData.Message || errorData.message || errorMessage;
-      } catch (e) {
+      } catch {
         // Ignore JSON parsing error
       }
       return NextResponse.json(
