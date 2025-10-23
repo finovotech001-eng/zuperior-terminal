@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/login',
   '/register',
   '/apis/auth/login', // allow login
+  '/apis/auth/sso-login', // allow SSO auto-login from CRM
   '/apis/auth/register', // allow registration
   '/_next', '/favicon.ico'
 ];
