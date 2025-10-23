@@ -5,7 +5,7 @@ import { setSession } from '@/lib/session';
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password, name } = await request.json();
+    const { email, password, name, phone } = await request.json();
 
     // Validate input
     if (!email || !password) {
@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
         email: email.toLowerCase(),
         password: hashedPassword,
         name: name || null,
+        phone: phone || null,
       },
     });
 
@@ -92,5 +93,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
 

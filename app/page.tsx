@@ -17,6 +17,7 @@ export default function Home() {
   const [signUpEmail, setSignUpEmail] = React.useState("")
   const [signUpPassword, setSignUpPassword] = React.useState("")
   const [signUpName, setSignUpName] = React.useState("")
+  const [signUpPhone, setSignUpPhone] = React.useState("")
   const [agreeToTerms, setAgreeToTerms] = React.useState(false)
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState("")
@@ -78,7 +79,8 @@ export default function Home() {
         body: JSON.stringify({ 
           email: signUpEmail, 
           password: signUpPassword,
-          name: signUpName 
+          name: signUpName,
+          phone: signUpPhone
         }),
       })
 
@@ -198,7 +200,7 @@ export default function Home() {
                   />
                 </div>
 
-                <div className="space-y-2">
+              <div className="space-y-2">
                   <Label htmlFor="signup-email">Your email address</Label>
                   <Input
                     id="signup-email"
@@ -207,6 +209,18 @@ export default function Home() {
                     onChange={(e) => setSignUpEmail(e.target.value)}
                     placeholder="Enter your email"
                     required
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-phone">Phone number (optional)</Label>
+                  <Input
+                    id="signup-phone"
+                    type="tel"
+                    value={signUpPhone}
+                    onChange={(e) => setSignUpPhone(e.target.value)}
+                    placeholder="Enter your phone number"
                     disabled={isLoading}
                   />
                 </div>

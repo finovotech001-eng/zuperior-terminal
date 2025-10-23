@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/login',
   '/register',
   '/apis/auth/login', // allow login
+  '/apis/auth/register', // allow registration
   '/_next', '/favicon.ico'
 ];
 
