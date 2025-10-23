@@ -24,7 +24,7 @@ async function verifyJWT(token: string) {
     return null;
   }
 }
-
+// Middleware to protect routes and verify JWT
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
