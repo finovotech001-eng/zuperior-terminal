@@ -354,3 +354,4 @@ http://localhost:3000/terminal
 
 No more race conditions, no more StrictMode errors, just smooth real-time connections (when server is available) or seamless mock data fallback.
 
+

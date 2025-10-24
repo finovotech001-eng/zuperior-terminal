@@ -409,3 +409,4 @@ curl -v http://18.130.5.209:5003/health
 
 The "Failed to fetch" error is now handled gracefully, and you can develop your terminal with mock data or real data - your choice!
 
+

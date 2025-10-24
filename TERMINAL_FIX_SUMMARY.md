@@ -167,3 +167,4 @@ The root issue was a **state synchronization problem** between local React state
 
 This ensures the chart and order panel always reflect the currently selected instrument tab.
 
+

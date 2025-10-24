@@ -214,3 +214,4 @@ No external MT5 API calls are made during normal operation. The database serves 
 
 **External API URL:** `http://18.130.5.209:5003/api/Symbols` (used only for sync script, not in runtime)
 
+

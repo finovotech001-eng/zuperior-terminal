@@ -316,3 +316,4 @@ DATABASE_URL=postgresql://...
 
 No more crashes, clear error states, and perfect fallback behavior. Whether the server is online or offline, your terminal works flawlessly!
 
+
