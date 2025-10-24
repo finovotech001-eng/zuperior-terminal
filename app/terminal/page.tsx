@@ -28,6 +28,7 @@ import { ChartContainer } from "@/components/chart/chart-container"
 import { PositionsTable, Position } from "@/components/trading/positions-table"
 import { OrderPanel, OrderData } from "@/components/trading/order-panel"
 import { SettingsPanel } from "@/components/trading/settings-panel"
+import { WebSocketStatus } from "@/components/data-display/websocket-status"
 import { IconButton } from "@/components/ui/icon-button"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -35,6 +36,7 @@ import { Separator } from "@/components/ui/separator"
 import { Toggle } from "@/components/ui/toggle"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizeHandle } from "@/components/ui/resize-handle"
+import { useWebSocketConnection } from "@/hooks/useWebSocket"
 import { 
   instrumentsAtom, 
   positionsIsCollapsedAtom,
@@ -601,6 +603,9 @@ export default function TerminalPage() {
 
 
 function TerminalContent() {
+  // Initialize WebSocket connection for real-time market data
+  const { isConnected: wsConnected, isConnecting: wsConnecting, error: wsError } = useWebSocketConnection()
+  
   const [leftPanelView, setLeftPanelView] = React.useState<LeftPanelView>("instruments")
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = React.useState(false)
   const [activeInstrumentTab, setActiveInstrumentTab] = React.useState("eurusd")
@@ -777,8 +782,8 @@ function TerminalContent() {
 
   const [openTabs] = useAtom(openTabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
-  // const [, addTab] = useAtom(addTabAtom)
-  // const [, removeTab] = useAtom(removeTabAtom)
+  const [, addTab] = useAtom(addTabAtom)
+  const [, removeTab] = useAtom(removeTabAtom)
 
 
    // --- EFFECT 1: INITIAL LOAD (Cache Check or First Chunk) - RE-INTRODUCED ---
@@ -863,8 +868,15 @@ function TerminalContent() {
       return;
     }
 
+    // Additional guard: Don't start if we're close to total (within 10 items)
+    if (totalSymbolsCount > 0 && instruments.length >= totalSymbolsCount - 10) {
+      console.log(`[Background Fetch] Skipping - already loaded ${instruments.length}/${totalSymbolsCount}`);
+      return;
+    }
+
     const fetchRemainingChunks = async () => {
       setIsFetchingBackground(true);
+      console.log(`[Background Fetch] Starting from offset ${instruments.length}`);
 
       let currentInstrumentsList: Instrument[] = [...instruments];
 
@@ -913,6 +925,7 @@ function TerminalContent() {
         }
       }
 
+      console.log(`[Background Fetch] Completed. Total loaded: ${currentInstrumentsList.length}/${totalSymbolsCount}`);
       setIsFetchingBackground(false);
     };
 
@@ -1012,26 +1025,40 @@ function TerminalContent() {
 
   // Tab handlers (left as is)
   const handleTabClose = (tabId: string) => {
+    // Remove from Jotai store (global state)
+    removeTab(tabId)
+    
+    // Also update local state for backward compatibility
     const newTabs = instrumentTabs.filter((t) => t.id !== tabId)
     if (newTabs.length > 0) {
       setInstrumentTabs(newTabs)
       if (activeInstrumentTab === tabId) {
-        setActiveInstrumentTab(newTabs[0].id)
+        const newActiveId = newTabs[0].id
+        setActiveInstrumentTab(newActiveId)
+        setActiveTabId(newActiveId)
       }
+    } else if (openTabs.length > 0 && activeTabId === tabId) {
+      // If local tabs are empty but Jotai has tabs, switch to first Jotai tab
+      setActiveTabId(openTabs[0].id)
     }
   }
 
   const handleAddTab = (instrumentId: string) => {
     console.log("Add tab:", instrumentId)
-    // Logic to add the new tab if it doesn't exist
+    
+    // Add to Jotai store (this handles everything)
+    // The addTabAtom will find the instrument, create the tab, and set it as active
+    addTab(instrumentId);
+    
+    // Also update local state for backward compatibility
     const instrument = instruments.find(i => i.id === instrumentId);
     if (instrument) {
       const newTab: InstrumentTab = {
         id: instrument.id,
         symbol: instrument.symbol,
-        // countryCode is not a required property on Instrument, use a placeholder
         countryCode: "US",
       };
+      
       if (!instrumentTabs.some(tab => tab.id === newTab.id)) {
         setInstrumentTabs([...instrumentTabs, newTab]);
       }
@@ -1040,7 +1067,9 @@ function TerminalContent() {
   }
 
   const activeTab = React.useMemo(() => {
-    return openTabs.find(tab => tab.id === activeTabId)
+    const tab = openTabs.find(tab => tab.id === activeTabId)
+    console.log("Active Tab:", { activeTabId, tab, openTabsCount: openTabs.length })
+    return tab
   }, [openTabs, activeTabId])
   const handleBuy = async (data: OrderData) => {
       try {
@@ -1118,8 +1147,11 @@ function TerminalContent() {
           </div>
         </div>
 
-        {/* Right: Account, Alerts, User, Deposit */}
+        {/* Right: WebSocket Status, Account, Alerts, User, Deposit */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* WebSocket Connection Status */}
+          <WebSocketStatus showDetails={false} />
+          
           {/* Account Dropdown */}
           <Popover>
               <PopoverTrigger asChild>
@@ -1420,7 +1452,7 @@ function TerminalContent() {
                     </div>
                     <div className="flex-1 overflow-hidden">
                       <InstrumentList 
-                        onSelectInstrument={(id) => console.log("Selected:", id)} 
+                        onSelectInstrument={handleAddTab} 
                         showFilters={true}
                       />
                     </div>

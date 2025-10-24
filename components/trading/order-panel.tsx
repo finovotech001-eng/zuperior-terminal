@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { FlagIcon } from "@/components/data-display/flag-icon"
+import { useTickPrice } from "@/hooks/useWebSocket"
 
 export interface OrderPanelProps extends React.HTMLAttributes<HTMLDivElement> {
   symbol?: string
@@ -51,6 +52,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   className,
   ...props
 }) => {
+  // Get real-time prices from WebSocket
+  const { bid, ask, spread: liveSpread, isSubscribed } = useTickPrice(symbol)
+  
+  // Use live prices if available, otherwise fall back to props
+  const currentSellPrice = bid ?? sellPrice
+  const currentBuyPrice = ask ?? buyPrice
+  const currentSpread = liveSpread !== undefined ? `${liveSpread.toFixed(2)} pips` : spread
+  
   const [formType, setFormType] = React.useState<FormType>("regular")
   const [orderType, setOrderType] = React.useState<"market" | "limit" | "pending">("market")
   const [volume, setVolume] = React.useState("1")
@@ -118,9 +127,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
       >
         <div className="text-xs text-white/80 mb-1">Sell</div>
         <div className="price-font text-white font-bold text-sm leading-tight">
-          {Math.floor(sellPrice).toLocaleString()}
-          <span className="text-lg">.{String(Math.floor((sellPrice % 1) * 100)).padStart(2, '0')}</span>
-          <sup className="text-sm">{String(Math.floor((sellPrice % 1) * 1000) % 10)}</sup>
+          {Math.floor(currentSellPrice).toLocaleString()}
+          <span className="text-lg">.{String(Math.floor((currentSellPrice % 1) * 100)).padStart(2, '0')}</span>
+          <sup className="text-sm">{String(Math.floor((currentSellPrice % 1) * 1000) % 10)}</sup>
         </div>
       </button>
 
@@ -135,15 +144,15 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
       >
         <div className="text-xs text-white/80 mb-1">Buy</div>
         <div className="price-font text-white font-bold text-sm leading-tight">
-          {Math.floor(buyPrice).toLocaleString()}
-          <span className="text-lg">.{String(Math.floor((buyPrice % 1) * 100)).padStart(2, '0')}</span>
-          <sup className="text-sm">{String(Math.floor((buyPrice % 1) * 1000) % 10)}</sup>
+          {Math.floor(currentBuyPrice).toLocaleString()}
+          <span className="text-lg">.{String(Math.floor((currentBuyPrice % 1) * 100)).padStart(2, '0')}</span>
+          <sup className="text-sm">{String(Math.floor((currentBuyPrice % 1) * 1000) % 10)}</sup>
         </div>
       </button>
 
       {/* Spread Overlay with Glassmorphism */}
       <div className="absolute left-1/2 bottom-0 -translate-x-1/2 px-2 py-0.5 rounded backdrop-blur-xl bg-white/[0.03] border border-white/10 text-[10px] text-white/80 font-medium whitespace-nowrap z-10">
-        {spread}
+        {currentSpread} {isSubscribed && <span className="text-green-500 ml-1">●</span>}
       </div>
     </div>
   )
@@ -162,9 +171,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
       >
         <div className="text-xs text-white/60 mb-1">Sell</div>
         <div className="price-font text-[#FF5555] font-bold text-sm leading-tight">
-          {Math.floor(sellPrice).toLocaleString()}
-          <span className="text-lg">.{String(Math.floor((sellPrice % 1) * 100)).padStart(2, '0')}</span>
-          <sup className="text-sm">{String(Math.floor((sellPrice % 1) * 1000) % 10)}</sup>
+          {Math.floor(currentSellPrice).toLocaleString()}
+          <span className="text-lg">.{String(Math.floor((currentSellPrice % 1) * 100)).padStart(2, '0')}</span>
+          <sup className="text-sm">{String(Math.floor((currentSellPrice % 1) * 1000) % 10)}</sup>
         </div>
       </button>
 
@@ -179,15 +188,15 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
       >
         <div className="text-xs text-white/60 mb-1">Buy</div>
         <div className="price-font text-[#4A9EFF] font-bold text-sm leading-tight">
-          {Math.floor(buyPrice).toLocaleString()}
-          <span className="text-lg">.{String(Math.floor((buyPrice % 1) * 100)).padStart(2, '0')}</span>
-          <sup className="text-sm">{String(Math.floor((buyPrice % 1) * 1000) % 10)}</sup>
+          {Math.floor(currentBuyPrice).toLocaleString()}
+          <span className="text-lg">.{String(Math.floor((currentBuyPrice % 1) * 100)).padStart(2, '0')}</span>
+          <sup className="text-sm">{String(Math.floor((currentBuyPrice % 1) * 1000) % 10)}</sup>
         </div>
       </button>
 
       {/* Spread Overlay with Glassmorphism */}
       <div className="absolute left-1/2 bottom-0 -translate-x-1/2 px-2 py-0.5 rounded backdrop-blur-xl bg-white/[0.03] border border-white/10 text-[10px] text-white/80 font-medium whitespace-nowrap z-10">
-        {spread}
+        {currentSpread} {isSubscribed && <span className="text-green-500 ml-1">●</span>}
       </div>
     </div>
   )
@@ -404,7 +413,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                       type="number"
                       value={openPrice}
                       onChange={(e) => setOpenPrice(e.target.value)}
-                      placeholder={buyPrice.toFixed(3)}
+                      placeholder={currentBuyPrice.toFixed(3)}
                       className="flex-1 border-0 bg-transparent text-center price-font text-sm h-9 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-white/40"
                     />
                     <div className="flex items-center justify-center px-3 text-xs text-white/60 min-w-[50px]">
@@ -425,7 +434,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   </div>
                   {openPrice && (
                     <div className="text-xs text-white/60">
-                      {((parseFloat(openPrice) - buyPrice) * 10000).toFixed(1)} pips
+                      {((parseFloat(openPrice) - currentBuyPrice) * 10000).toFixed(1)} pips
                     </div>
                   )}
                 </div>
@@ -508,7 +517,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                       type="number"
                       value={openPrice}
                       onChange={(e) => setOpenPrice(e.target.value)}
-                      placeholder={buyPrice.toFixed(3)}
+                      placeholder={currentBuyPrice.toFixed(3)}
                       className="flex-1 border-0 bg-transparent text-center price-font text-sm h-9 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-white/40"
                     />
                     <div className="flex items-center justify-center px-3 text-xs text-white/60 min-w-[50px]">
@@ -529,7 +538,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   </div>
                   {openPrice && (
                     <div className="text-xs text-white/60">
-                      {((parseFloat(openPrice) - buyPrice) * 10000).toFixed(1)} pips
+                      {((parseFloat(openPrice) - currentBuyPrice) * 10000).toFixed(1)} pips
                     </div>
                   )}
                 </div>
@@ -634,7 +643,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                       type="number"
                       value={openPrice}
                       onChange={(e) => setOpenPrice(e.target.value)}
-                      placeholder={buyPrice.toFixed(3)}
+                      placeholder={currentBuyPrice.toFixed(3)}
                       className="flex-1 border-0 bg-transparent text-center price-font text-sm h-9 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-white/40"
                     />
                     <div className="flex items-center justify-center px-3 text-xs text-white/60 min-w-[50px]">

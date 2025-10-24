@@ -1,90 +1,11 @@
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
 
-// 1. 🚀 CACHE: Define a global variable to hold the full instrument list and its timestamp
-let instrumentCache: {
-  data: Array<{
-    id: string;
-    symbol: string;
-    description: string;
-    category: string;
-    signal: 'up' | 'down';
-    bid: number;
-    ask: number;
-    change1d: number;
-    changePercent1d: number;
-    isFavorite: boolean;
-  }> | null;
-  timestamp: number;
-  total: number;
-} = {
-  data: null,
-  timestamp: 0,
-  total: 0,
-};
-
-const CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes (Server-side TTL)
-
-// --- Configuration loaded from .env.local ---
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
-const MARKET_DATA_SYMBOLS_PATH = process.env.MARKET_DATA_SYMBOLS_PATH;
-
-// Manager Authentication details (copied for encapsulation)
-const MANAGER_USERNAME = process.env.MANAGER_USERNAME;
-const MANAGER_PASSWORD = process.env.MANAGER_PASSWORD;
-const MANAGER_SERVER_IP = process.env.MANAGER_SERVER_IP;
-const MANAGER_PORT = process.env.MANAGER_PORT;
-const MANAGER_LOGIN_PATH = process.env.MANAGER_LOGIN_PATH;
-
-// Utility function to get the Master Token
-async function getMasterToken(): Promise<{ token: string | null; error: string | null }> {
-  if (!API_BASE_URL || !MANAGER_USERNAME || !MANAGER_PASSWORD || !MANAGER_LOGIN_PATH) {
-    return { token: null, error: 'Missing environment variables.' };
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}${MANAGER_LOGIN_PATH}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        Username: MANAGER_USERNAME,
-        Password: MANAGER_PASSWORD,
-        Server: MANAGER_SERVER_IP,
-        Port: parseInt(MANAGER_PORT || '443', 10),
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'No response body.');
-      console.error(
-        `Manager Login Failed. Status: ${response.status} (${response.statusText}). Body: ${errorText}`
-      );
-
-      let userFriendlyError = `Manager login failed with status ${response.status}. Please check MANAGER_USERNAME/PASSWORD.`;
-      if (response.status === 401 || response.status === 403) {
-        userFriendlyError = 'Manager credentials rejected by the platform API.';
-      }
-      return { token: null, error: userFriendlyError };
-    }
-
-    const data = await response.json();
-    const token = data.Token || data.AccessToken || null;
-
-    if (!token) {
-      return { token: null, error: 'Manager login succeeded but no token was found in response body.' };
-    }
-
-    return { token: token, error: null };
-  } catch (error: unknown) {
-    let errorMessage = 'Network/SSL Error connecting to trading platform.';
-    if (error instanceof Error && 'code' in error) {
-      errorMessage = `Network/SSL Error: ${error.code}. Ensure API_BASE_URL is correct and platform is running.`;
-    }
-    console.error('Master Token Fetch Network Error:', error);
-    return { token: null, error: errorMessage };
-  }
-}
-
-// Function to generate pseudo-random market data
+/**
+ * Generate mock prices for instruments
+ * TODO: Replace with real-time price feed
+ */
 function generateMockPrice(category: string) {
   const basePrice = Math.random() * (category === 'forex' ? 100 : 10000) + 100;
   const bid = parseFloat(basePrice.toFixed(category === 'forex' ? 5 : 2));
@@ -99,143 +20,128 @@ function generateMockPrice(category: string) {
   return { bid, ask, change1d, changePercent1d };
 }
 
-// Function to determine category based on symbol name
-function determineCategory(symbol: string): string {
-  const lowerSymbol = symbol.toLowerCase();
-  if (lowerSymbol.includes('/') && lowerSymbol.length === 7) return 'forex';
-  if (lowerSymbol.includes('usd') && lowerSymbol.length > 3) return 'crypto';
-  if (lowerSymbol.startsWith('us') && lowerSymbol.length > 3) return 'indices';
-  if (lowerSymbol.startsWith('x')) return 'commodities';
-  return 'stocks';
-}
-
 /**
- * Handles GET requests to /apis/market-data
- * Implements server-side chunking/pagination logic based on URL parameters.
+ * GET /apis/market-data
+ * Fetches instrument data from database with pagination and filtering
+ * 
+ * Query Parameters:
+ * - offset: Pagination offset (default: 0)
+ * - limit: Items per page (default: 100)
+ * - category: Filter by category (forex, crypto, stocks, indices, commodities, all)
+ * - userId: Include favorite status for user
  */
 export async function GET(request: Request) {
+  const startTime = Date.now();
   const { searchParams } = new URL(request.url);
   const offset = parseInt(searchParams.get('offset') || '0', 10);
-  const limit = parseInt(searchParams.get('limit') || '10000', 10);
+  const limit = parseInt(searchParams.get('limit') || '100', 10);
+  const category = searchParams.get('category') || 'all';
+  const userId = searchParams.get('userId'); // For favorites
 
-  if (!MARKET_DATA_SYMBOLS_PATH) {
-    return NextResponse.json(
-      { success: false, message: 'Server configuration error: Market data symbols path missing.' },
-      { status: 500 }
-    );
-  }
+  try {
+    // Check if we have instruments in database
+    const instrumentCount = await prisma.instrument.count();
 
-  // 2. ⚡️ CACHE CHECK: Check if cache is valid and use it if possible
-  const isCacheValid =
-    instrumentCache.data && Date.now() - instrumentCache.timestamp < CACHE_TTL_MS;
-
-  let zuperiorInstruments: Array<{
-    id: string;
-    symbol: string;
-    description: string;
-    category: string;
-    signal: 'up' | 'down';
-    bid: number;
-    ask: number;
-    change1d: number;
-    changePercent1d: number;
-    isFavorite: boolean;
-  }> = [];
-  let totalCount = 0;
-
-  if (isCacheValid && instrumentCache.data) {
-    // Cache HIT: Use cached data
-    zuperiorInstruments = instrumentCache.data;
-    totalCount = instrumentCache.total;
-  } else {
-    // Cache MISS/Expired: Proceed with external API fetch
-    const { token: masterToken, error: masterTokenError } = await getMasterToken();
-
-    if (!masterToken) {
+    if (instrumentCount === 0) {
+      logger.warn('No instruments in database, needs sync');
       return NextResponse.json(
-        { success: false, message: masterTokenError || 'Unknown platform connection failure.' },
+        {
+          success: false,
+          message: 'No instruments available. Please run sync first.',
+          needsSync: true,
+        },
         { status: 503 }
       );
     }
 
-    // 3. Fetch the Instruments from the external platform
-    const instrumentsResponse = await fetch(`${API_BASE_URL}${MARKET_DATA_SYMBOLS_PATH}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${masterToken}`,
-      },
-    });
+    // Build where clause
+    const where: {
+      isActive: boolean;
+      category?: string;
+    } = {
+      isActive: true,
+    };
 
-    if (!instrumentsResponse.ok) {
-      const errorText = await instrumentsResponse.text();
-      console.error('Failed to fetch instruments:', instrumentsResponse.status, errorText);
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Failed to retrieve instrument list from platform. Status: ${instrumentsResponse.status}.`,
+    if (category !== 'all') {
+      where.category = category;
+    }
+
+    // Fetch from database
+    const [instruments, total] = await Promise.all([
+      prisma.instrument.findMany({
+        where,
+        select: {
+          id: true,
+          symbol: true,
+          name: true,
+          description: true,
+          category: true,
+          group: true,
+          spread: true,
+          ...(userId && {
+            userFavorites: {
+              where: { userId },
+              select: { sortOrder: true, addedAt: true },
+            },
+          }),
         },
-        { status: instrumentsResponse.status }
-      );
-    }
+        orderBy: [
+          { category: 'asc' },
+          { symbol: 'asc' },
+        ],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.instrument.count({ where }),
+    ]);
 
-    // 4. Process the Data
-    let rawData = await instrumentsResponse.json();
-
-    if (!Array.isArray(rawData)) {
-      const dataArray = rawData.Data || rawData.Symbols || rawData.data;
-
-      if (Array.isArray(dataArray)) {
-        rawData = dataArray;
-      } else {
-        rawData = [];
-      }
-    }
-
-    zuperiorInstruments = rawData.map((item: {
-      Symbol?: string;
-      Name?: string;
-      Description?: string;
-    }) => {
-      const symbol = item.Symbol || item.Name || 'UNKNOWN';
-      const id = symbol.toLowerCase().replace('/', '').replace('.', '');
-      const category = determineCategory(symbol);
-      const mockPrices = generateMockPrice(category);
-
+    // Generate mock prices (will be replaced with real-time data later)
+    const instrumentsWithPrices = instruments.map(inst => {
+      const mockPrices = generateMockPrice(inst.category);
       return {
-        id,
-        symbol,
-        description: item.Description || symbol,
-        category,
-        signal: mockPrices.change1d > 0 ? 'up' : 'down',
+        id: inst.id,
+        symbol: inst.symbol,
+        description: inst.description || inst.name || inst.symbol,
+        category: inst.category,
+        group: inst.group,
+        signal: mockPrices.change1d > 0 ? ('up' as const) : ('down' as const),
         bid: mockPrices.bid,
         ask: mockPrices.ask,
         change1d: mockPrices.change1d,
         changePercent1d: mockPrices.changePercent1d,
-        isFavorite: false,
+        isFavorite: userId ? (inst.userFavorites && inst.userFavorites.length > 0) : false,
       };
     });
 
-    // 5. 📝 CACHE UPDATE: Store the full processed list in the cache
-    totalCount = zuperiorInstruments.length;
-    instrumentCache = {
-      data: zuperiorInstruments,
-      timestamp: Date.now(),
-      total: totalCount,
-    };
-  }
+    const duration = Date.now() - startTime;
 
-  // 6. Apply server-side chunking/pagination (Always runs, regardless of cache hit/miss)
-  const chunk = zuperiorInstruments.slice(offset, offset + limit);
+    // Only log if it's slow or first/last chunk
+    if (duration > 500 || offset === 0) {
+      logger.info('Market data fetched from database', {
+        category,
+        offset,
+        limit,
+        total,
+        duration: `${duration}ms`,
+      });
+    }
 
-  // 7. Return the processed chunk with pagination metadata
-  return NextResponse.json(
-    {
+    return NextResponse.json({
       success: true,
-      data: chunk,
-      total: totalCount,
+      data: instrumentsWithPrices,
+      total,
       offset,
       limit,
-    },
-    { status: 200 }
-  );
+      responseTime: `${duration}ms`,
+    });
+  } catch (error) {
+    logger.error('Market data fetch failed', error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: error instanceof Error ? error.message : 'Internal server error',
+      },
+      { status: 500 }
+    );
+  }
 }

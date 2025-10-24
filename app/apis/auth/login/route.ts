@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { comparePassword, generateToken, isValidEmail } from '@/lib/auth';
 import { setSession } from '@/lib/session';
+import { ensureDefaultFavorites } from '@/lib/default-favorites';
 
 export async function POST(request: NextRequest) {
   try {
@@ -77,6 +78,11 @@ export async function POST(request: NextRequest) {
 
     // Set session cookie
     await setSession(token);
+
+    // Ensure user has default favorites (async, don't wait)
+    ensureDefaultFavorites(user.id).catch(err => {
+      console.error('Failed to add default favorites:', err);
+    });
 
     // Return success response with MT5 account info
     return NextResponse.json(
