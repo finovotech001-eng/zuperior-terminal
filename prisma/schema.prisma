@@ -75,6 +75,8 @@ model MT5Account {
   id              String           @id @default(uuid())
   accountId       String           @unique
   userId          String
+  password        String?
+  leverage        Int?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   deposits        Deposit[]        @relation("deposits")
