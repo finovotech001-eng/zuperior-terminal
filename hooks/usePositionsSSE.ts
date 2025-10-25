@@ -37,6 +37,7 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
 
   const sseRef = useRef<EventSource | null>(null)
   const reconnectTimer = useRef<NodeJS.Timeout | null>(null)
@@ -89,7 +90,40 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     }
   }
 
-  const connect = useCallback((accId: string) => {
+  // Authenticate and get access token
+  const authenticate = useCallback(async (accId: string) => {
+    try {
+      console.log(`🔐 [Positions] Authenticating for account: ${accId}`)
+      
+      const response = await fetch('/apis/auth/mt5-login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ accountId: accId }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Authentication failed' }))
+        throw new Error(errorData.message || 'Authentication failed')
+      }
+
+      const data = await response.json()
+      
+      if (!data.success || !data.data?.accessToken) {
+        throw new Error('No access token received')
+      }
+
+      console.log(`✅ [Positions] Authentication successful for account: ${accId}`)
+      return data.data.accessToken
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Authentication failed'
+      console.error('❌ [Positions] Authentication error:', errorMessage)
+      throw err
+    }
+  }, [])
+
+  const connect = useCallback((accId: string, token: string) => {
     // Close any previous
     if (sseRef.current) {
       sseRef.current.close()
@@ -105,6 +139,57 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     connectSeq.current += 1
     const seq = connectSeq.current
 
+    const fetchSnapshot = async () => {
+      try {
+        // eslint-disable-next-line no-console
+        console.log('[Positions] Fetching snapshot for', accId, 'seq', seq, 'current seq:', connectSeq.current)
+        const res = await fetch(`/apis/positions/snapshot?accountId=${encodeURIComponent(accId)}`, { cache: 'no-store' })
+        
+        if (!mounted.current) {
+          console.log('[Positions] Snapshot aborted - component unmounted')
+          return
+        }
+        if (seq !== connectSeq.current) {
+          console.log('[Positions] Snapshot aborted - sequence mismatch. Expected:', connectSeq.current, 'Got:', seq)
+          return
+        }
+        
+        console.log('[Positions][DEBUG] Snapshot response status:', res.status)
+        
+        if (res.ok) {
+          const json = await res.json().catch(() => ({} as any))
+          console.log('[Positions][DEBUG] Snapshot raw response:', json)
+          
+          const data = json?.data
+          console.log('[Positions][DEBUG] Extracted data:', data)
+          console.log('[Positions][DEBUG] Data type:', Array.isArray(data) ? 'array' : typeof data)
+          
+          let arr: any[] = []
+          if (Array.isArray(data)) arr = data
+          else if (Array.isArray(data?.data)) arr = data.data
+          
+          console.log('[Positions][DEBUG] Final array length:', arr.length)
+          
+          if (Array.isArray(arr) && arr.length > 0) {
+            console.log('[Positions][DEBUG] Sample position data:', arr[0])
+            const mapped = arr.map((item: any, i: number) => toPosition(item, i))
+            setPositions(mapped)
+            // eslint-disable-next-line no-console
+            console.log('[Positions] Snapshot count:', mapped.length)
+          } else {
+            console.log('[Positions][DEBUG] No positions in snapshot - array is empty or not an array')
+          }
+        } else {
+          const errorText = await res.text().catch(() => 'Unable to read error')
+          console.error('[Positions][ERROR] Snapshot fetch failed:', res.status, errorText)
+        }
+      } catch (error) {
+        console.warn('[Positions] Snapshot fetch failed', error)
+      }
+    }
+
+    fetchSnapshot()
+
     const url = `/apis/positions/stream?accountId=${encodeURIComponent(accId)}&ts=${Date.now()}`
     // eslint-disable-next-line no-console
     console.log(`[Positions][SSE] opening stream for account ${accId}, seq ${seq}, url: ${url}`)
@@ -112,21 +197,19 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     sseRef.current = es
 
     es.onopen = () => {
-      if (!mounted.current) return
-      if (seq !== connectSeq.current) return
+      console.log('[Positions][SSE] Connection opened for seq:', seq, 'current seq:', connectSeq.current)
+      if (!mounted.current) {
+        console.log('[Positions][SSE] onopen ignored - unmounted')
+        return
+      }
+      if (seq !== connectSeq.current) {
+        console.log('[Positions][SSE] onopen ignored - sequence mismatch')
+        return
+      }
       setIsConnected(true)
       setIsConnecting(false)
       setError(null)
-      // If we don't receive a snapshot quickly, force a reconnect
-      if (snapshotTimeout.current) clearTimeout(snapshotTimeout.current)
-      snapshotTimeout.current = setTimeout(() => {
-        if (!mounted.current) return
-        if (seq !== connectSeq.current) return
-        console.warn('[Positions] No snapshot yet, forcing reconnect')
-        es.close()
-        sseRef.current = null
-        connect(accId)
-      }, 7000)
+      console.log('[Positions][SSE] Connected successfully for account:', accId)
     }
 
     es.onerror = () => {
@@ -135,22 +218,42 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
       setIsConnected(false)
       setIsConnecting(false)
       setError('SSE connection error')
-      if (snapshotTimeout.current) { clearTimeout(snapshotTimeout.current); snapshotTimeout.current = null }
       // EventSource auto-reconnects; optional manual backoff
       if (!reconnectTimer.current) {
         reconnectTimer.current = setTimeout(() => {
           reconnectTimer.current = null
-          if (mounted.current && accountId && seq === connectSeq.current) connect(accountId)
+          if (mounted.current && accountId && seq === connectSeq.current) {
+            // Re-authenticate before reconnecting
+            console.log('🔄 [Positions] Re-authenticating after error...')
+            authenticate(accountId)
+              .then(newToken => {
+                setAccessToken(newToken)
+                connect(accountId, newToken)
+              })
+              .catch(err => {
+                console.error('❌ [Positions] Re-authentication failed:', err)
+                setError(err instanceof Error ? err.message : 'Re-authentication failed')
+              })
+          }
         }, 5000)
       }
     }
 
     es.onmessage = (evt) => {
-      if (!mounted.current) return
-      if (seq !== connectSeq.current) return
+      if (!mounted.current) {
+        console.log('[Positions][SSE] Message ignored - component unmounted')
+        return
+      }
+      if (seq !== connectSeq.current) {
+        console.log('[Positions][SSE] Message ignored - sequence mismatch. Expected:', connectSeq.current, 'Got:', seq)
+        return
+      }
       try {
         const msg = JSON.parse(evt.data)
         const type = msg?.type || 'positions'
+        
+        console.log('[Positions][SSE] Received message type:', type, 'seq:', seq)
+        
         if (type === 'debug') {
           // Surface server debug messages to help validate flow
           // e.g., which method supplied the snapshot
@@ -159,8 +262,10 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
           return
         }
         const data = msg?.data
+        
         if (type === 'closed') {
           const ticket = (data?.Ticket || data?.ticket || data) as number
+          console.log('[Positions][SSE] Position closed, ticket:', ticket)
           if (!ticket) return
           setPositions(prev => prev.filter(p => p.ticket !== ticket))
           return
@@ -205,6 +310,11 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
 
         const arr = extractArray(data)
         if (arr) {
+          console.log('[Positions][SSE] Extracted array with', arr.length, 'items')
+          if (arr.length > 0) {
+            console.log('[Positions][SSE] Sample raw position:', arr[0])
+          }
+          
           // Replace with the latest snapshot exactly as provided (no dedupe)
           const mapped = arr.map((item, i) => toPosition(item, i))
           setPositions(mapped)
@@ -214,8 +324,12 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
           return
         }
 
+        console.log('[Positions][SSE] Could not extract array, raw data:', data)
+
         if (data && typeof data === 'object') {
+          console.log('[Positions][SSE] Processing single position update')
           const p = toPosition(data)
+          console.log('[Positions][SSE] Mapped position:', p)
           setPositions(prev => {
             const byTicket = new Map<number, SignalRPosition>()
             for (const x of prev) if (x.ticket) byTicket.set(x.ticket, x)
@@ -223,34 +337,107 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
             return Array.from(byTicket.values())
           })
         }
-      } catch {}
+      } catch (err) {
+        console.error('[Positions][SSE] Error processing message:', err)
+      }
     }
-  }, [accountId])
+  }, [accountId, authenticate])
 
   const reconnect = useCallback(() => {
-    if (accountId) connect(accountId)
-  }, [accountId, connect])
+    if (!accountId) return
+    
+    console.log('🔄 [Positions] Reconnecting...')
+    setError(null)
+    
+    // Re-authenticate and connect
+    authenticate(accountId)
+      .then(token => {
+        setAccessToken(token)
+        return connect(accountId, token)
+      })
+      .catch(err => {
+        console.error('❌ [Positions] Reconnect failed:', err)
+        setError(err instanceof Error ? err.message : 'Reconnection failed')
+      })
+  }, [accountId, authenticate, connect])
 
   useEffect(() => {
     if (!enabled || !accountId) {
-      if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
+      // Clean up when disabled or no account
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current)
+        reconnectTimer.current = null
+      }
+      if (snapshotTimeout.current) {
+        clearTimeout(snapshotTimeout.current)
+        snapshotTimeout.current = null
+      }
+      if (sseRef.current) {
+        sseRef.current.close()
+        sseRef.current = null
+      }
       setPositions([])
       setIsConnected(false)
       setIsConnecting(false)
       return
     }
 
-    connect(accountId)
+    // IMPORTANT: Clean up existing connection BEFORE starting new one
+    console.log(`🔄 [Positions] Account changed to: ${accountId}`)
+    
+    // Close old connection immediately
+    if (sseRef.current) {
+      console.log('[Positions] Closing previous SSE connection')
+      sseRef.current.close()
+      sseRef.current = null
+    }
+    
+    // Clear any pending timers
+    if (reconnectTimer.current) {
+      clearTimeout(reconnectTimer.current)
+      reconnectTimer.current = null
+    }
+    if (snapshotTimeout.current) {
+      clearTimeout(snapshotTimeout.current)
+      snapshotTimeout.current = null
+    }
+    
+    // Reset state
+    setPositions([])
+    setIsConnected(false)
+    setError(null)
+
+    // Small delay to ensure cleanup completes before starting new connection
+    const switchTimeout = setTimeout(() => {
+      // Authenticate and connect
+      authenticate(accountId)
+        .then(token => {
+          setAccessToken(token)
+          return connect(accountId, token)
+        })
+        .catch(err => {
+          console.error('❌ [Positions] Initial connection failed:', err)
+          setError(err instanceof Error ? err.message : 'Connection failed')
+          setIsConnecting(false)
+        })
+    }, 100)
 
     return () => {
-      mounted.current = false
+      clearTimeout(switchTimeout)
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
-      if (sseRef.current) { sseRef.current.close(); sseRef.current = null }
+      if (snapshotTimeout.current) clearTimeout(snapshotTimeout.current)
+      if (sseRef.current) {
+        sseRef.current.close()
+        sseRef.current = null
+      }
     }
-  }, [accountId, enabled, connect])
+  }, [accountId, enabled, authenticate, connect])
 
   useEffect(() => {
     mounted.current = true
+  }, [accountId]) // Reset mounted flag when account changes
+  
+  useEffect(() => {
     return () => { mounted.current = false }
   }, [])
 
