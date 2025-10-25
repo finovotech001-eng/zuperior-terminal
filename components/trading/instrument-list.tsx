@@ -20,6 +20,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { IconButton } from "@/components/ui/icon-button"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import { useMultipleTickPrices } from "@/hooks/useWebSocket"
+import { useTickPolling } from "@/hooks/useTickPolling"
 
 export interface Instrument {
   id: string
@@ -153,6 +155,16 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
   // 3. 🔑 CRITICAL DEPENDENCY CHANGE: Use deferred values in the dependency array
   }, [filteredItems, deferredSearchQuery, deferredCategoryFilter])
 
+  // Subscribe to live ticks for currently visible symbols (limit to 100)
+  const hubSymbols = React.useMemo(() => {
+    const toHub = (s: string) => s.replace('/', '')
+    return sortedFilteredItems.slice(0, 100).map(i => toHub(i.symbol))
+  }, [sortedFilteredItems])
+
+  const livePrices = useMultipleTickPrices(hubSymbols)
+  // REST polling fallback for up to 20 symbols
+  const polled = useTickPolling(hubSymbols, 800)
+
 
   return (
     <div className="flex flex-col w-full h-full">
@@ -279,18 +291,28 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
                   value={instrument}
                   as="div"
                 >
-                  <InstrumentListItem
-                    symbol={instrument.symbol}
-                    signal={instrument.signal}
-                    bid={instrument.bid}
-                    ask={instrument.ask}
-                    changePercent1d={instrument.changePercent1d}
-                    pnl={instrument.pnl}
-                    isFavorite={instrument.isFavorite}
-                    onToggleFavorite={(e) => handleToggleFavorite(e, instrument.id)}
-                    onClick={() => onSelectInstrument?.(instrument.id)}
-                    columns={visibleColumns}
-                  />
+                  {(() => {
+                    const hubSymbol = instrument.symbol.replace('/', '')
+                    // Prefer polling value if present; else websocket; else static
+                    const pollTick = polled.get(hubSymbol)
+                    const wsTick = livePrices.get(hubSymbol)
+                    const liveBid = (pollTick?.bid ?? wsTick?.bid) ?? instrument.bid
+                    const liveAsk = (pollTick?.ask ?? wsTick?.ask) ?? instrument.ask
+                    return (
+                      <InstrumentListItem
+                        symbol={instrument.symbol}
+                        signal={instrument.signal}
+                        bid={liveBid}
+                        ask={liveAsk}
+                        changePercent1d={instrument.changePercent1d}
+                        pnl={instrument.pnl}
+                        isFavorite={instrument.isFavorite}
+                        onToggleFavorite={(e) => handleToggleFavorite(e, instrument.id)}
+                        onClick={() => onSelectInstrument?.(instrument.id)}
+                        columns={visibleColumns}
+                      />
+                    )
+                  })()}
                 </Reorder.Item>
               ))}
             </Reorder.Group>

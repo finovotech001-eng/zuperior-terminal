@@ -993,23 +993,80 @@ function TerminalContent() {
 
   // Convert SignalR positions to Position format for the table
   const formattedPositions = React.useMemo((): Position[] => {
-    return signalRPositions.map(pos => ({
-      id: pos.id,
-      symbol: pos.symbol,
-      countryCode: undefined, // Will be derived from symbol if needed
-      icon: undefined,
-      type: pos.type,
-      volume: pos.volume,
-      openPrice: pos.openPrice,
-      currentPrice: pos.currentPrice,
-      takeProfit: pos.takeProfit,
-      stopLoss: pos.stopLoss,
-      position: pos.ticket.toString(),
-      openTime: formatPositionTime(pos.openTime),
-      swap: pos.swap,
-      pnl: pos.profit,
-    }));
+    // Map incoming live positions to table rows - use the ID already provided by the position
+    const rows = signalRPositions.map((pos): Position => {
+      // Use the ID from the position object directly (already formatted by SSE/SignalR hook)
+      const posId = pos.id
+      return {
+        id: posId,
+        symbol: pos.symbol,
+        countryCode: undefined,
+        icon: undefined,
+        type: pos.type,
+        volume: pos.volume,
+        openPrice: pos.openPrice,
+        currentPrice: pos.currentPrice,
+        takeProfit: pos.takeProfit,
+        stopLoss: pos.stopLoss,
+        position: (pos.ticket && pos.ticket > 0 ? pos.ticket : posId).toString(),
+        openTime: formatPositionTime(pos.openTime),
+        swap: pos.swap,
+        pnl: pos.profit,
+      }
+    })
+    // Deduplicate by id to avoid React key collisions if backend sends duplicates
+    const byId = new Map<string, Position>()
+    rows.forEach(r => byId.set(r.id, r))
+    return Array.from(byId.values())
   }, [signalRPositions]);
+
+  // Map from row id to numeric ticket for reliable close calls
+  const idToTicket = React.useMemo(() => {
+    const m = new Map<string, number>()
+    signalRPositions.forEach((p) => {
+      // Use the actual ID from the position (which is already formatted by the SSE hook)
+      const posId = p.id
+      const ticketNum = Number(p.ticket)
+      // Store mapping even if ticket is 0, but only if ID exists
+      if (posId && ticketNum > 0) {
+        m.set(posId, ticketNum)
+      }
+    })
+    console.log('[idToTicket] Created mapping with', m.size, 'entries:', Array.from(m.entries()).slice(0, 5))
+    return m
+  }, [signalRPositions])
+
+  // Fallback resolver: match by symbol + volume + openPrice if ticket is missing
+  const resolveTicketByFields = React.useCallback((rowId: string): number | null => {
+    const row = formattedPositions.find(r => r.id === rowId)
+    if (!row) {
+      console.log('[resolveTicketByFields] Row not found for id:', rowId)
+      return null
+    }
+    
+    const vol = Number(row.volume)
+    const sym = row.symbol
+    const price = Number(row.openPrice)
+    
+    console.log('[resolveTicketByFields] Searching for:', { sym, vol, price })
+    
+    const match = signalRPositions.find(p => {
+      const ticketNum = Number(p.ticket)
+      if (!ticketNum || ticketNum <= 0) return false
+      if (p.symbol !== sym) return false
+      if (Math.abs(Number(p.volume) - vol) > 1e-4) return false // Increased tolerance
+      if (Math.abs(Number(p.openPrice) - price) > 1e-3) return false // Increased tolerance
+      return true
+    })
+    
+    if (match) {
+      console.log('[resolveTicketByFields] Found match with ticket:', match.ticket)
+    } else {
+      console.log('[resolveTicketByFields] No match found')
+    }
+    
+    return match ? Number(match.ticket) : null
+  }, [formattedPositions, signalRPositions])
 
   // Live Total P/L from current open positions (sum of live profits)
   const liveTotalPL = React.useMemo(() => {
@@ -1034,6 +1091,11 @@ function TerminalContent() {
     if (signalRPositions.length > 0) {
       console.log('[Positions][RAW sample]', signalRPositions.slice(0, 3))
       console.log('[Positions][FORMATTED sample]', formattedPositions.slice(0, 3))
+      // Check for positions without valid tickets
+      const noTickets = signalRPositions.filter(p => !p.ticket || p.ticket <= 0)
+      if (noTickets.length > 0) {
+        console.warn('⚠️ [Positions] Found', noTickets.length, 'positions without valid tickets:', noTickets.map(p => ({ id: p.id, symbol: p.symbol })))
+      }
     }
   }, [signalRPositions, formattedPositions])
 
@@ -1622,7 +1684,156 @@ function TerminalContent() {
                   openPositions={formattedPositions}
                   pendingPositions={[]}
                   closedPositions={closedPositions}
-                  onClose={(id) => console.log("Close position:", id)}
+                  onClose={async (id) => {
+                    try {
+                      if (!currentAccountId) return;
+                      
+                      // Try to resolve ticket number from various ID formats
+                      let ticketNum: number = NaN;
+                      
+                      // 1. Check idToTicket map first
+                      if (idToTicket.has(id)) {
+                        ticketNum = idToTicket.get(id)!;
+                      }
+                      
+                      // 2. Try to parse ID directly as a number
+                      if (!Number.isFinite(ticketNum)) {
+                        const directNum = parseInt(id, 10);
+                        if (Number.isFinite(directNum) && directNum > 0) {
+                          ticketNum = directNum;
+                        }
+                      }
+                      
+                      // 3. Try to extract ticket from "ticket-{number}" or "alt-{number}" format
+                      if (!Number.isFinite(ticketNum)) {
+                        const match = id.match(/^(?:ticket|alt)-(\d+)$/);
+                        if (match) {
+                          const extracted = parseInt(match[1], 10);
+                          if (Number.isFinite(extracted) && extracted > 0) {
+                            ticketNum = extracted;
+                          }
+                        }
+                      }
+                      
+                      // 4. Try to use the 'position' field from formatted positions
+                      if (!Number.isFinite(ticketNum)) {
+                        const row = formattedPositions.find(r => r.id === id);
+                        if (row?.position) {
+                          const posNum = parseInt(row.position, 10);
+                          if (Number.isFinite(posNum) && posNum > 0) {
+                            ticketNum = posNum;
+                            console.log('[Close] Extracted ticket from position field:', ticketNum);
+                          }
+                        }
+                      }
+                      
+                      // 5. Try to resolve by matching position fields
+                      if (!Number.isFinite(ticketNum)) {
+                        ticketNum = resolveTicketByFields(id) ?? NaN
+                      }
+                      if (!Number.isFinite(ticketNum)) {
+                        // Fallback: fetch fresh snapshot and resolve by fields
+                        console.log('[Close] Attempting snapshot fallback for id:', id);
+                        try {
+                          const res = await fetch(`/apis/positions/snapshot?accountId=${encodeURIComponent(currentAccountId)}`, { cache: 'no-store' })
+                          console.log('[Close] Snapshot response status:', res.status);
+                          if (res.ok) {
+                            const json = await res.json().catch(() => ({} as any))
+                            console.log('[Close] Snapshot data:', json);
+                            const data = json?.data
+                            // Extract array
+                            let arr: any[] = []
+                            if (Array.isArray(data)) arr = data
+                            else if (Array.isArray(data?.data)) arr = data.data
+                            console.log('[Close] Extracted array length:', arr.length);
+                            if (arr.length > 0) {
+                              console.log('[Close] Sample snapshot item:', arr[0]);
+                            }
+                            // Find row in our table
+                            const row = formattedPositions.find(r => r.id === id)
+                            console.log('[Close] Row to match:', row);
+                            if (row && Array.isArray(arr)) {
+                              // Strategy: narrow by symbol -> by volume -> by open price -> by nearest open time.
+                              const norm = (v: any) => Number(v) || 0
+                              const itemsSym = arr.filter((it: any) => (it.Symbol || it.symbol) === row.symbol)
+                              let candidates = itemsSym
+                              if (candidates.length > 1) {
+                                const targetVol = Number(row.volume)
+                                candidates = candidates.filter((it: any) => Math.abs(norm(it.Volume ?? it.volume)/10000 - targetVol) < 1e-4)
+                              }
+                              if (candidates.length > 1) {
+                                const targetOpen = Number(row.openPrice)
+                                candidates = candidates.filter((it: any) => {
+                                  const o = norm(it.OpenPrice ?? it.PriceOpen ?? it.openPrice ?? it.Price)
+                                  return Math.abs(o - targetOpen) < 1e-3
+                                })
+                              }
+                              let chosen = candidates[0]
+                              if (candidates.length > 1) {
+                                // Pick the one with closest TimeSetup/OpenTime
+                                const targetTime = Date.parse(row.openTime) || 0
+                                chosen = candidates.reduce((best: any, it: any) => {
+                                  const t = Date.parse(it.TimeSetup || it.OpenTime || it.openTime || '') || 0
+                                  const bt = Date.parse(best?.TimeSetup || best?.OpenTime || best?.openTime || '') || 0
+                                  return Math.abs(t - targetTime) < Math.abs(bt - targetTime) ? it : best
+                                }, candidates[0])
+                              }
+                              const cand = chosen ? (chosen.Ticket ?? chosen.ticket ?? chosen.Position ?? chosen.PositionId ?? chosen.PositionID ?? chosen.Order ?? chosen.OrderId ?? chosen.Id ?? chosen.id) : null
+                              console.log('[Close] Chosen candidate:', chosen);
+                              console.log('[Close] Extracted ticket candidate:', cand);
+                              const num = Number(cand)
+                              if (Number.isFinite(num) && num > 0) {
+                                ticketNum = num
+                                console.log('[Close] ✅ Resolved ticket from snapshot:', ticketNum);
+                              } else {
+                                console.warn('[Close] ⚠️ Snapshot candidate ticket invalid:', cand, 'Number:', num);
+                              }
+                            } else {
+                              console.warn('[Close] ⚠️ No candidates found in snapshot for this position');
+                            }
+                          } else {
+                            console.warn('[Close] ⚠️ Snapshot response not OK or no data');
+                          }
+                        } catch (e) {
+                          console.error('[Close] Snapshot fallback error:', e);
+                        }
+                      }
+                      if (!Number.isFinite(ticketNum) || ticketNum <= 0) {
+                        const posDetails = formattedPositions.find(p => p.id === id);
+                        const rawPos = signalRPositions.find(p => p.id === id);
+                        console.error('❌ Close failed: could not resolve numeric ticket for id', id);
+                        console.error('   Position details:', posDetails);
+                        console.error('   Raw position data:', rawPos);
+                        console.error('   Available tickets:', Array.from(idToTicket.entries()));
+                        console.error('   All raw positions:', signalRPositions);
+                        
+                        // Show user-facing error
+                        alert(`Unable to close position: This position doesn't have a valid ticket number.\n\nPosition: ${posDetails?.symbol || 'Unknown'}\nID: ${id}\n\nPlease refresh the page and try again. If the issue persists, contact support.`);
+                        return
+                      }
+                      console.log('✅ Closing position with ticket:', ticketNum, 'from id:', id);
+                      const body = {
+                        accountId: currentAccountId,
+                        positionId: ticketNum,
+                        Volume: 1.0,
+                        Price: 0,
+                        Comment: `Full close - ${id}`,
+                      };
+                      const res = await fetch('/apis/trading/close', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                      });
+                      const json = await res.json();
+                      if (!res.ok) {
+                        console.error('Close failed:', json);
+                      } else {
+                        console.log('Close success:', json);
+                      }
+                    } catch (e) {
+                      console.error('Close error:', e);
+                    }
+                  }}
                 />
               </div>
             </div>

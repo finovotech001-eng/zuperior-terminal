@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { FlagIcon } from "@/components/data-display/flag-icon"
 import { useTickPrice } from "@/hooks/useWebSocket"
+import { useTickPolling } from "@/hooks/useTickPolling"
 
 export interface OrderPanelProps extends React.HTMLAttributes<HTMLDivElement> {
   symbol?: string
@@ -52,13 +53,16 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   className,
   ...props
 }) => {
-  // Get real-time prices from WebSocket
-  const { bid, ask, spread: liveSpread, isSubscribed } = useTickPrice(symbol)
+  // Get real-time prices from WebSocket + polling fallback
+  const hubSymbol = React.useMemo(() => symbol.replace('/', ''), [symbol])
+  const { bid, ask, spread: liveSpread, isSubscribed } = useTickPrice(hubSymbol)
+  const polled = useTickPolling([hubSymbol], 800)
+  const pollTick = polled.get(hubSymbol)
   
   // Use live prices if available, otherwise fall back to props
-  const currentSellPrice = bid ?? sellPrice
-  const currentBuyPrice = ask ?? buyPrice
-  const currentSpread = liveSpread !== undefined ? `${liveSpread.toFixed(2)} pips` : spread
+  const currentSellPrice = (pollTick?.bid ?? bid) ?? sellPrice
+  const currentBuyPrice = (pollTick?.ask ?? ask) ?? buyPrice
+  const currentSpread = (pollTick?.spread ?? liveSpread) !== undefined ? `${((pollTick?.spread ?? liveSpread) as number).toFixed(2)} pips` : spread
   
   const [formType, setFormType] = React.useState<FormType>("regular")
   const [orderType, setOrderType] = React.useState<"market" | "limit" | "pending">("market")
@@ -744,4 +748,3 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
 }
 
 export { OrderPanel }
-

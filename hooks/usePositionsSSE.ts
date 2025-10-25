@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import wsManager from '@/lib/websocket-service'
 
 export interface SignalRPosition {
   id: string
@@ -59,17 +60,25 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     const t = pos.Type ?? pos.type
     const type: 'Buy' | 'Sell' = (t === 0 || t === 'Buy') ? 'Buy' : 'Sell'
 
-    // Build a stable, unique id per row
+    // Build a stable, unique id per row - always prefer ticket number if it exists
     let id: string
-    if (ticketNum > 0) {
+    if (ticketNum && ticketNum > 0) {
       id = `ticket-${ticketNum}`
     } else if (pos.Order ?? pos.OrderId ?? pos.PositionId ?? pos.id ?? pos.Id) {
       const alt = (pos.Order ?? pos.OrderId ?? pos.PositionId ?? pos.id ?? pos.Id).toString()
-      id = `alt-${alt}`
+      const altNum = Number(alt)
+      // If alt can be converted to a valid number, use ticket format
+      if (altNum && altNum > 0) {
+        id = `ticket-${altNum}`
+      } else {
+        id = `alt-${alt}`
+      }
     } else {
       const openTimeKey = (pos.OpenTime ?? pos.openTime ?? pos.TimeSetup ?? '').toString()
       const suffix = openTimeKey ? `ot-${openTimeKey}` : `idx-${idx ?? 0}`
       id = `sym-${symbol}-${suffix}`
+      // Log when we fall back to non-ticket ID
+      console.warn('[SSE] Position without ticket - using fallback ID:', id, 'Raw data keys:', Object.keys(pos))
     }
 
     return {
@@ -353,6 +362,8 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     authenticate(accountId)
       .then(token => {
         setAccessToken(token)
+        // Also set token for live data/chart hubs
+        try { wsManager.setToken(token) } catch {}
         return connect(accountId, token)
       })
       .catch(err => {
@@ -410,11 +421,12 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     // Small delay to ensure cleanup completes before starting new connection
     const switchTimeout = setTimeout(() => {
       // Authenticate and connect
-      authenticate(accountId)
-        .then(token => {
-          setAccessToken(token)
-          return connect(accountId, token)
-        })
+    authenticate(accountId)
+      .then(token => {
+        setAccessToken(token)
+        try { wsManager.setToken(token) } catch {}
+        return connect(accountId, token)
+      })
         .catch(err => {
           console.error('❌ [Positions] Initial connection failed:', err)
           setError(err instanceof Error ? err.message : 'Connection failed')
