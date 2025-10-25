@@ -38,6 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useWebSocketConnection } from "@/hooks/useWebSocket"
 import { usePositionsSignalR } from "@/hooks/usePositionsSSE"
+import { useTradeHistory } from "@/hooks/useTradeHistory"
 import { 
   instrumentsAtom, 
   positionsIsCollapsedAtom,
@@ -1018,24 +1019,23 @@ function TerminalContent() {
       return 0;
     }
   }, [signalRPositions]);
+
+  // Live Equity = Balance + Total P/L (floating)
+  const liveEquity = React.useMemo(() => {
+    const bal = Number(balanceData.balance) || 0;
+    return bal + liveTotalPL;
+  }, [balanceData.balance, liveTotalPL]);
+
+  // Closed trades (history) – default period 'month'
+  const { closedPositions, isLoading: closedLoading } = useTradeHistory({ accountId: currentAccountId, period: 'month', enabled: true })
   
-  // Ensure Open tab is active when positions arrive and log samples
+  // Debug samples (non-intrusive)
   React.useEffect(() => {
     if (signalRPositions.length > 0) {
       console.log('[Positions][RAW sample]', signalRPositions.slice(0, 3))
       console.log('[Positions][FORMATTED sample]', formattedPositions.slice(0, 3))
-      if (activePositionsTab !== 'open') {
-        setActivePositionsTab('open')
-      }
     }
-  }, [signalRPositions, formattedPositions, activePositionsTab, setActivePositionsTab])
-
-  // When switching account, reset the active positions tab to Open
-  React.useEffect(() => {
-    if (currentAccountId && activePositionsTab !== 'open') {
-      setActivePositionsTab('open')
-    }
-  }, [currentAccountId, activePositionsTab, setActivePositionsTab])
+  }, [signalRPositions, formattedPositions])
 
   // Log account switches; hook reacts to accountId change internally
   React.useEffect(() => {
@@ -1621,7 +1621,7 @@ function TerminalContent() {
                   key={currentAccountId || 'no-account'}
                   openPositions={formattedPositions}
                   pendingPositions={[]}
-                  closedPositions={[]}
+                  closedPositions={closedPositions}
                   onClose={(id) => console.log("Close position:", id)}
                 />
               </div>
@@ -1661,7 +1661,7 @@ function TerminalContent() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Equity:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "••••••" : formatCurrency(balanceData.equity, 2)} USD
+                  {hideBalance ? "••••••" : `${formatCurrency(liveEquity, 2)} USD`}
                 </span>
               </div>
               <div className="flex items-center gap-2">
