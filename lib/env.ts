@@ -19,6 +19,7 @@ const envSchema = z.object({
 
   // MT5 API
   NEXT_PUBLIC_API_BASE_URL: z.string().url('Invalid API_BASE_URL'),
+  LIVE_API_URL: z.string().url('Invalid LIVE_API_URL').default('http://18.130.5.209:5003/api'),
   MANAGER_USERNAME: z.string().min(1, 'MANAGER_USERNAME is required'),
   MANAGER_PASSWORD: z.string().min(1, 'MANAGER_PASSWORD is required'),
   MANAGER_SERVER_IP: z.string().min(1, 'MANAGER_SERVER_IP is required'),

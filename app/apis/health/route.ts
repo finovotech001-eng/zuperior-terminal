@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import redis from '@/lib/redis'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -11,7 +10,6 @@ interface HealthCheck {
   uptime: number
   checks: {
     database: 'healthy' | 'unhealthy' | 'unknown'
-    redis: 'healthy' | 'unhealthy' | 'unknown'
     api: 'healthy'
   }
   version?: string
@@ -26,7 +24,6 @@ export async function GET() {
     uptime: process.uptime(),
     checks: {
       database: 'unknown',
-      redis: 'unknown',
       api: 'healthy',
     },
     version: process.env.npm_package_version || '1.0.0',
@@ -39,21 +36,6 @@ export async function GET() {
   } catch (error) {
     console.error('Database health check failed:', error)
     checks.checks.database = 'unhealthy'
-    checks.status = 'degraded'
-  }
-
-  // Check Redis connection
-  try {
-    await redis.ping()
-    checks.checks.redis = 'healthy'
-  } catch (error) {
-    console.error('Redis health check failed:', error)
-    checks.checks.redis = 'unhealthy'
-    checks.status = 'degraded'
-  }
-
-  // If both critical services are down, mark as unhealthy
-  if (checks.checks.database === 'unhealthy' && checks.checks.redis === 'unhealthy') {
     checks.status = 'unhealthy'
   }
 

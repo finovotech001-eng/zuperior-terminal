@@ -12,6 +12,7 @@
     "sync:instruments": "npx tsx scripts/sync-instruments.ts",
     "sync:instruments:simple": "npx tsx scripts/sync-instruments-simple.ts",
     "sync:from:api": "npx tsx scripts/sync-from-api.ts",
+    "sync:mt5:symbols": "npx tsx scripts/sync-symbols-from-mt5.ts",
     "sync:favorites": "npx tsx scripts/add-default-favorites.ts",
     "setup:instruments": "npm run db:generate && npm run db:migrate && npm run sync:instruments && npm run sync:favorites"
   },

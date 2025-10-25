@@ -1,96 +1,79 @@
 /**
- * Simplified script to sync instruments from /api/Symbols to database
- * Customize the API_URL below with your actual endpoint
+ * Simplified script to sync instruments from a Symbols API into the database
+ *
+ * Configuration (env vars):
+ * - SYMBOLS_API_URL=https://host/api/Symbols
+ * - SYMBOLS_API_REQUIRES_AUTH=true|false
+ * - SYMBOLS_API_TOKEN=your_token
  */
 
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-// ⚠️ CONFIGURE THESE VALUES ⚠️
-const API_URL = 'http://localhost:5000/api/Symbols' // Change this to your actual API URL
-const REQUIRES_AUTH = false // Set to true if your API needs authentication
-const AUTH_TOKEN = '' // If authentication required, add token here
+const API_URL = process.env.SYMBOLS_API_URL || 'http://localhost:5000/api/Symbols'
+const REQUIRES_AUTH = (process.env.SYMBOLS_API_REQUIRES_AUTH || 'false').toLowerCase() === 'true'
+const AUTH_TOKEN = process.env.SYMBOLS_API_TOKEN || ''
 
-/**
- * Determine category based on symbol
- */
 function determineCategory(symbol: string): string {
   const lowerSymbol = symbol.toLowerCase()
-  
   if (lowerSymbol.includes('/') && lowerSymbol.length <= 7) return 'forex'
   if (lowerSymbol.includes('usd') && lowerSymbol.length > 3) return 'crypto'
   if (lowerSymbol.startsWith('us') && lowerSymbol.length > 3) return 'indices'
   if (lowerSymbol.startsWith('x')) return 'commodities'
-  
   return 'stocks'
 }
 
-/**
- * Main sync function
- */
 async function syncInstruments() {
-  console.log('🚀 Starting instrument sync from /api/Symbols...\n')
+  console.log('Starting instrument sync from Symbols API...\n')
 
   try {
-    // Fetch instruments from API
-    console.log(`📥 Fetching from: ${API_URL}`)
-    
+    console.log(`Fetching from: ${API_URL}`)
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
-    
     if (REQUIRES_AUTH && AUTH_TOKEN) {
       headers['Authorization'] = `Bearer ${AUTH_TOKEN}`
     }
 
-    const response = await fetch(API_URL, {
-      method: 'GET',
-      headers,
-    })
-
+    const response = await fetch(API_URL, { method: 'GET', headers })
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`)
     }
 
-    let rawData = await response.json()
+    let rawData: any = await response.json()
 
-    // Handle different response formats
     if (!Array.isArray(rawData)) {
-      // Try common data wrapper properties
       const dataArray = rawData.Data || rawData.Symbols || rawData.data || rawData.symbols
       if (Array.isArray(dataArray)) {
         rawData = dataArray
       } else {
-        console.log('Response structure:', Object.keys(rawData))
+        console.log('Response structure keys:', Object.keys(rawData))
         throw new Error('Could not find array of symbols in API response')
       }
     }
 
-    console.log(`✅ Fetched ${rawData.length} instruments\n`)
-
+    console.log(`Fetched ${rawData.length} instruments\n`)
     if (rawData.length === 0) {
-      console.log('⚠️  No instruments found in API response')
+      console.log('No instruments found in API response')
       return
     }
 
-    // Show sample of first instrument
-    console.log('📋 Sample instrument data:')
+    console.log('Sample instrument data:')
     console.log(JSON.stringify(rawData[0], null, 2))
     console.log('')
 
-    // Process and save to database
-    console.log('💾 Saving to database...')
+    console.log('Saving to database...')
     let created = 0
     let updated = 0
     let errors = 0
 
     for (const item of rawData) {
       try {
-        // Extract symbol (try different possible field names)
         const symbol = item.Symbol || item.symbol || item.Name || item.name
         if (!symbol) {
-          console.log('⚠️  Skipping item without symbol:', item)
+          console.log('Skipping item without symbol')
           errors++
           continue
         }
@@ -98,7 +81,6 @@ async function syncInstruments() {
         const category = determineCategory(symbol)
         const group = item.Path || item.Group || item.group || item.path || category
 
-        // Upsert instrument
         const result = await prisma.instrument.upsert({
           where: { symbol },
           update: {
@@ -133,47 +115,37 @@ async function syncInstruments() {
           },
         })
 
-        // Check if it was created or updated
         const timeDiff = result.lastUpdated.getTime() - result.createdAt.getTime()
-        if (timeDiff < 1000) { // Within 1 second means it was just created
-          created++
-        } else {
-          updated++
-        }
+        if (timeDiff < 1000) created++
+        else updated++
 
-        // Progress indicator
         if ((created + updated) % 100 === 0) {
           process.stdout.write(`   Processed: ${created + updated}/${rawData.length}\r`)
         }
       } catch (error) {
-        console.error(`❌ Error processing ${item.Symbol || item.symbol || 'unknown'}:`, error)
+        console.error(`Error processing ${item?.Symbol || item?.symbol || 'unknown'}:`, error)
         errors++
       }
     }
 
-    console.log(`\n✅ Database sync completed!`)
-    console.log(`   ✨ Created: ${created}`)
-    console.log(`   🔄 Updated: ${updated}`)
-    console.log(`   ❌ Errors: ${errors}`)
-    console.log(`   📊 Total: ${rawData.length}\n`)
+    console.log(`\nDatabase sync completed!`)
+    console.log(`   Created: ${created}`)
+    console.log(`   Updated: ${updated}`)
+    console.log(`   Errors: ${errors}`)
+    console.log(`   Total: ${rawData.length}\n`)
 
-    // Verify sync
     const totalInDb = await prisma.instrument.count()
-    console.log(`📊 Total instruments in database: ${totalInDb}`)
+    console.log(`Total instruments in database: ${totalInDb}`)
 
-    const byCategory = await prisma.instrument.groupBy({
-      by: ['category'],
-      _count: true,
-    })
-
-    console.log('\n📈 Instruments by category:')
+    const byCategory = await prisma.instrument.groupBy({ by: ['category'], _count: true })
+    console.log('\nInstruments by category:')
     byCategory.forEach(cat => {
       console.log(`   ${cat.category}: ${cat._count}`)
     })
 
-    console.log('\n🎉 Sync completed successfully!\n')
+    console.log('\nSync completed successfully!\n')
   } catch (error) {
-    console.error('\n❌ Sync failed:', error)
+    console.error('\nSync failed:', error)
     if (error instanceof Error) {
       console.error('Error details:', error.message)
     }
@@ -185,7 +157,4 @@ async function syncInstruments() {
 
 // Run the sync
 syncInstruments()
-
-
-
 

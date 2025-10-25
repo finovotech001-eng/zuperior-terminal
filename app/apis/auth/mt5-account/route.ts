@@ -37,6 +37,21 @@ export async function GET(_request: NextRequest) {
       );
     }
 
+    // Find default account for user (if any). Guard for cases where
+    // Prisma Client hasn't been regenerated yet and model isn't present.
+    let defaultRow: { mt5AccountId: string } | null = null;
+    const anyPrisma = prisma as any;
+    if (anyPrisma?.defaultMT5Account?.findUnique) {
+      try {
+        defaultRow = await anyPrisma.defaultMT5Account.findUnique({
+          where: { userId },
+          select: { mt5AccountId: true },
+        });
+      } catch {
+        defaultRow = null;
+      }
+    }
+
     // Format accounts with # prefix and return all
     const formattedAccounts = mt5Accounts.map(account => ({
       id: account.id,
@@ -45,13 +60,17 @@ export async function GET(_request: NextRequest) {
       linkedAt: account.createdAt
     }));
 
+    // Determine default: DB default if exists; fallback to first
+    const fallbackDefault = formattedAccounts[0]?.accountId;
+    const defaultAccountId = defaultRow?.mt5AccountId || fallbackDefault;
+
     // Return all MT5 accounts
     return NextResponse.json(
       {
         success: true,
         data: {
           accounts: formattedAccounts,
-          defaultAccountId: formattedAccounts[0].accountId, // First account as default
+          defaultAccountId,
           totalAccounts: formattedAccounts.length
         }
       },

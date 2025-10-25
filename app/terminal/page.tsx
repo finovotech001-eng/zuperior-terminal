@@ -37,9 +37,11 @@ import { Toggle } from "@/components/ui/toggle"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useWebSocketConnection } from "@/hooks/useWebSocket"
+import { usePositionsSignalR } from "@/hooks/usePositionsSSE"
 import { 
   instrumentsAtom, 
   positionsIsCollapsedAtom,
+  positionsActiveTabAtom,
   openTabsAtom,
   activeTabIdAtom,
   addTabAtom,
@@ -94,24 +96,6 @@ const initialBalanceData: BalanceData = {
   name: 'Test Account',
   accountGroup: 'Standard',
 }
-// Mock positions data (rest remains the same)
-const mockOpenPositions: Position[] = [
-  {
-    id: "1",
-    symbol: "XAU/USD",
-    countryCode: "US",
-    type: "Sell",
-    volume: 1,
-    openPrice: 4362.406,
-    currentPrice: 4346.564,
-    takeProfit: undefined,
-    stopLoss: undefined,
-    position: "148849313",
-    openTime: "Oct 17, 5:21:25 AM",
-    swap: 0,
-    pnl: 1584.2,
-  },
-]
 
 // Mock polling hook (Retained for fallback/testing)
 function useMockBalancePolling(initialData: BalanceData): BalanceData {
@@ -308,6 +292,23 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
   }, [accountIds, fetchAccountBalance]); // Include missing dependencies
 
   return { balances, isLoading, errors };
+}
+
+// Helper function to format date from ISO string
+function formatPositionTime(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  } catch {
+    return isoString;
+  }
 }
 // Mock data for economic calendar
 const mockCalendarEvents: EventsByDate[] = [
@@ -606,14 +607,7 @@ function TerminalContent() {
   // Initialize WebSocket connection for real-time market data
   const { isConnected: wsConnected, isConnecting: wsConnecting, error: wsError } = useWebSocketConnection()
   
-  const [leftPanelView, setLeftPanelView] = React.useState<LeftPanelView>("instruments")
-  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = React.useState(false)
-  const [activeInstrumentTab, setActiveInstrumentTab] = React.useState("eurusd")
-  // State for MT5 accounts and selected account
-  const [mt5Accounts, setMt5Accounts] = React.useState<MT5Account[]>([]);
-  // const [isLoadingAccounts, setIsLoadingAccounts] = React.useState(true);
-
-  // Initialize account ID from localStorage or use default (first account)
+  // Initialize account ID state first
   const [currentAccountId, setCurrentAccountId] = React.useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem("accountId") || null;
@@ -621,11 +615,34 @@ function TerminalContent() {
     return null;
   });
 
-  // Effect to handle account ID changes
+  // Initialize SignalR positions connection
+  const { 
+    positions: signalRPositions, 
+    isConnected: positionsConnected, 
+    isConnecting: positionsConnecting,
+    error: positionsError,
+    reconnect: positionsReconnect, // available if needed, but not auto-called
+  } = usePositionsSignalR({
+    accountId: currentAccountId,
+    enabled: true
+  });
+  
+  const [leftPanelView, setLeftPanelView] = React.useState<LeftPanelView>("instruments")
+  const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = React.useState(false)
+  const [activeInstrumentTab, setActiveInstrumentTab] = React.useState("eurusd")
+  // State for MT5 accounts and selected account
+  const [mt5Accounts, setMt5Accounts] = React.useState<MT5Account[]>([]);
+
+  // Persist selection locally and to server as default
   React.useEffect(() => {
-    if (currentAccountId) {
-      localStorage.setItem("accountId", currentAccountId);
-    }
+    if (!currentAccountId) return;
+    localStorage.setItem("accountId", currentAccountId);
+    // Fire-and-forget server persistence; ignore errors
+    fetch('/apis/auth/mt5-default', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId: currentAccountId })
+    }).catch(() => {})
   }, [currentAccountId]);
 
   // Fetch MT5 accounts on component mount
@@ -639,9 +656,10 @@ function TerminalContent() {
           if (data.success && data.data.accounts) {
             setMt5Accounts(data.data.accounts);
 
-            // If no account is selected, use the first one as default
+            // If no account is selected, use server default if present, else first
             if (!currentAccountId && data.data.accounts.length > 0) {
-              setCurrentAccountId(data.data.accounts[0].accountId);
+              const serverDefault = data.data.defaultAccountId as string | undefined;
+              setCurrentAccountId(serverDefault || data.data.accounts[0].accountId);
             }
           }
         }
@@ -747,6 +765,7 @@ function TerminalContent() {
   // const displayTotalPL = formatBalanceDisplay(balanceData.totalPL);
   const [instruments, setInstruments] = useAtom(instrumentsAtom)
   const [isPositionsCollapsed] = useAtom(positionsIsCollapsedAtom)
+  const [activePositionsTab, setActivePositionsTab] = useAtom(positionsActiveTabAtom)
 
   // NEW STATE for loading status and total count (Chunking/Batching state)
   const [totalSymbolsCount, setTotalSymbolsCount] = React.useState(0);
@@ -971,10 +990,75 @@ function TerminalContent() {
   }, [instruments, activeInstrumentTab]);
   // --- END DERIVED SELECTED INSTRUMENT DATA ---
 
-  // Get selected MT5 account
-  // const selectedAccount = React.useMemo(() => {
-  //   return mt5Accounts.find(account => account.accountId === currentAccountId);
-  // }, [mt5Accounts, currentAccountId]);
+  // Convert SignalR positions to Position format for the table
+  const formattedPositions = React.useMemo((): Position[] => {
+    return signalRPositions.map(pos => ({
+      id: pos.id,
+      symbol: pos.symbol,
+      countryCode: undefined, // Will be derived from symbol if needed
+      icon: undefined,
+      type: pos.type,
+      volume: pos.volume,
+      openPrice: pos.openPrice,
+      currentPrice: pos.currentPrice,
+      takeProfit: pos.takeProfit,
+      stopLoss: pos.stopLoss,
+      position: pos.ticket.toString(),
+      openTime: formatPositionTime(pos.openTime),
+      swap: pos.swap,
+      pnl: pos.profit,
+    }));
+  }, [signalRPositions]);
+
+  // Live Total P/L from current open positions (sum of live profits)
+  const liveTotalPL = React.useMemo(() => {
+    try {
+      return signalRPositions.reduce((sum, p) => sum + (Number(p.profit) || 0), 0);
+    } catch {
+      return 0;
+    }
+  }, [signalRPositions]);
+  
+  // Ensure Open tab is active when positions arrive and log samples
+  React.useEffect(() => {
+    if (signalRPositions.length > 0) {
+      console.log('[Positions][RAW sample]', signalRPositions.slice(0, 3))
+      console.log('[Positions][FORMATTED sample]', formattedPositions.slice(0, 3))
+      if (activePositionsTab !== 'open') {
+        setActivePositionsTab('open')
+      }
+    }
+  }, [signalRPositions, formattedPositions, activePositionsTab, setActivePositionsTab])
+
+  // When switching account, reset the active positions tab to Open
+  React.useEffect(() => {
+    if (currentAccountId && activePositionsTab !== 'open') {
+      setActivePositionsTab('open')
+    }
+  }, [currentAccountId, activePositionsTab, setActivePositionsTab])
+
+  // Log account switches; hook reacts to accountId change internally
+  React.useEffect(() => {
+    if (currentAccountId) {
+      console.log('[Positions] Switching account', currentAccountId)
+    }
+  }, [currentAccountId])
+
+  // Note: reconnect is handled inside the hook when accountId changes.
+  // Avoid calling reconnect here to prevent double connections.
+
+  // Log positions status for debugging
+  React.useEffect(() => {
+    if (positionsError) {
+      console.error('❌ Positions Error:', positionsError);
+    }
+    if (positionsConnected) {
+      console.log('✅ Positions Connected. Count:', formattedPositions.length);
+    }
+    if (positionsConnecting) {
+      console.log('🔄 Positions Connecting...');
+    }
+  }, [positionsConnected, positionsConnecting, positionsError, formattedPositions.length]);
 
 
   // Sidebar items definition (left as is)
@@ -1534,7 +1618,8 @@ function TerminalContent() {
                   />
                 )}
                 <PositionsTable
-                  openPositions={mockOpenPositions}
+                  key={currentAccountId || 'no-account'}
+                  openPositions={formattedPositions}
                   pendingPositions={[]}
                   closedPositions={[]}
                   onClose={(id) => console.log("Close position:", id)}
@@ -1609,8 +1694,11 @@ function TerminalContent() {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Total P/L, USD:</span>
-                <span className="text-sm font-semibold text-success price-font">
-                  {hideBalance ? "••••••" : `${balanceData.totalPL.toFixed(2)} USD`}
+                <span className={cn(
+                  "text-sm font-semibold price-font",
+                  liveTotalPL >= 0 ? "text-success" : "text-danger"
+                )}>
+                  {hideBalance ? "••••••" : `${liveTotalPL.toFixed(2)} USD`}
                 </span>
               </div>
               <Popover>
@@ -1641,4 +1729,3 @@ function TerminalContent() {
     </div>
   )
 }
-

@@ -43,6 +43,3 @@ async function checkSymbols() {
 
 checkSymbols()
 
-
-
-

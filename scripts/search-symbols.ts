@@ -29,7 +29,3 @@ async function searchSymbols() {
 
 searchSymbols()
 
-
-
-
-
