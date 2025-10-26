@@ -12,9 +12,10 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({} as any))
-    const { side, accountId, symbol, volume, price, stopLoss, takeProfit, comment, orderType } = body || {}
-    if (!side || !accountId || !symbol || typeof volume !== 'number' || typeof price !== 'number') {
-      return NextResponse.json({ success: false, message: 'Missing required fields (side, accountId, symbol, volume, price)' }, { status: 400 })
+    const merged = { ...(body || {}), ...(body?.order || {}) }
+    const { side, accountId, symbol, volume, price, stopLoss, takeProfit, comment, orderType } = merged || {}
+    if (!side || !accountId || !symbol || typeof volume !== 'number') {
+      return NextResponse.json({ success: false, message: 'Missing required fields (side, accountId, symbol, volume)' }, { status: 400 })
     }
 
     // Verify user owns the account; get password for token fetch
@@ -47,49 +48,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'No access token received' }, { status: 502 })
     }
 
-    // Build upstream request
-    const path = side.toLowerCase() === 'sell' ? 'trade-sell' : 'trade'
+    // Build upstream request: use trade-sell for sell or sell-* orders
+    const sideText = String(side || '').toLowerCase()
+    const orderTypeText = String(orderType || '').toLowerCase()
+    const isSell = sideText === 'sell' || orderTypeText.startsWith('sell')
+    const path = isSell ? 'trade-sell' : 'trade'
     const url = `${API_BASE}/client/${path}?account_id=${encodeURIComponent(mt5.accountId)}`
 
-    // Normalize symbol: lowercase and remove slash (EUR/USD -> eurusd)
-    let normalizedSymbol = String(symbol).toLowerCase().replace('/', '')
+    // Use symbol exactly as received
+    const rawSymbol = String(symbol)
 
-    // Try to map to an exact tradable symbol from /api/Symbols (handles suffixes like 'm')
-    try {
-      const symRes = await fetch(`${API_BASE}/Symbols`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      })
-      if (symRes.ok) {
-        const txt = await symRes.text().catch(() => '')
-        let json: any = null
-        try { json = txt ? JSON.parse(txt) : null } catch { json = null }
-        const list: any[] = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : [])
-        if (Array.isArray(list) && list.length) {
-          const toLower = (v: any) => (typeof v === 'string' ? v.toLowerCase() : '')
-          const extractName = (it: any) => toLower(it?.Symbol ?? it?.symbol ?? it?.Name ?? it?.name ?? it?.Code ?? it?.code)
-          const names = list.map(extractName).filter(Boolean)
-          const exact = names.find(n => n === normalizedSymbol)
-          const withM = names.find(n => n === `${normalizedSymbol}m`)
-          const alt = names.find(n => n.replace('/', '') === normalizedSymbol)
-          if (exact) normalizedSymbol = exact
-          else if (withM) normalizedSymbol = withM
-          else if (alt) normalizedSymbol = alt
-        }
-      }
-    } catch {}
-    const isMarket = (String(orderType || '').toLowerCase() === 'market' || !orderType)
-    const sentPrice = isMarket ? 0 : Number(price)
+    // Price rules: if no later/limit price chosen, send 0
+    const isMarket = (orderTypeText === 'market' || !orderTypeText)
+    const sentPrice = isMarket || !price || Number(price) <= 0 ? 0 : Number(price)
+
+    // Volume must be multiplied by 100
+    const scaledVolume = Math.round(Number(volume) * 100)
+
+    // SL/TP: if not chosen -> 0; if chosen -> use value as provided (no scaling)
+    const hasSL = stopLoss !== undefined && stopLoss !== null && Number(stopLoss) > 0
+    const hasTP = takeProfit !== undefined && takeProfit !== null && Number(takeProfit) > 0
+    const slValue = hasSL ? Number(stopLoss) : 0
+    const tpValue = hasTP ? Number(takeProfit) : 0
+
+    // Comment: default to Buy/Sell if not provided
+    const finalComment = comment !== undefined ? String(comment) : (isSell ? 'Sell' : 'Buy')
 
     const upstreamBody: any = {
-      Symbol: normalizedSymbol,
-      Volume: Math.round(volume * 10000),
-      // For market orders MT5 expects Price=0 (server executes at market)
-      Price: sentPrice,
+      symbol: rawSymbol,
+      volume: scaledVolume,
+      price: sentPrice,
+      stopLoss: slValue,
+      takeProfit: tpValue,
+      comment: finalComment,
     }
-    if (stopLoss !== undefined) upstreamBody.StopLoss = Number(stopLoss)
-    if (takeProfit !== undefined) upstreamBody.TakeProfit = Number(takeProfit)
-    if (comment !== undefined) upstreamBody.Comment = String(comment)
 
     const upstream = await fetch(url, {
       method: 'POST',
@@ -100,7 +92,7 @@ export async function POST(req: NextRequest) {
     let data: any = null
     try { data = text ? JSON.parse(text) : null } catch { data = text }
     // Attach minimal debug (no secrets)
-    const debug = { normalizedSymbol, sentPrice, isMarket, accountId: mt5.accountId, endpoint: url, body: upstreamBody }
+    const debug = { symbol: rawSymbol, sentPrice, isMarket, accountId: mt5.accountId, endpoint: url, body: upstreamBody }
     const payload = (data && typeof data === 'object') ? { ...data, debug } : { success: upstream.ok, data, debug }
     return NextResponse.json(payload, { status: upstream.status })
   } catch (e) {

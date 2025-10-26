@@ -125,7 +125,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         onClick={() => onSell?.({
           orderType,
           volume: parseFloat(volume),
-          openPrice: openPrice ? parseFloat(openPrice) : currentSellPrice
+          openPrice: openPrice ? parseFloat(openPrice) : currentSellPrice,
+          stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
+          takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
         })}
         className="rounded-md p-3 bg-[#FF5555] hover:bg-[#FF5555]/90 transition-colors cursor-pointer text-left"
       >
@@ -142,7 +144,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         onClick={() => onBuy?.({
           orderType,
           volume: parseFloat(volume),
-          openPrice: openPrice ? parseFloat(openPrice) : currentBuyPrice
+          openPrice: openPrice ? parseFloat(openPrice) : currentBuyPrice,
+          stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
+          takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
         })}
         className="rounded-md p-3 bg-[#4A9EFF] hover:bg-[#4A9EFF]/90 transition-colors cursor-pointer text-right"
       >
@@ -169,7 +173,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         onClick={() => onSell?.({
           orderType,
           volume: parseFloat(volume),
-          openPrice: openPrice ? parseFloat(openPrice) : currentSellPrice
+          openPrice: openPrice ? parseFloat(openPrice) : currentSellPrice,
+          stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
+          takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
         })}
         className="rounded-md p-3 border-2 border-[#FF5555] bg-transparent hover:bg-[#FF5555]/10 transition-colors cursor-pointer text-left"
       >
@@ -186,7 +192,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         onClick={() => onBuy?.({
           orderType,
           volume: parseFloat(volume),
-          openPrice: openPrice ? parseFloat(openPrice) : currentBuyPrice
+          openPrice: openPrice ? parseFloat(openPrice) : currentBuyPrice,
+          stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
+          takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
         })}
         className="rounded-md p-3 border-2 border-[#4A9EFF] bg-transparent hover:bg-[#4A9EFF]/10 transition-colors cursor-pointer text-right"
       >

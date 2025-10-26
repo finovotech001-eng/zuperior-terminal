@@ -4,7 +4,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const EXTERNAL_API_BASE_URL = 'http://18.130.5.209:5003/api/client';
 
-
 interface CloseData {
   Volume?: number;
   Price?: number;
@@ -29,7 +28,7 @@ async function proxyRequest(
     );
   }
 
-  console.log(`[ProxyRequest] → ${method} ${url}`);
+  console.log(`[ProxyRequest] ${method} ${url}`);
   if (body) console.log('[ProxyRequest] Body:', body);
 
   try {
@@ -37,7 +36,7 @@ async function proxyRequest(
       method: method,
       headers: {
         'Content-Type': 'application/json',
-        ...(authToken && { 'Authorization': authToken }),
+        ...(authToken && { Authorization: authToken }),
       },
       ...(body && { body: JSON.stringify(body) }),
     };
@@ -45,7 +44,7 @@ async function proxyRequest(
     const response = await fetch(url, fetchOptions);
     const data = await response.json();
 
-    console.log(`[ProxyResponse] ← Status: ${response.status}`);
+    console.log(`[ProxyResponse] Status: ${response.status}`);
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error(`[ProxyRequest Error] ${method} ${url}:`, error);
@@ -59,7 +58,7 @@ async function proxyRequest(
 // --- Route Handlers ---
 
 export async function POST(request: NextRequest) {
-  console.log('💡 [API HIT] POST /api/trading');
+  console.log('[API HIT] POST /api/trading');
 
   try {
     const authToken = request.headers.get('Authorization');
@@ -68,25 +67,70 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ Success: false, Message: 'Authorization token is missing.' }, { status: 401 });
     }
 
-    const { orderType, accountId, ...orderData } = await request.json();
+    const body = await request.json();
+    const merged = { ...(body || {}), ...(body?.order || {}) } as Record<string, unknown>;
+    const {
+      orderType,
+      side,
+      accountId,
+      symbol,
+      volume,
+      price,
+      stopLoss,
+      takeProfit,
+      comment,
+    } = merged as {
+      orderType?: string;
+      side?: string;
+      accountId?: string | number;
+      symbol?: string;
+      volume?: number;
+      price?: number;
+      stopLoss?: number;
+      takeProfit?: number;
+      comment?: string;
+    };
 
-    console.log(`[Trade Request] Type: ${orderType}, Account: ${accountId}`);
+    const sideText = (side || '').toString().toLowerCase();
+    const orderTypeText = (orderType || '').toString().toLowerCase();
+    const isSell = sideText === 'sell' || orderTypeText.startsWith('sell');
+    const effectiveSide = isSell ? 'sell' : (sideText || orderTypeText || 'buy');
+    console.log(`[Trade Request] Side: ${effectiveSide} (raw: side=${sideText}, orderType=${orderTypeText}), Account: ${accountId}`);
 
-    if (!accountId) {
-      return NextResponse.json({ Success: false, Message: 'Missing accountId for trade operation.' }, { status: 400 });
+    if (!accountId || !symbol || typeof volume !== 'number') {
+      return NextResponse.json(
+        { Success: false, Message: 'Missing required fields (accountId, symbol, volume).' },
+        { status: 400 }
+      );
     }
 
-    let endpoint = '';
-    if (orderType === 'BUY') {
-      endpoint = `trade?account_id=${accountId}`;
-    } else if (orderType === 'SELL') {
-      endpoint = `trade-sell?account_id=${accountId}`;
-    } else {
-      console.warn('[Validation Warning] Invalid orderType received:', orderType);
-      return NextResponse.json({ Success: false, Message: 'Invalid orderType specified.' }, { status: 400 });
-    }
+    const path = effectiveSide === 'sell' ? 'trade-sell' : 'trade';
+    const endpoint = `${path}?account_id=${accountId}`;
 
-    return proxyRequest(endpoint, 'POST', orderData, authToken);
+    // Market vs limit: if market or no price, send 0
+    const isMarket = orderTypeText === 'market' || !orderTypeText;
+    const sentPrice = isMarket || !price || Number(price) <= 0 ? 0 : Number(price);
+
+    // Scaling rules per spec
+    const scaledVolume = Math.round(Number(volume) * 100);
+    const hasSL = stopLoss !== undefined && stopLoss !== null && Number(stopLoss) > 0;
+    const hasTP = takeProfit !== undefined && takeProfit !== null && Number(takeProfit) > 0;
+    const slValue = hasSL ? Number(stopLoss) : 0;
+    const tpValue = hasTP ? Number(takeProfit) : 0;
+
+    const finalComment = comment !== undefined ? String(comment) : (isSell ? 'Sell' : 'Buy');
+
+    const transformed = {
+      symbol: String(symbol),
+      volume: scaledVolume,
+      price: sentPrice,
+      stopLoss: slValue,
+      takeProfit: tpValue,
+      comment: finalComment,
+    };
+
+    console.log('[Transformed Order]', transformed);
+    return proxyRequest(endpoint, 'POST', transformed as Record<string, unknown>, authToken);
   } catch (error) {
     console.error('[POST Error] Invalid request body:', error);
     return NextResponse.json({ Success: false, Error: `Invalid POST request body: ${error}` }, { status: 400 });
@@ -94,7 +138,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  console.log('💡 [API HIT] DELETE /api/trading');
+  console.log('[API HIT] DELETE /api/trading');
 
   try {
     const authToken = request.headers.get('Authorization');
@@ -103,7 +147,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ Success: false, Message: 'Authorization token is missing.' }, { status: 401 });
     }
 
-    const { positionId, ...closeData } = await request.json() as CloseData & { positionId: number | string };
+    const { positionId, ...closeData } = (await request.json()) as CloseData & { positionId: number | string };
 
     console.log(`[Close Request] Position ID: ${positionId}`);
 
@@ -112,7 +156,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const endpoint = `position/${positionId}`;
-    return proxyRequest(endpoint, 'DELETE', closeData, authToken);
+    return proxyRequest(endpoint, 'DELETE', closeData as Record<string, unknown>, authToken);
   } catch (error) {
     console.error('[DELETE Error] Invalid request body:', error);
     return NextResponse.json({ Success: false, Error: `Invalid DELETE request body: ${error}` }, { status: 400 });
