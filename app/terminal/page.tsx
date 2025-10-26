@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import * as React from "react"
 import { useMemo } from "react"
@@ -68,7 +68,7 @@ const BACKGROUND_CHUNK_SIZE = 500;
 
 
 
-// Ã°Å¸Å¡â‚¬ UPDATED TYPE DEFINITION for Account Balance
+// ðŸš€ UPDATED TYPE DEFINITION for Account Balance
 interface BalanceData {
   balance: number;
   equity: number;
@@ -83,7 +83,7 @@ interface BalanceData {
   accountGroup: string;
 }
 
-// Ã°Å¸Å¡â‚¬ INITIAL STATE & MOCK DATA (Retained for fallback)
+// ðŸš€ INITIAL STATE & MOCK DATA (Retained for fallback)
 const initialBalanceData: BalanceData = {
   balance: 0,
   equity: 0,
@@ -646,7 +646,7 @@ function TerminalContent() {
 
   // Persist selection locally and to server as default
   React.useEffect(() => {
-    if (!currentAccountId) return;
+    if (!currentAccountId) { console.warn('[Close] No currentAccountId set; aborting'); return; }
     localStorage.setItem("accountId", currentAccountId);
     // Fire-and-forget server persistence; ignore errors
     fetch('/apis/auth/mt5-default', {
@@ -683,14 +683,14 @@ function TerminalContent() {
   }, []);
   const [instrumentTabs, setInstrumentTabs] = React.useState<InstrumentTab[]>([
     { id: "eurusd", symbol: "EUR/USD", countryCode: "EU" },
-    { id: "btc", symbol: "BTC", icon: <span className="text-base">Ã¢â€šÂ¿</span> },
+    { id: "btc", symbol: "BTC", icon: <span className="text-base">â‚¿</span> },
     { id: "us500", symbol: "US500", countryCode: "US" },
     { id: "xauusd", symbol: "XAU/USD", countryCode: "US" },
-    { id: "aapl", symbol: "AAPL", icon: <span className="text-base">Ã°Å¸ÂÅ½</span> },
+    { id: "aapl", symbol: "AAPL", icon: <span className="text-base">ðŸŽ</span> },
   ])
   const [hideBalance, setHideBalance] = React.useState(false)
-  // Ã°Å¸â€™Â¥ FIX: Define the missing state for the right panel
-  // const [activePanel, setActivePanel] = React.useState<"order" | "settings" | "calendar">("order"); // Ã¢Â¬â€¦Ã¯Â¸Â NEW STATE DEFINITION
+  // ðŸ’¥ FIX: Define the missing state for the right panel
+  // const [activePanel, setActivePanel] = React.useState<"order" | "settings" | "calendar">("order"); // â¬…ï¸ NEW STATE DEFINITION
 
   // Hook for multiple account balances
   const accountIds = useMemo(() => mt5Accounts.map(account => account.accountId), [mt5Accounts]);
@@ -758,7 +758,7 @@ function TerminalContent() {
       : balanceError
         ? "Error"
         : hideBalance
-          ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢"
+          ? "â€¢â€¢â€¢â€¢â€¢â€¢"
           : formatCurrency(value, 2);
 
   // const displayEquity = formatBalanceDisplay(balanceData.equity);
@@ -770,7 +770,7 @@ function TerminalContent() {
   //   : balanceError
   //     ? "Error"
   //     : hideBalance
-  //       ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢"
+  //       ? "â€¢â€¢â€¢â€¢â€¢â€¢"
   //       : `${balanceData.marginLevel.toFixed(2)} %`;
 
   // const displayTotalPL = formatBalanceDisplay(balanceData.totalPL);
@@ -997,12 +997,20 @@ function TerminalContent() {
 
   // Convert SignalR positions to Position format for the table
   const formattedPositions = React.useMemo((): Position[] => {
-    // Map incoming live positions to table rows - use the ID already provided by the position
+    console.log('🔄 [Format] Raw signalR positions:', signalRPositions)
+    console.log('🔄 [Format] Count:', signalRPositions.length)
+    
+    // Map incoming live positions to table rows - USE TICKET AS ID!
     const rows = signalRPositions.map((pos): Position => {
-      // Use the ID from the position object directly (already formatted by SSE/SignalR hook)
-      const posId = pos.id
+      // Use ticket number as the ID for reliable closing
+      const ticketNum = pos.ticket && pos.ticket > 0 ? pos.ticket : 0;
+      const posId = ticketNum > 0 ? `ticket-${ticketNum}` : pos.id;
+      
+      console.log(`🔄 [Format] Mapping position: ticket=${ticketNum}, id=${posId}, symbol=${pos.symbol}`)
+      
       return {
-        id: posId,
+        id: posId,  // Use ticket-based ID
+        ticket: ticketNum,
         symbol: pos.symbol,
         countryCode: undefined,
         icon: undefined,
@@ -1012,7 +1020,7 @@ function TerminalContent() {
         currentPrice: pos.currentPrice,
         takeProfit: pos.takeProfit,
         stopLoss: pos.stopLoss,
-        position: (pos.ticket && pos.ticket > 0 ? pos.ticket : posId).toString(),
+        position: ticketNum > 0 ? ticketNum.toString() : posId,
         openTime: formatPositionTime(pos.openTime),
         swap: pos.swap,
         pnl: pos.profit,
@@ -1021,7 +1029,9 @@ function TerminalContent() {
     // Deduplicate by id to avoid React key collisions if backend sends duplicates
     const byId = new Map<string, Position>()
     rows.forEach(r => byId.set(r.id, r))
-    return Array.from(byId.values())
+    const result = Array.from(byId.values())
+    console.log('✅ [Format] Final formatted positions:', result)
+    return result
   }, [signalRPositions]);
 
   // Map from row id to numeric ticket for reliable close calls
@@ -1054,7 +1064,8 @@ function TerminalContent() {
     
     
     const match = signalRPositions.find(p => {
-      const ticketNum = Number(p.ticket)
+      const rawTicket = p.PositionId ?? p.PositionID ?? p.Ticket ?? p.ticket ?? p.Position ?? p.position ?? p.Order ?? p.OrderId ?? p.id ?? p.Id
+      const ticketNum = Number(rawTicket)
       if (!ticketNum || ticketNum <= 0) return false
       if (p.symbol !== sym) return false
       if (Math.abs(Number(p.volume) - vol) > 1e-4) return false // Increased tolerance
@@ -1063,10 +1074,11 @@ function TerminalContent() {
     })
     
     if (match) {
-    } else {
+      const rawTicket = match.PositionId ?? match.PositionID ?? match.Ticket ?? match.ticket ?? match.Position ?? match.position ?? match.Order ?? match.OrderId ?? match.id ?? match.Id
+      return Number(rawTicket) || null
     }
     
-    return match ? Number(match.ticket) : null
+    return null
   }, [formattedPositions, signalRPositions])
 
   // Live Total P/L from current open positions (sum of live profits)
@@ -1084,7 +1096,7 @@ function TerminalContent() {
     return bal + liveTotalPL;
   }, [balanceData.balance, liveTotalPL]);
 
-  // Closed trades (history) Ã¢â‚¬â€œ default period 'month'
+  // Closed trades (history) â€“ default period 'month'
   const { closedPositions, isLoading: closedLoading } = useTradeHistory({ accountId: currentAccountId, period: 'month', enabled: true })
   
   // Debug samples (non-intrusive)
@@ -1095,7 +1107,7 @@ function TerminalContent() {
       // Check for positions without valid tickets
       const noTickets = signalRPositions.filter(p => !p.ticket || p.ticket <= 0)
       if (noTickets.length > 0) {
-        console.warn('Ã¢Å¡Â Ã¯Â¸Â [Positions] Found', noTickets.length, 'positions without valid tickets:', noTickets.map(p => ({ id: p.id, symbol: p.symbol })))
+        console.warn('âš ï¸ [Positions] Found', noTickets.length, 'positions without valid tickets:', noTickets.map(p => ({ id: p.id, symbol: p.symbol })))
       }
     }
   }, [signalRPositions, formattedPositions])
@@ -1113,13 +1125,13 @@ function TerminalContent() {
   // Log positions status for debugging
   React.useEffect(() => {
     if (positionsError) {
-      console.error('Ã¢ÂÅ’ Positions Error:', positionsError);
+      console.error('âŒ Positions Error:', positionsError);
     }
     if (positionsConnected) {
-      console.log('Ã¢Å“â€¦ Positions Connected. Count:', formattedPositions.length);
+      console.log('âœ… Positions Connected. Count:', formattedPositions.length);
     }
     if (positionsConnecting) {
-      console.log('Ã°Å¸â€â€ž Positions Connecting...');
+      console.log('ðŸ”„ Positions Connecting...');
     }
   }, [positionsConnected, positionsConnecting, positionsError, formattedPositions.length]);
 
@@ -1218,11 +1230,11 @@ function TerminalContent() {
   }, [openTabs, activeTabId])
   const handleBuy = async (data: OrderData) => {
       try {
-        // Ã¢Å“â€¦ Build the payload using the current active instrument
+        // âœ… Build the payload using the current active instrument
         const order = {
           symbol: selectedInstrument.symbol,
           side: "buy" as const,
-          volume: data.volume, // Ã¢Â¬â€¦Ã¯Â¸Â UPDATED: Volume is multiplied by 100
+          volume: data.volume, // â¬…ï¸ UPDATED: Volume is multiplied by 100
           orderType: data.orderType,
           openPrice: data.openPrice,
           stopLoss: data.stopLoss,
@@ -1231,25 +1243,25 @@ function TerminalContent() {
           price: data.openPrice || selectedInstrument.ask || 0,
         };
 
-        console.log("Ã°Å¸â€œÂ¤ Sending BUY order:", order);
+        console.log("ðŸ“¤ Sending BUY order:", order);
 
         const response = await placeMarketOrder(order);
 
-        console.log("Ã¢Å“â€¦ Buy Order Success:", response);
-        alert(`Buy Order Placed Successfully for ${order.symbol}!`);
+        console.log("âœ… Buy Order Success:", response);
+        console.log(`[Order] Buy placed for ${order.symbol}`);
       } catch (error) {
-        console.error("Ã¢ÂÅ’ Buy Order Failed:", error);
-        alert(`Buy Order Failed for ${selectedInstrument.symbol}! Check console.`);
+        console.error("âŒ Buy Order Failed:", error);
+        console.error(`[Order] Buy failed for ${selectedInstrument.symbol}. Check console for details.`);
       }
     };
 
     const handleSell = async (data: OrderData) => {
       try {
-        // Ã¢Å“â€¦ Build the payload with all required fields for backend
+        // âœ… Build the payload with all required fields for backend
         const order = {
           symbol: selectedInstrument.symbol,
           side: "sell" as const,
-          volume: data.volume, // Ã¢Â¬â€¦Ã¯Â¸Â UPDATED: Volume is multiplied by 100
+          volume: data.volume, // â¬…ï¸ UPDATED: Volume is multiplied by 100
           orderType: data.orderType,
           openPrice: data.openPrice,
           stopLoss: data.stopLoss,
@@ -1258,16 +1270,16 @@ function TerminalContent() {
           price: data.openPrice || selectedInstrument.bid || 0,
         };
 
-        console.log("Ã°Å¸â€œÂ¤ Sending SELL order:", order);
+        console.log("ðŸ“¤ Sending SELL order:", order);
 
-        // Ã¢Å“â€¦ Call your API proxy
+        // âœ… Call your API proxy
         const response = await placeMarketOrder(order);
 
-        console.log("Ã¢Å“â€¦ Sell Order Success:", response);
-        alert(`Sell Order Placed Successfully for ${order.symbol}!`);
+        console.log("âœ… Sell Order Success:", response);
+        console.log(`[Order] Sell placed for ${order.symbol}`);
       } catch (error) {
-        console.error("Ã¢ÂÅ’ Sell Order Failed:", error);
-        alert(`Sell Order Failed for ${selectedInstrument.symbol}! Check console.`);
+        console.error("âŒ Sell Order Failed:", error);
+        console.error(`[Order] Sell failed for ${selectedInstrument.symbol}. Check console for details.`);
       }
     };
 
@@ -1375,9 +1387,9 @@ function TerminalContent() {
                       </span>
 
                     </div>
-                    {/* Ã°Å¸Å¡â‚¬ 1A: REAL-TIME EQUITY DISPLAY IN HEADER */}
+                    {/* ðŸš€ 1A: REAL-TIME EQUITY DISPLAY IN HEADER */}
                     <span className="text-sm font-semibold text-success price-font">
-                      {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : formatCurrency(balanceData.equity, 2)} USD
+                      {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.equity, 2)} USD
                     </span>
                   </div>
                   <ChevronDown className="h-4 w-4 text-white/40 group-hover:text-white/60" />
@@ -1401,7 +1413,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Balance</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
-                          {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : formatCurrency(balanceData.balance, 2)} USD
+                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.balance, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1418,7 +1430,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Equity</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-success price-font">
-                          {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : formatCurrency(balanceData.equity, 2)} USD
+                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.equity, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1435,7 +1447,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Margin</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
-                          {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : formatCurrency(balanceData.margin, 2)} USD
+                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.margin, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1452,7 +1464,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Free margin</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
-                          {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : formatCurrency(balanceData.freeMargin, 2)} USD
+                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.freeMargin, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1470,14 +1482,14 @@ function TerminalContent() {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
                           {/* Format margin level as a percentage with 2 decimal places */}
-                          {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : `${balanceData.marginLevel.toFixed(2)} %`}
+                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : `${balanceData.marginLevel.toFixed(2)} %`}
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
                             <Info className="h-3.5 w-3.5 text-white/40" />
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p className="text-xs">Equity / Margin Ãƒâ€” 100%</p>
+                            <p className="text-xs">Equity / Margin Ã— 100%</p>
                           </TooltipContent>
                         </Tooltip>
                       </div>
@@ -1541,7 +1553,7 @@ function TerminalContent() {
                                 : balanceError
                                   ? "Error"
                                   : hideBalance
-                                    ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢"
+                                    ? "â€¢â€¢â€¢â€¢â€¢â€¢"
                                     : `${formatCurrency(balances[account.accountId]?.equity || 0, 2)} USD`
                               }
                             </span>
@@ -1749,154 +1761,56 @@ function TerminalContent() {
                   openPositions={formattedPositions}
                   pendingPositions={[]}
                   closedPositions={closedPositions}
+                  accountId={currentAccountId}
                   onClose={async (id) => {
                     try {
-                      if (!currentAccountId) return;
+                      console.log('[Close] Closing position:', id);
                       
-                      // Try to resolve ticket number from various ID formats
-                      let ticketNum: number = NaN;
-                      
-                      // 1. Check idToTicket map first
-                      if (idToTicket.has(id)) {
-                        ticketNum = idToTicket.get(id)!;
+                      if (!currentAccountId) { 
+                        console.warn('[Close] No account selected');
+                        return; 
                       }
                       
-                      // 2. Try to parse ID directly as a number
-                      if (!Number.isFinite(ticketNum)) {
-                        const directNum = parseInt(id, 10);
-                        if (Number.isFinite(directNum) && directNum > 0) {
-                          ticketNum = directNum;
-                        }
+                      // Extract position ID from the row
+                      const position = formattedPositions.find(p => p.id === id);
+                      
+                      if (!position) {
+                        console.error('[Close] Position not found:', id);
+                        return;
                       }
                       
-                      // 3. Try to extract ticket from "ticket-{number}" or "alt-{number}" format
-                      if (!Number.isFinite(ticketNum)) {
-                        const match = id.match(/^(?:ticket|alt)-(\d+)$/);
-                        if (match) {
-                          const extracted = parseInt(match[1], 10);
-                          if (Number.isFinite(extracted) && extracted > 0) {
-                            ticketNum = extracted;
-                          }
-                        }
+                      if (!position.ticket || position.ticket === 0) {
+                        console.error('[Close] No ticket found:', position);
+                        return;
                       }
                       
-                      // 4. Try to use the 'position' field from formatted positions
-                      if (!Number.isFinite(ticketNum)) {
-                        const row = formattedPositions.find(r => r.id === id);
-                        if (row?.position) {
-                          const posNum = parseInt(row.position, 10);
-                          if (Number.isFinite(posNum) && posNum > 0) {
-                            ticketNum = posNum;
-                            console.log('[Close] Extracted ticket from position field:', ticketNum);
-                          }
-                        }
-                      }
+                      const positionId = position.ticket;
+                      console.log('[Close] Calling close API with position ID:', positionId);
                       
-                      // 5. Try to resolve by matching position fields
-                      if (!Number.isFinite(ticketNum)) {
-                        ticketNum = resolveTicketByFields(id) ?? NaN
-                      }
-                      if (!Number.isFinite(ticketNum)) {
-                        // Fallback: fetch fresh snapshot and resolve by fields
-                        console.log('[Close] Attempting snapshot fallback for id:', id);
-                        try {
-                          const res = await fetch(`/apis/positions/snapshot?accountId=${encodeURIComponent(currentAccountId)}`, { cache: 'no-store' })
-                          console.log('[Close] Snapshot response status:', res.status);
-                          if (res.ok) {
-                            const json = await res.json().catch(() => ({} as any))
-                            console.log('[Close] Snapshot data:', json);
-                            const data = json?.data
-                            // Extract array
-                            let arr: any[] = []
-                            if (Array.isArray(data)) arr = data
-                            else if (Array.isArray(data?.data)) arr = data.data
-                            console.log('[Close] Extracted array length:', arr.length);
-                            if (arr.length > 0) {
-                              console.log('[Close] Sample snapshot item:', arr[0]);
-                            }
-                            // Find row in our table
-                            const row = formattedPositions.find(r => r.id === id)
-                            console.log('[Close] Row to match:', row);
-                            if (row && Array.isArray(arr)) {
-                              // Strategy: narrow by symbol -> by volume -> by open price -> by nearest open time.
-                              const norm = (v: any) => Number(v) || 0
-                              const itemsSym = arr.filter((it: any) => (it.Symbol || it.symbol) === row.symbol)
-                              let candidates = itemsSym
-                              if (candidates.length > 1) {
-                                const targetVol = Number(row.volume)
-                                candidates = candidates.filter((it: any) => Math.abs(norm(it.Volume ?? it.volume)/10000 - targetVol) < 1e-4)
-                              }
-                              if (candidates.length > 1) {
-                                const targetOpen = Number(row.openPrice)
-                                candidates = candidates.filter((it: any) => {
-                                  const o = norm(it.OpenPrice ?? it.PriceOpen ?? it.openPrice ?? it.Price)
-                                  return Math.abs(o - targetOpen) < 1e-3
-                                })
-                              }
-                              let chosen = candidates[0]
-                              if (candidates.length > 1) {
-                                // Pick the one with closest TimeSetup/OpenTime
-                                const targetTime = Date.parse(row.openTime) || 0
-                                chosen = candidates.reduce((best: any, it: any) => {
-                                  const t = Date.parse(it.TimeSetup || it.OpenTime || it.openTime || '') || 0
-                                  const bt = Date.parse(best?.TimeSetup || best?.OpenTime || best?.openTime || '') || 0
-                                  return Math.abs(t - targetTime) < Math.abs(bt - targetTime) ? it : best
-                                }, candidates[0])
-                              }
-                              const cand = chosen ? (chosen.Ticket ?? chosen.ticket ?? chosen.Position ?? chosen.PositionId ?? chosen.PositionID ?? chosen.Order ?? chosen.OrderId ?? chosen.Id ?? chosen.id) : null
-                              console.log('[Close] Chosen candidate:', chosen);
-                              console.log('[Close] Extracted ticket candidate:', cand);
-                              const num = Number(cand)
-                              if (Number.isFinite(num) && num > 0) {
-                                ticketNum = num
-                                console.log('[Close] Ã¢Å“â€¦ Resolved ticket from snapshot:', ticketNum);
-                              } else {
-                                console.warn('[Close] Ã¢Å¡Â Ã¯Â¸Â Snapshot candidate ticket invalid:', cand, 'Number:', num);
-                              }
-                            } else {
-                              console.warn('[Close] Ã¢Å¡Â Ã¯Â¸Â No candidates found in snapshot for this position');
-                            }
-                          } else {
-                            console.warn('[Close] Ã¢Å¡Â Ã¯Â¸Â Snapshot response not OK or no data');
-                          }
-                        } catch (e) {
-                          console.error('[Close] Snapshot fallback error:', e);
-                        }
-                      }
-                      if (!Number.isFinite(ticketNum) || ticketNum <= 0) {
-                        const posDetails = formattedPositions.find(p => p.id === id);
-                        const rawPos = signalRPositions.find(p => p.id === id);
-                        console.error('Ã¢ÂÅ’ Close failed: could not resolve numeric ticket for id', id);
-                        console.error('   Position details:', posDetails);
-                        console.error('   Raw position data:', rawPos);
-                        console.error('   Available tickets:', Array.from(idToTicket.entries()));
-                        console.error('   All raw positions:', signalRPositions);
-                        
-                        // Show user-facing error
-                        alert(`Unable to close position: This position doesn't have a valid ticket number.\n\nPosition: ${posDetails?.symbol || 'Unknown'}\nID: ${id}\n\nPlease refresh the page and try again. If the issue persists, contact support.`);
-                        return
-                      }
-                      console.log('Ã¢Å“â€¦ Closing position with ticket:', ticketNum, 'from id:', id);
-                      const body = {
-                        accountId: currentAccountId,
-                        positionId: ticketNum,
-                        Volume: 1.0,
-                        Price: 0,
-                        Comment: `Full close - ${id}`,
-                      };
+                      // Call close API
                       const res = await fetch('/apis/trading/close', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body),
+                        body: JSON.stringify({
+                          accountId: currentAccountId,
+                          positionId: positionId,
+                          volume: 0
+                        }),
                       });
+                      
                       const json = await res.json();
-                      if (!res.ok) {
-                        console.error('Close failed:', json);
+                      console.log('[Close] API response:', json);
+                      
+                      if (json.success) {
+                        console.log('[Close] Position closed successfully');
+                        // Refresh positions
+                        try { positionsReconnect?.() } catch {}
                       } else {
-                        console.log('Close success:', json);
+                        console.error('[Close] Failed to close position:', json.message || 'Unknown error');
                       }
                     } catch (e) {
-                      console.error('Close error:', e);
+                      console.error('[Close] Unexpected error during close operation:', e);
+                      // Swallow UI alert; log only
                     }
                   }}
                 />
@@ -1922,7 +1836,7 @@ function TerminalContent() {
                     sellPrice={4354.896}
                     buyPrice={4355.056}
                     spread="0.16 USD"
-                    // Ã¢Å“â€¦ PASS THE FUNCTION REFERENCE ONLY, IT WILL RECEIVE THE DATA FROM ORDER PANEL
+                    // ✅ PASS THE FUNCTION REFERENCE ONLY, IT WILL RECEIVE THE DATA FROM ORDER PANEL
                     onBuy={handleBuySubmit}
                     onSell={handleSellSubmit}
                     className="w-full h-full"
@@ -1937,31 +1851,31 @@ function TerminalContent() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Equity:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : `${formatCurrency(liveEquity, 2)} USD`}
+                  {hideBalance ? "••••••" : `${formatCurrency(liveEquity, 2)} USD`}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Free Margin:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : formatCurrency(balanceData.freeMargin, 2)} USD
+                  {hideBalance ? "••••••" : formatCurrency(balanceData.freeMargin, 2)} USD
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Balance:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : formatCurrency(balanceData.balance, 2)} USD
+                  {hideBalance ? "••••••" : formatCurrency(balanceData.balance, 2)} USD
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60"> </span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : formatCurrency(balanceData.margin, 2)} USD
+                  {hideBalance ? "••••••" : formatCurrency(balanceData.margin, 2)} USD
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Margin level:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                    {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : `${balanceData.marginLevel.toFixed(2)} %`}
+                    {hideBalance ? "••••••" : `${balanceData.marginLevel.toFixed(2)} %`}
                 </span>
               </div>
             </div>
@@ -1974,7 +1888,7 @@ function TerminalContent() {
                   "text-sm font-semibold price-font",
                   liveTotalPL >= 0 ? "text-success" : "text-danger"
                 )}>
-                  {hideBalance ? "Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢" : `${liveTotalPL.toFixed(2)} USD`}
+                  {hideBalance ? "••••••" : `${liveTotalPL.toFixed(2)} USD`}
                 </span>
               </div>
               <Popover>
@@ -2005,4 +1919,3 @@ function TerminalContent() {
     </div>
   )
 }
-

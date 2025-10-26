@@ -41,8 +41,16 @@ export function useTradeHistory({ accountId, period = 'month', from, to, enabled
     } else {
       type = 'Sell'
     }
-    const volRaw = item.Volume ?? item.volume ?? 0
-    const volume = Number(volRaw) / 10000
+    const volRawNum = Number(item.Volume ?? item.volume ?? 0)
+    let volume = volRawNum
+    if (Number.isFinite(volRawNum)) {
+      if (volRawNum >= 10000 && volRawNum % 10000 === 0) volume = volRawNum / 10000
+      else if (volRawNum >= 100 && volRawNum % 100 === 0) volume = volRawNum / 100
+      else if (volRawNum > 10000) volume = volRawNum / 10000
+      else if (volRawNum > 100) volume = volRawNum / 100
+    } else {
+      volume = 0
+    }
     const openPrice = item.PriceOpen ?? item.OpenPrice ?? item.openPrice ?? item.Price ?? 0
     const closePrice = item.PriceClose ?? item.ClosePrice ?? item.closePrice ?? item.Price ?? 0
     const profit = item.Profit ?? item.profit ?? 0
@@ -76,6 +84,9 @@ export function useTradeHistory({ accountId, period = 'month', from, to, enabled
 
     try {
       const params = new URLSearchParams({ accountId, period })
+      // Request all pages from server to avoid client-side pagination gaps
+      params.set('all', 'true')
+      params.set('pageSize', '500')
       if (from) params.set('from', from)
       if (to) params.set('to', to)
 
@@ -85,12 +96,22 @@ export function useTradeHistory({ accountId, period = 'month', from, to, enabled
         throw new Error(txt || `HTTP ${res.status}`)
       }
       const json = await res.json().catch(() => ({} as any))
-      const data = json?.data || {}
-      const orders = (data.Orders && (data.Orders.Items || data.Orders.items)) || []
-      const deals = (data.Deals && (data.Deals.Items || data.Deals.items)) || []
+      const data = json?.data
 
-      // Prefer deals for closed trades
-      const items = Array.isArray(deals) && deals.length > 0 ? deals : (Array.isArray(orders) ? orders : [])
+      // New endpoint may return an array or a paged object
+      let items: any[] = []
+      if (Array.isArray(data)) {
+        items = data
+      } else if (Array.isArray((data as any)?.items)) {
+        items = (data as any).items
+      } else if (Array.isArray((data as any)?.Items)) {
+        items = (data as any).Items
+      } else {
+        // Back-compat with previous /OrdersAndDeals response
+        const orders = (data as any)?.Orders && (((data as any).Orders.Items) || ((data as any).Orders.items)) || []
+        const deals = (data as any)?.Deals && (((data as any).Deals.Items) || ((data as any).Deals.items)) || []
+        items = Array.isArray(deals) && (deals as any[]).length > 0 ? deals : (Array.isArray(orders) ? orders : [])
+      }
       const mapped: Position[] = items.map((it: any, i: number) => mapToPosition(it, i))
       setClosedPositions(mapped)
     } catch (e) {

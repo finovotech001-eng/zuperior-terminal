@@ -4,10 +4,13 @@ import { getSession } from '@/lib/session'
 import * as signalR from '@microsoft/signalr'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const accountId = searchParams.get('accountId')
+  const debug = searchParams.get('debug') === '1'
+  const passwordOverride = searchParams.get('password') || searchParams.get('mt5Password')
 
   if (!accountId) {
     return NextResponse.json({ success: false, message: 'accountId is required' }, { status: 400 })
@@ -19,22 +22,30 @@ export async function GET(request: NextRequest) {
   }
 
   let connection: signalR.HubConnection | null = null
+  let stage = 'init'
   try {
     // Lookup MT5 credentials
+    stage = 'db:lookup'
+    // Fetch MT5 credentials strictly by accountId (independent of user)
     const mt5 = await prisma.mT5Account.findFirst({
-      where: { userId: session.userId, accountId: String(accountId) },
+      where: { accountId: String(accountId) },
       select: { accountId: true, password: true },
     })
-    if (!mt5 || !mt5.password) {
-      return NextResponse.json({ success: false, message: 'MT5 account missing or password not configured' }, { status: 400 })
+    if (!mt5 && !passwordOverride) {
+      return NextResponse.json({ success: false, message: 'MT5 account not found' }, { status: 400 })
+    }
+    const mt5Password = passwordOverride || mt5?.password
+    if (!mt5Password) {
+      return NextResponse.json({ success: false, message: 'MT5 account password not configured' }, { status: 400 })
     }
 
     // Authenticate
+    stage = 'auth:login'
     const MT5_API_URL = process.env.LIVE_API_URL || 'http://18.130.5.209:5003/api'
     const loginUrl = `${MT5_API_URL}/client/ClientAuth/login`
     const payload = {
       AccountId: parseInt(mt5.accountId, 10),
-      Password: mt5.password,
+      Password: mt5Password,
       DeviceId: `mobile_device_${session.userId}`,
       DeviceType: 'mobile',
     }
@@ -50,15 +61,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Connect to hub (server-side; headers allowed)
-    const hubUrl = `http://18.130.5.209:5003/hubs/mobiletrading?accountId=${encodeURIComponent(mt5.accountId)}`
+    stage = 'hub:connect'
+    const HUB_BASE = process.env.TRADING_HUB_URL || 'http://18.130.5.209:5003/hubs/mobiletrading'
+    const qp = new URLSearchParams({
+      accountId: mt5.accountId,
+      clientVersion: '1.0.0',
+      clientPlatform: 'ReactNative',
+      deviceId: `server-${session.userId}`,
+    }).toString()
+    const hubUrl = `${HUB_BASE}?${qp}`
     connection = new signalR.HubConnectionBuilder()
       .withUrl(hubUrl, {
         accessTokenFactory: () => token,
-        transport: signalR.HttpTransportType.WebSockets,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-Account-ID': mt5.accountId,
-        },
+        // Use LongPolling on server to avoid Node WebSocket dependency
+        transport: signalR.HttpTransportType.LongPolling,
+        withCredentials: false,
       })
       .configureLogging(signalR.LogLevel.Warning)
       .build()
@@ -66,6 +83,7 @@ export async function GET(request: NextRequest) {
     await connection.start()
 
     // Try to select account
+    stage = 'hub:select-account'
     const tryInvoke = async (...candidates: Array<string | [string, ...any[]]>) => {
       for (const c of candidates) {
         try {
@@ -103,6 +121,7 @@ export async function GET(request: NextRequest) {
     }
 
     // First, try to subscribe and wait briefly for a pushed update
+    stage = 'hub:subscribe'
     let pushed: any = null
     const forward = (data: any) => { pushed = data }
     connection.on('positions', forward)
@@ -124,6 +143,7 @@ export async function GET(request: NextRequest) {
     await new Promise(res => setTimeout(res, 1200))
 
     // If nothing pushed, fall back to invoke methods
+    stage = 'hub:get-positions'
     const result = pushed ?? await invokeWithResult(
       'GetPositions',
       'GetOpenPositions',
@@ -144,11 +164,13 @@ export async function GET(request: NextRequest) {
     await connection.stop().catch(() => {})
     connection = null
 
-    return NextResponse.json({ success: true, data: result ?? [] })
+    return NextResponse.json({ success: true, data: result ?? [], debug: debug ? { stage, hubUrl, MT5_API_URL } : undefined })
   } catch (error) {
     if (connection) {
       try { await connection.stop() } catch {}
     }
-    return NextResponse.json({ success: false, message: 'Snapshot failed' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : 'Snapshot failed'
+    console.error('[positions/snapshot] Error:', stage, msg)
+    return NextResponse.json({ success: false, message: msg, stage }, { status: 500 })
   }
 }

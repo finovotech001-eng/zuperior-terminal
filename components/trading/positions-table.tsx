@@ -24,6 +24,7 @@ import {
 
 export interface Position {
   id: string
+  ticket?: number
   symbol: string
   countryCode?: string
   icon?: string
@@ -45,6 +46,7 @@ export interface PositionsTableProps {
   closedPositions: Position[]
   onClose?: (id: string) => void
   onHide?: () => void
+  accountId?: string | null
 }
 
 const PositionsTable: React.FC<PositionsTableProps> = ({
@@ -53,6 +55,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   pendingPositions = [],
   closedPositions = [],
   onClose,
+  accountId,
 }) => {
   const [activeTab, setActiveTab] = useAtom(positionsActiveTabAtom)
   const [isGrouped, setIsGrouped] = useAtom(positionsIsGroupedAtom)
@@ -158,7 +161,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
         <div className="flex items-center">
           <Popover>
             <PopoverTrigger asChild>
-              {position.takeProfit ? (
+              {Number(position.takeProfit || 0) > 0 ? (
                 <button
                   className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted"
                 >
@@ -168,7 +171,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <button
                   className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted"
                 >
-                  Add
+                  Modify
                 </button>
               )}
             </PopoverTrigger>
@@ -187,9 +190,40 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   stopLoss: position.stopLoss,
                   pnl: position.pnl,
                 }}
-                onClose={() => {}}
-                onModify={() => {}}
-                onPartialClose={() => {}}
+              onClose={() => {}}
+              onModify={async (data) => {
+                try {
+                  const direct = Number(position.ticket)
+                  const ticketStr = position.position || position.id
+                  const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
+                  const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                  if (!accountId || !Number.isFinite(ticket)) {
+                    console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
+                    return
+                  }
+                  const payload: any = {
+                    accountId,
+                    positionId: ticket,
+                    comment: `Modify TP/SL via table for ${position.symbol}`,
+                  }
+                  if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                  if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                  const res = await fetch('/apis/trading/position/modify', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                  })
+                  const json = await res.json().catch(() => ({} as any))
+                  if (!res.ok) {
+                    console.error('[Modify] Failed', json)
+                  } else {
+                    console.log('[Modify] Success', json)
+                  }
+                } catch (e) {
+                  console.error('[Modify] Error', e)
+                }
+              }}
+              onPartialClose={() => {}}
               />
             </PopoverContent>
           </Popover>
@@ -201,7 +235,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
         <div className="flex items-center">
           <Popover>
             <PopoverTrigger asChild>
-              {position.stopLoss ? (
+              {Number(position.stopLoss || 0) > 0 ? (
                 <button
                   className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted"
                 >
@@ -211,7 +245,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <button
                   className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted"
                 >
-                  Add
+                  Modify
                 </button>
               )}
             </PopoverTrigger>
@@ -231,7 +265,38 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   pnl: position.pnl,
                 }}
                 onClose={() => {}}
-                onModify={() => {}}
+                onModify={async (data) => {
+                  try {
+                    const direct = Number(position.ticket)
+                    const ticketStr = position.position || position.id
+                    const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
+                    const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                    if (!accountId || !Number.isFinite(ticket)) {
+                      console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
+                      return
+                    }
+                    const payload: any = {
+                      accountId,
+                      positionId: ticket,
+                      comment: `Modify TP/SL via table for ${position.symbol}`,
+                    }
+                    if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                    if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                    const res = await fetch('/apis/trading/position/modify', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload),
+                    })
+                    const json = await res.json().catch(() => ({} as any))
+                    if (!res.ok) {
+                      console.error('[Modify] Failed', json)
+                    } else {
+                      console.log('[Modify] Success', json)
+                    }
+                  } catch (e) {
+                    console.error('[Modify] Error', e)
+                  }
+                }}
                 onPartialClose={() => {}}
               />
             </PopoverContent>
@@ -265,7 +330,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
       )}
 
       {/* Actions */}
-      <div className="flex items-center justify-center gap-1">
+      <div className="flex items-center justify-center gap-1" style={{ position: 'relative', zIndex: 10 }}>
         <Popover>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -303,21 +368,22 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
             />
           </PopoverContent>
         </Popover>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <IconButton
-              size="sm"
-              variant="ghost"
-              onClick={() => onClose?.(position.id)}
-              className="text-danger hover:text-danger/80"
-            >
-              <X className="h-3.5 w-3.5" />
-            </IconButton>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            <p>Close position</p>
-          </TooltipContent>
-        </Tooltip>
+        <button
+          type="button"
+          title="Close position"
+          onClick={() => {
+            console.log('[Close] Button clicked for position:', position.id);
+            if (onClose) {
+              onClose(position.id);
+            } else {
+              console.error('[Close] onClose handler is undefined');
+            }
+          }}
+          className="inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 h-7 w-7 hover:bg-white/5 text-danger hover:text-danger/80 cursor-pointer border-0 bg-transparent"
+          style={{ position: 'relative', zIndex: 9999 }}
+        >
+          <X className="h-3.5 w-3.5 pointer-events-none" />
+        </button>
       </div>
       </div>
     </TooltipProvider>

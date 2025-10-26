@@ -35,6 +35,29 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
   onModify,
   onPartialClose,
 }) => {
+  // Instrument metadata for correct pip/PnL calculations
+  const [digits, setDigits] = React.useState<number>(3)
+  const [contractSize, setContractSize] = React.useState<number>(100000)
+
+  React.useEffect(() => {
+    let cancelled = false
+    const loadMeta = async () => {
+      try {
+        const params = new URLSearchParams({ search: position.symbol, limit: '1' })
+        const res = await fetch(`/apis/instruments?${params.toString()}`, { cache: 'no-store' })
+        if (!res.ok) return
+        const json = await res.json().catch(() => null as any)
+        const item = Array.isArray(json?.data) ? json.data[0] : null
+        if (!item) return
+        if (!cancelled) {
+          if (typeof item.digits === 'number') setDigits(item.digits)
+          if (typeof item.contractSize === 'number') setContractSize(item.contractSize)
+        }
+      } catch {}
+    }
+    loadMeta()
+    return () => { cancelled = true }
+  }, [position.symbol])
   const [activeTab, setActiveTab] = React.useState("modify")
   const [takeProfitMode, setTakeProfitMode] = React.useState<"price" | "pips" | "money" | "equity">("price")
   const [stopLossMode, setStopLossMode] = React.useState<"price" | "pips" | "money" | "equity">("price")
@@ -51,8 +74,9 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
   }
 
   const calculatePips = () => {
+    const pipFactor = Math.pow(10, Math.max(0, Math.min(6, digits || 0)))
     const diff = (position.currentPrice - position.openPrice) * (position.type === "Buy" ? 1 : -1)
-    return (diff * 10000).toFixed(1) // Assuming 4 decimal forex pair
+    return (diff * pipFactor).toFixed(1)
   }
 
   const calculateMaxTakeProfit = () => {
@@ -217,9 +241,9 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                 {takeProfit && (
                   <div className="flex items-center justify-between text-xs pt-1">
                     <span className="text-white/60">{calculatePips()} pips</span>
-                    <span className="text-[#16A34A] price-font font-medium">
-                      {((parseFloat(takeProfit) - position.openPrice) * position.lots * 100000).toFixed(2)} USD
-                    </span>
+                  <span className="text-[#16A34A] price-font font-medium">
+                    {((parseFloat(takeProfit) - position.openPrice) * position.lots * contractSize).toFixed(2)} USD
+                  </span>
                   </div>
                 )}
               </div>
@@ -284,9 +308,9 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                 {stopLoss && (
                   <div className="flex items-center justify-between text-xs pt-1">
                     <span className="text-white/60">{calculatePips()} pips</span>
-                    <span className="text-[#EF4444] price-font font-medium">
-                      {((parseFloat(stopLoss) - position.openPrice) * position.lots * 100000).toFixed(2)} USD
-                    </span>
+                  <span className="text-[#EF4444] price-font font-medium">
+                    {((parseFloat(stopLoss) - position.openPrice) * position.lots * contractSize).toFixed(2)} USD
+                  </span>
                   </div>
                 )}
               </div>
@@ -391,4 +415,3 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
 }
 
 export { PositionManagementPanel }
-

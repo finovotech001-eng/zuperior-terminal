@@ -10,7 +10,7 @@ export interface IconButtonProps
 }
 
 const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
-  ({ className, size = "md", variant = "default", ...props }, ref) => {
+  ({ className, size = "md", variant = "default", type = "button", ...props }, ref) => {
     const sizeClasses = {
       sm: "h-7 w-7",
       md: "h-9 w-9",
@@ -27,6 +27,7 @@ const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
     return (
       <motion.button
         ref={ref}
+        type={type}
         className={cn(
           "inline-flex items-center justify-center rounded-md",
           "transition-colors focus-visible:outline-none focus-visible:ring-2",
@@ -47,4 +48,3 @@ const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
 IconButton.displayName = "IconButton"
 
 export { IconButton }
-

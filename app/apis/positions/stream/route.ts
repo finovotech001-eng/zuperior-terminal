@@ -4,6 +4,7 @@ import { getSession } from '@/lib/session'
 import * as signalR from '@microsoft/signalr'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 function jsonEvent(data: any) {
   return `data: ${JSON.stringify(data)}\n\n`
@@ -12,6 +13,7 @@ function jsonEvent(data: any) {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const accountId = searchParams.get('accountId')
+  const passwordOverride = searchParams.get('password') || searchParams.get('mt5Password')
 
   if (!accountId) {
     return NextResponse.json({ success: false, message: 'accountId is required' }, { status: 400 })
@@ -24,12 +26,17 @@ export async function GET(request: NextRequest) {
 
   try {
     // Lookup MT5 credentials
+    // Fetch MT5 credentials strictly by accountId (independent of user)
     const mt5 = await prisma.mT5Account.findFirst({
-      where: { userId: session.userId, accountId: String(accountId) },
+      where: { accountId: String(accountId) },
       select: { accountId: true, password: true },
     })
-    if (!mt5 || !mt5.password) {
-      return NextResponse.json({ success: false, message: 'MT5 account missing or password not configured' }, { status: 400 })
+    if (!mt5 && !passwordOverride) {
+      return NextResponse.json({ success: false, message: 'MT5 account not found' }, { status: 400 })
+    }
+    const mt5Password = passwordOverride || mt5?.password
+    if (!mt5Password) {
+      return NextResponse.json({ success: false, message: 'MT5 account password not configured' }, { status: 400 })
     }
 
     // Authenticate to MT5 API
@@ -37,7 +44,7 @@ export async function GET(request: NextRequest) {
     const loginUrl = `${MT5_API_URL}/client/ClientAuth/login`
     const payload = {
       AccountId: parseInt(mt5.accountId, 10),
-      Password: mt5.password,
+      Password: mt5Password,
       DeviceId: `mobile_device_${session.userId}`,
       DeviceType: 'mobile',
     }
@@ -153,14 +160,20 @@ export async function GET(request: NextRequest) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         // SignalR connection from server (no CORS restrictions)
-        const hubUrl = `http://18.130.5.209:5003/hubs/mobiletrading?accountId=${encodeURIComponent(mt5.accountId)}`
+        const HUB_BASE = process.env.TRADING_HUB_URL || 'http://18.130.5.209:5003/hubs/mobiletrading'
+        const qp = new URLSearchParams({
+          accountId: mt5.accountId,
+          clientVersion: '1.0.0',
+          clientPlatform: 'ReactNative',
+          deviceId: `server-${session.userId}`,
+        }).toString()
+        const hubUrl = `${HUB_BASE}?${qp}`
         connection = new signalR.HubConnectionBuilder()
           .withUrl(hubUrl, {
             accessTokenFactory: () => accessToken,
-            transport: signalR.HttpTransportType.WebSockets,
-            headers: {
-              'X-Account-ID': mt5.accountId,
-            },
+            // Use LongPolling to avoid Node WebSocket dependency
+            transport: signalR.HttpTransportType.LongPolling,
+            withCredentials: false,
           })
           .withAutomaticReconnect({ nextRetryDelayInMilliseconds: () => 5000 })
           .configureLogging(signalR.LogLevel.Information)
@@ -295,6 +308,8 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    return NextResponse.json({ success: false, message: 'Internal error' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : 'Internal error'
+    console.error('[positions/stream] Error:', msg)
+    return NextResponse.json({ success: false, message: msg }, { status: 500 })
   }
 }

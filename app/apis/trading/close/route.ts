@@ -1,33 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/session'
+import { prisma } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Check session
     const session = await getSession()
     if (!session?.userId) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json().catch(() => ({} as any))
-    const { accountId, positionId, Volume, Price, Comment } = body || {}
+    // 2. Parse request body
+    const body = await request.json()
+    const { accountId, positionId, volume = 0 } = body
+    
+    console.log('[Close] Request:', { accountId, positionId, volume });
+    
     if (!accountId || !positionId) {
-      return NextResponse.json({ success: false, message: 'accountId and positionId are required' }, { status: 400 })
+      return NextResponse.json({ 
+        success: false, 
+        message: 'accountId and positionId are required' 
+      }, { status: 400 })
     }
 
-    // Verify account belongs to user
+    // 3. Get MT5 account credentials
     const mt5 = await prisma.mT5Account.findFirst({
-      where: { userId: session.userId, accountId: String(accountId) },
+      where: { 
+        userId: session.userId, 
+        accountId: String(accountId) 
+      },
       select: { accountId: true, password: true },
     })
+    
     if (!mt5 || !mt5.password) {
-      return NextResponse.json({ success: false, message: 'MT5 account not found or password not set' }, { status: 400 })
+      return NextResponse.json({ 
+        success: false, 
+        message: 'MT5 account not found' 
+      }, { status: 400 })
     }
 
-    // Get token directly from LIVE_API_URL
+    // 4. Login to get access token
     const API_BASE = (process.env.LIVE_API_URL || 'http://18.130.5.209:5003/api').replace(/\/$/, '')
-    const loginUrl = `${API_BASE}/client/ClientAuth/login`
-    const loginRes = await fetch(loginUrl, {
+    
+    const loginRes = await fetch(`${API_BASE}/client/ClientAuth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -37,41 +52,67 @@ export async function POST(request: NextRequest) {
         DeviceType: 'web',
       }),
     })
+
     if (!loginRes.ok) {
-      const err = await loginRes.text().catch(() => '')
-      return NextResponse.json({ success: false, message: `Login failed: ${err || loginRes.status}` }, { status: 502 })
+      console.error('[Close] Login failed:', loginRes.status);
+      return NextResponse.json({ 
+        success: false, 
+        message: 'MT5 login failed' 
+      }, { status: 502 })
     }
-    const loginJson = await loginRes.json().catch(() => ({} as any))
-    const token = loginJson?.accessToken || loginJson?.AccessToken || loginJson?.Token || loginJson?.data?.accessToken
+
+    const loginData = await loginRes.json()
+    const token = loginData?.accessToken || loginData?.AccessToken || loginData?.Token
+    
     if (!token) {
-      return NextResponse.json({ success: false, message: 'No access token received' }, { status: 502 })
+      return NextResponse.json({ 
+        success: false, 
+        message: 'No access token received' 
+      }, { status: 502 })
     }
 
-    // Call upstream DELETE /client/position/{positionId}
-    const url = `${API_BASE}/client/position/${encodeURIComponent(positionId)}`
-    const payload: any = {}
-    if (Volume !== undefined) payload.Volume = Volume
-    if (Price !== undefined) payload.Price = Price
-    if (Comment !== undefined) payload.Comment = Comment
-
-    const upstream = await fetch(url, {
+    // 5. Call DELETE /client/position/{positionId}
+    console.log(`[Close] DELETE ${API_BASE}/client/position/${positionId} with volume: ${volume}`);
+    
+    const deleteRes = await fetch(`${API_BASE}/client/position/${positionId}`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(payload),
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}` 
+      },
+      body: JSON.stringify({ volume: Number(volume) }),
     })
-    // Some upstreams return 204 No Content on success
-    let data: any = null
-    const text = await upstream.text().catch(() => '')
+
+    const responseText = await deleteRes.text()
+    let responseData: any = null
+    
     try {
-      data = text ? JSON.parse(text) : null
+      responseData = responseText ? JSON.parse(responseText) : null
     } catch {
-      data = text || null
+      responseData = responseText
     }
-    if (upstream.ok) {
-      return NextResponse.json(data ?? { success: true }, { status: upstream.status })
+
+    console.log(`[Close] Response: ${deleteRes.status}`, responseData);
+
+    if (deleteRes.ok || deleteRes.status === 204) {
+      return NextResponse.json({ 
+        success: true, 
+        data: responseData,
+        message: 'Position closed successfully' 
+      })
     }
-    return NextResponse.json({ success: false, error: data || 'Close failed' }, { status: upstream.status })
-  } catch (e) {
-    return NextResponse.json({ success: false, message: (e as Error).message }, { status: 500 })
+
+    return NextResponse.json({ 
+      success: false, 
+      message: responseData?.message || responseData?.error || 'Failed to close position',
+      error: responseData 
+    }, { status: deleteRes.status })
+
+  } catch (error) {
+    console.error('[Close] Error:', error);
+    return NextResponse.json({ 
+      success: false, 
+      message: error instanceof Error ? error.message : 'Internal server error' 
+    }, { status: 500 })
   }
 }

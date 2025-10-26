@@ -29,6 +29,18 @@ export async function placeMarketOrder(orderData: {
   let data: any = null
   try { data = text ? JSON.parse(text) : null } catch { data = text }
   if (!res.ok) throw new Error(typeof data === 'object' ? (data?.message || data?.error || `HTTP ${res.status}`) : `HTTP ${res.status}`)
+  // Attach normalized lot fields for convenience in UI (non-breaking)
+  try {
+    if (data && typeof data === 'object') {
+      const vol = Number(data?.Volume ?? data?.volume)
+      const bodyVol = Number(data?.debug?.body?.volume)
+      const chosen = Number.isFinite(vol) && vol > 0 ? vol : (Number.isFinite(bodyVol) ? bodyVol : NaN)
+      if (Number.isFinite(chosen)) {
+        const lots = chosen / 100
+        ;(data as any).volumeLots = lots
+        ;(data as any).VolumeLots = lots
+      }
+    }
+  } catch {}
   return data
 }
-

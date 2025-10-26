@@ -6,6 +6,7 @@ import wsManager from '@/lib/websocket-service'
 export interface SignalRPosition {
   id: string
   ticket: number
+  positionId?: number
   symbol: string
   type: 'Buy' | 'Sell'
   volume: number
@@ -47,13 +48,32 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
   const snapshotTimeout = useRef<NodeJS.Timeout | null>(null)
 
   const toPosition = (pos: any, idx?: number): SignalRPosition => {
+    // Debug: Show raw socket data
+    const hasPositionId = pos.PositionId || pos.PositionID
+    if (hasPositionId && typeof window !== 'undefined') {
+      const rawData = JSON.stringify(pos, null, 2)
+      console.log('🔍 [SSE] Raw position data:', rawData)
+      console.log('🔍 [SSE] PositionId value:', pos.PositionId || pos.PositionID)
+      console.log('🔍 [SSE] All position keys:', Object.keys(pos))
+      
+      // Removed intrusive debug alert for first position with PositionId
+    }
+    
     const rawTicket =
-      pos.Ticket ?? pos.ticket ?? pos.Position ?? pos.position ??
-      pos.PositionId ?? pos.PositionID ?? pos.Order ?? pos.OrderId ?? pos.id ?? pos.Id ?? 0
+      pos.positionId ?? pos.PositionId ?? pos.PositionID ?? pos.Ticket ?? pos.ticket ?? 
+      pos.Position ?? pos.position ?? pos.Order ?? pos.OrderId ?? pos.id ?? pos.Id ?? 0
     const ticketNum = Number(rawTicket) || 0
+    const positionIdNum = Number(pos.positionId ?? pos.PositionId ?? pos.PositionID ?? 0) || undefined
+    
+    if (hasPositionId && typeof window !== 'undefined') {
+      console.log('✅ [SSE] Extracted ticket:', rawTicket, '=> ticketNum:', ticketNum)
+      if (ticketNum === 0) {
+        console.error('❌ [SSE] FAILED to extract ticket! Raw:', rawTicket, 'All keys:', Object.keys(pos))
+      }
+    }
 
-    const rawVolume = pos.Volume ?? pos.volume ?? 0
-    const normalizedVolume = Number(rawVolume) / 10000 // requested normalization
+    // Normalize to lots: divide raw volume by 10000
+    const normalizedVolume = Number(pos.Volume ?? pos.volume ?? 0) / 10000
 
     const symbol = (pos.Symbol ?? pos.symbol ?? pos.SymbolName ?? '').toString()
 
@@ -78,8 +98,8 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     let id: string
     if (ticketNum && ticketNum > 0) {
       id = `ticket-${ticketNum}`
-    } else if (pos.Order ?? pos.OrderId ?? pos.PositionId ?? pos.id ?? pos.Id) {
-      const alt = (pos.Order ?? pos.OrderId ?? pos.PositionId ?? pos.id ?? pos.Id).toString()
+    } else if (pos.positionId ?? pos.PositionId ?? pos.PositionID ?? pos.Order ?? pos.OrderId ?? pos.id ?? pos.Id) {
+      const alt = (pos.positionId ?? pos.PositionId ?? pos.PositionID ?? pos.Order ?? pos.OrderId ?? pos.id ?? pos.Id).toString()
       const altNum = Number(alt)
       // If alt can be converted to a valid number, use ticket format
       if (altNum && altNum > 0) {
@@ -98,6 +118,7 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     return {
       id,
       ticket: ticketNum,
+      positionId: positionIdNum,
       symbol,
       type,
       volume: normalizedVolume,
@@ -182,22 +203,54 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
         if (res.ok) {
           const json = await res.json().catch(() => ({} as any))
           console.log('[Positions][DEBUG] Snapshot raw response:', json)
-          
+
           const data = json?.data
-          console.log('[Positions][DEBUG] Extracted data:', data)
-          console.log('[Positions][DEBUG] Data type:', Array.isArray(data) ? 'array' : typeof data)
-          
-          let arr: any[] = []
-          if (Array.isArray(data)) arr = data
-          else if (Array.isArray(data?.data)) arr = data.data
-          
-          console.log('[Positions][DEBUG] Final array length:', arr.length)
-          
-          if (Array.isArray(arr) && arr.length > 0) {
+          if (data && typeof data === 'object' && !Array.isArray(data)) {
+            const details = {
+              accountId: (data.accountId ?? data.login ?? data.Login) ?? accId,
+              dataLength: Array.isArray(data.data) ? data.data.length : 0,
+              hasData: Array.isArray(data.data) && data.data.length > 0,
+              messageType: data.messageType ?? data.MessageType ?? 'unknown',
+            }
+            console.log('🧩 Full position data structure:', data)
+            console.log('ℹ️ Position data details:', details)
+          }
+          // Reuse robust extractor similar to stream handler
+          const extractArray = (obj: any): any[] | null => {
+            if (!obj) return null
+            if (Array.isArray(obj)) return obj
+            const direct = [
+              obj.Positions, obj.positions,
+              obj.Items, obj.items,
+              obj.Records, obj.records,
+              obj.Data, obj.data,
+              obj.Result, obj.result,
+            ]
+            for (const c of direct) {
+              if (Array.isArray(c)) return c
+            }
+            const nest1 = obj.Data || obj.data || obj.Result || obj.result
+            if (nest1) {
+              const inner = [
+                nest1.Positions, nest1.positions,
+                nest1.Items, nest1.items,
+                nest1.Records, nest1.records,
+                nest1.Data, nest1.data,
+              ]
+              for (const c of inner) {
+                if (Array.isArray(c)) return c
+              }
+            }
+            return null
+          }
+
+          const arr = extractArray(data) || []
+          console.log('[Positions][DEBUG] Extracted snapshot array length:', arr.length)
+
+          if (arr.length > 0) {
             console.log('[Positions][DEBUG] Sample position data:', arr[0])
             const mapped = arr.map((item: any, i: number) => toPosition(item, i))
             setPositions(mapped)
-            // eslint-disable-next-line no-console
             console.log('[Positions] Snapshot count:', mapped.length)
           } else {
             console.log('[Positions][DEBUG] No positions in snapshot - array is empty or not an array')
@@ -343,6 +396,8 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
           setPositions(mapped)
           // eslint-disable-next-line no-console
           console.log('[Positions] Snapshot count:', mapped.length, 'tickets:', mapped.map(p => p.ticket))
+          
+          // Removed intrusive debug alert for first position received
           if (snapshotTimeout.current) { clearTimeout(snapshotTimeout.current); snapshotTimeout.current = null }
           return
         }
