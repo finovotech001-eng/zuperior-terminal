@@ -201,21 +201,37 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
                     return
                   }
+                  // Acquire access token so server can skip DB auth
+                  let accessToken: string | undefined = undefined
+                  try {
+                    const authRes = await fetch('/apis/auth/mt5-login', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ accountId })
+                    })
+                    const authJson = await authRes.json().catch(() => ({} as any))
+                    if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                  } catch {}
+
                   const payload: any = {
                     accountId,
                     positionId: ticket,
                     comment: `Modify TP/SL via table for ${position.symbol}`,
+                    ...(accessToken ? { accessToken } : {}),
                   }
                   if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
                   if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                  console.log('[Modify] Sending payload:', payload)
                   const res = await fetch('/apis/trading/position/modify', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                   })
-                  const json = await res.json().catch(() => ({} as any))
-                  if (!res.ok) {
-                    console.error('[Modify] Failed', json)
+                  const text = await res.text().catch(() => '')
+                  let json: any = null
+                  try { json = text ? JSON.parse(text) : null } catch { json = text }
+                  if (!res.ok || json?.success === false) {
+                    console.error('[Modify] Failed', { status: res.status, json })
                   } else {
                     console.log('[Modify] Success', json)
                   }
@@ -264,40 +280,56 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   stopLoss: position.stopLoss,
                   pnl: position.pnl,
                 }}
-                onClose={() => {}}
-                onModify={async (data) => {
-                  try {
-                    const direct = Number(position.ticket)
-                    const ticketStr = position.position || position.id
-                    const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
-                    const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
-                    if (!accountId || !Number.isFinite(ticket)) {
-                      console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
-                      return
-                    }
-                    const payload: any = {
-                      accountId,
-                      positionId: ticket,
-                      comment: `Modify TP/SL via table for ${position.symbol}`,
-                    }
-                    if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
-                    if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
-                    const res = await fetch('/apis/trading/position/modify', {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(payload),
-                    })
-                    const json = await res.json().catch(() => ({} as any))
-                    if (!res.ok) {
-                      console.error('[Modify] Failed', json)
-                    } else {
-                      console.log('[Modify] Success', json)
-                    }
-                  } catch (e) {
-                    console.error('[Modify] Error', e)
+              onClose={() => {}}
+              onModify={async (data) => {
+                try {
+                  const direct = Number(position.ticket)
+                  const ticketStr = position.position || position.id
+                  const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
+                  const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                  if (!accountId || !Number.isFinite(ticket)) {
+                    console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
+                    return
                   }
-                }}
-                onPartialClose={() => {}}
+                  // Acquire access token so server can skip DB auth
+                  let accessToken: string | undefined = undefined
+                  try {
+                    const authRes = await fetch('/apis/auth/mt5-login', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ accountId })
+                    })
+                    const authJson = await authRes.json().catch(() => ({} as any))
+                    if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                  } catch {}
+
+                  const payload: any = {
+                    accountId,
+                    positionId: ticket,
+                    comment: `Modify TP/SL via table for ${position.symbol}`,
+                    ...(accessToken ? { accessToken } : {}),
+                  }
+                  if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                  if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                  console.log('[Modify] Sending payload:', payload)
+                  const res = await fetch('/apis/trading/position/modify', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                  })
+                  const text = await res.text().catch(() => '')
+                  let json: any = null
+                  try { json = text ? JSON.parse(text) : null } catch { json = text }
+                  if (!res.ok || json?.success === false) {
+                    console.error('[Modify] Failed', { status: res.status, json })
+                  } else {
+                    console.log('[Modify] Success', json)
+                  }
+                } catch (e) {
+                  console.error('[Modify] Error', e)
+                }
+              }}
+              onPartialClose={() => {}}
               />
             </PopoverContent>
           </Popover>
@@ -363,7 +395,54 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 pnl: position.pnl,
               }}
               onClose={() => {}}
-              onModify={() => {}}
+              onModify={async (data) => {
+                try {
+                  const direct = Number(position.ticket)
+                  const ticketStr = position.position || position.id
+                  const ticketFromText = parseInt((ticketStr || '').replace(/[^0-9]/g, ''), 10)
+                  const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                  if (!accountId || !Number.isFinite(ticket)) {
+                    console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
+                    return
+                  }
+                  // Acquire access token so server can skip DB auth
+                  let accessToken: string | undefined = undefined
+                  try {
+                    const authRes = await fetch('/apis/auth/mt5-login', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ accountId })
+                    })
+                    const authJson = await authRes.json().catch(() => ({} as any))
+                    if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                  } catch {}
+
+                  const payload: any = {
+                    accountId,
+                    positionId: ticket,
+                    comment: `Modify TP/SL via actions for ${position.symbol}`,
+                    ...(accessToken ? { accessToken } : {}),
+                  }
+                  if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                  if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                  console.log('[Modify] Sending payload:', payload)
+                  const res = await fetch('/apis/trading/position/modify', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                  })
+                  const text = await res.text().catch(() => '')
+                  let json: any = null
+                  try { json = text ? JSON.parse(text) : null } catch { json = text }
+                  if (!res.ok || json?.success === false) {
+                    console.error('[Modify] Failed', { status: res.status, json })
+                  } else {
+                    console.log('[Modify] Success', json)
+                  }
+                } catch (e) {
+                  console.error('[Modify] Error', e)
+                }
+              }}
               onPartialClose={() => {}}
             />
           </PopoverContent>
@@ -598,3 +677,5 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
 }
 
 export { PositionsTable }
+
+

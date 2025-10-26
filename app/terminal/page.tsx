@@ -29,9 +29,10 @@ import { PositionsTable, Position } from "@/components/trading/positions-table"
 import { OrderPanel, OrderData } from "@/components/trading/order-panel"
 import { SettingsPanel } from "@/components/trading/settings-panel"
 import { WebSocketStatus } from "@/components/data-display/websocket-status"
-import { IconButton } from "@/components/ui/icon-button"
+import { placeBuyLimit, placeSellLimit, cancelPendingOrder } from "@/components/trading/pendingOrders"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { IconButton } from "@/components/ui/icon-button"
 import { Separator } from "@/components/ui/separator"
 import { Toggle } from "@/components/ui/toggle"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -809,6 +810,7 @@ function TerminalContent() {
   const [leftPanelWidth, setLeftPanelWidth] = React.useState(320)
   const [rightPanelWidth, setRightPanelWidth] = React.useState(300)
   const [positionsHeight, setPositionsHeight] = React.useState(300)
+  const [pendingOrders, setPendingOrders] = React.useState<Position[]>([])
 
   const [openTabs] = useAtom(openTabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
@@ -1245,7 +1247,7 @@ function TerminalContent() {
 
         console.log("ðŸ“¤ Sending BUY order:", order);
 
-        const response = await placeMarketOrder(order);
+        const response = order.orderType === 'pending' ? await placeSellLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Sell Limit via web' }) : await placeMarketOrder(order);
 
         console.log("âœ… Buy Order Success:", response);
         console.log(`[Order] Buy placed for ${order.symbol}`);
@@ -1273,7 +1275,7 @@ function TerminalContent() {
         console.log("ðŸ“¤ Sending SELL order:", order);
 
         // âœ… Call your API proxy
-        const response = await placeMarketOrder(order);
+        const response = order.orderType === 'pending' ? await placeSellLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Sell Limit via web' }) : await placeMarketOrder(order);
 
         console.log("âœ… Sell Order Success:", response);
         console.log(`[Order] Sell placed for ${order.symbol}`);
@@ -1300,14 +1302,37 @@ function TerminalContent() {
         price: data.openPrice || selectedInstrument.ask || 0,
       }
       console.log('[Trade][BUY] submitting', { order, activeTabId, chosenSymbol })
-      const response = await placeMarketOrder(order)
+      const response = order.orderType === 'pending'
+        ? await placeBuyLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Buy Limit via web' })
+        : await placeMarketOrder(order)
       console.log('[Trade][BUY] success', response)
       setTradeNotice({ type: 'success', message: `Buy ${order.symbol} @ ${order.price}` })
-      // Nudge positions stream to refresh after placing an order
       try { positionsReconnect?.() } catch {}
       setTimeout(() => { try { positionsReconnect?.() } catch {} }, 800)
       setTimeout(() => { try { positionsReconnect?.() } catch {} }, 1800)
       setTimeout(() => { try { positionsReconnect?.() } catch {} }, 3500)
+      // Add to pending table immediately if pending
+      if (order.orderType === 'pending') {
+        const orderId = Number((response?.OrderId ?? response?.orderId ?? response?.Id ?? response?.id) || 0)
+        setPendingOrders(prev => [
+          {
+            id: `pending-${orderId || Date.now()}`,
+            ticket: orderId || 0,
+            symbol: order.symbol.replace('/', ''),
+            type: 'Buy',
+            volume: Number(order.volume),
+            openPrice: Number(order.price) || 0,
+            currentPrice: 0,
+            takeProfit: order.takeProfit,
+            stopLoss: order.stopLoss,
+            position: (orderId || '').toString(),
+            openTime: new Date().toISOString(),
+            swap: 0,
+            pnl: 0,
+          },
+          ...prev,
+        ])
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Buy order failed'
       console.error('[Trade][BUY] error', err)
@@ -1330,14 +1355,36 @@ function TerminalContent() {
         price: data.openPrice || selectedInstrument.bid || 0,
       }
       console.log('[Trade][SELL] submitting', { order, activeTabId, chosenSymbol })
-      const response = await placeMarketOrder(order)
+      const response = order.orderType === 'pending'
+        ? await placeSellLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Sell Limit via web' })
+        : await placeMarketOrder(order)
       console.log('[Trade][SELL] success', response)
       setTradeNotice({ type: 'success', message: `Sell ${order.symbol} @ ${order.price}` })
-      // Nudge positions stream to refresh after placing an order
       try { positionsReconnect?.() } catch {}
       setTimeout(() => { try { positionsReconnect?.() } catch {} }, 800)
       setTimeout(() => { try { positionsReconnect?.() } catch {} }, 1800)
       setTimeout(() => { try { positionsReconnect?.() } catch {} }, 3500)
+      if (order.orderType === 'pending') {
+        const orderId = Number((response?.OrderId ?? response?.orderId ?? response?.Id ?? response?.id) || 0)
+        setPendingOrders(prev => [
+          {
+            id: `pending-${orderId || Date.now()}`,
+            ticket: orderId || 0,
+            symbol: order.symbol.replace('/', ''),
+            type: 'Sell',
+            volume: Number(order.volume),
+            openPrice: Number(order.price) || 0,
+            currentPrice: 0,
+            takeProfit: order.takeProfit,
+            stopLoss: order.stopLoss,
+            position: (orderId || '').toString(),
+            openTime: new Date().toISOString(),
+            swap: 0,
+            pnl: 0,
+          },
+          ...prev,
+        ])
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sell order failed'
       console.error('[Trade][SELL] error', err)
@@ -1759,58 +1806,43 @@ function TerminalContent() {
                 <PositionsTable
                   key={currentAccountId || 'no-account'}
                   openPositions={formattedPositions}
-                  pendingPositions={[]}
+                  pendingPositions={pendingOrders}
                   closedPositions={closedPositions}
                   accountId={currentAccountId}
                   onClose={async (id) => {
                     try {
                       console.log('[Close] Closing position:', id);
-                      
-                      if (!currentAccountId) { 
-                        console.warn('[Close] No account selected');
-                        return; 
+                      if (!currentAccountId) { console.warn('[Close] No account selected'); return }
+
+                      // Extract position or pending by id
+                      let position = formattedPositions.find(p => p.id === id)
+                      const isPending = !position ? pendingOrders.some(p => p.id === id) : false
+                      if (!position && isPending) { position = pendingOrders.find(p => p.id === id)! }
+
+                      if (!position) { console.error('[Close] Position not found:', id); return }
+                      if (!position.ticket || position.ticket === 0) { console.error('[Close] No ticket/order id found:', position); return }
+
+                      const positionId = position.ticket
+                      if (isPending) {
+                        console.log('[Pending] Cancel order:', positionId)
+                        const res = await cancelPendingOrder({ accountId: currentAccountId, orderId: Number(positionId), comment: 'Cancel via web terminal' })
+                        console.log('[Pending] Cancel response:', res)
+                        setPendingOrders(prev => prev.filter(p => p.id !== id))
+                        return
                       }
-                      
-                      // Extract position ID from the row
-                      const position = formattedPositions.find(p => p.id === id);
-                      
-                      if (!position) {
-                        console.error('[Close] Position not found:', id);
-                        return;
-                      }
-                      
-                      if (!position.ticket || position.ticket === 0) {
-                        console.error('[Close] No ticket found:', position);
-                        return;
-                      }
-                      
-                      const positionId = position.ticket;
-                      console.log('[Close] Calling close API with position ID:', positionId);
-                      
-                      // Call close API
+
+                      console.log('[Close] Calling close API with position ID:', positionId)
                       const res = await fetch('/apis/trading/close', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          accountId: currentAccountId,
-                          positionId: positionId,
-                          volume: 0
-                        }),
-                      });
-                      
-                      const json = await res.json();
-                      console.log('[Close] API response:', json);
-                      
-                      if (json.success) {
-                        console.log('[Close] Position closed successfully');
-                        // Refresh positions
-                        try { positionsReconnect?.() } catch {}
-                      } else {
-                        console.error('[Close] Failed to close position:', json.message || 'Unknown error');
-                      }
+                        body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 }),
+                      })
+                      const json = await res.json().catch(() => ({} as any))
+                      console.log('[Close] API response:', json)
+                      if (json.success) { console.log('[Close] Position closed successfully'); try { positionsReconnect?.() } catch {} }
+                      else { console.error('[Close] Failed to close position:', json.message || 'Unknown error') }
                     } catch (e) {
-                      console.error('[Close] Unexpected error during close operation:', e);
-                      // Swallow UI alert; log only
+                      console.error('[Close] Unexpected error during close operation:', e)
                     }
                   }}
                 />
@@ -1919,3 +1951,15 @@ function TerminalContent() {
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+

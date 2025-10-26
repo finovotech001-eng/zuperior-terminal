@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { IconButton } from "@/components/ui/icon-button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { FlagIcon } from "@/components/data-display/flag-icon"
+import * as PopoverPrimitive from "@radix-ui/react-popover"
 
 export interface PositionManagementPanelProps {
   position: {
@@ -130,9 +131,11 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
               <span>at {formatPrice(position.openPrice)}</span>
             </div>
           </div>
-          <IconButton size="sm" variant="ghost" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </IconButton>
+          <PopoverPrimitive.Close asChild>
+            <IconButton size="sm" variant="ghost" onClick={onClose} aria-label="Close">
+              <X className="h-4 w-4" />
+            </IconButton>
+          </PopoverPrimitive.Close>
         </div>
       </div>
 
