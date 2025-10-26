@@ -188,8 +188,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   pnl: position.pnl,
                 }}
                 onClose={() => {}}
-                onModify={(data) => console.log('Modify:', data)}
-                onPartialClose={(volume) => console.log('Partial close:', volume)}
+                onModify={() => {}}
+                onPartialClose={() => {}}
               />
             </PopoverContent>
           </Popover>
@@ -231,8 +231,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   pnl: position.pnl,
                 }}
                 onClose={() => {}}
-                onModify={(data) => console.log('Modify:', data)}
-                onPartialClose={(volume) => console.log('Partial close:', volume)}
+                onModify={() => {}}
+                onPartialClose={() => {}}
               />
             </PopoverContent>
           </Popover>
@@ -298,8 +298,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 pnl: position.pnl,
               }}
               onClose={() => {}}
-              onModify={(data) => console.log('Modify:', data)}
-              onPartialClose={(volume) => console.log('Partial close:', volume)}
+              onModify={() => {}}
+              onPartialClose={() => {}}
             />
           </PopoverContent>
         </Popover>

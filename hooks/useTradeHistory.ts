@@ -28,8 +28,19 @@ export function useTradeHistory({ accountId, period = 'month', from, to, enabled
 
   const mapToPosition = (item: any, idx: number): Position => {
     const symbol = item.Symbol || item.symbol || ''
-    const action = item.Action ?? item.action
-    const type = (action === 0 || action === 'Buy') ? 'Buy' as const : 'Sell' as const
+    const action = item.Action ?? item.action ?? item.Type ?? item.type
+    let type: 'Buy' | 'Sell'
+    if (action !== undefined && action !== null) {
+      const n = Number(action)
+      if (Number.isFinite(n)) {
+        type = n === 0 ? 'Buy' : 'Sell'
+      } else {
+        const s = String(action).toLowerCase()
+        type = s.includes('buy') ? 'Buy' : 'Sell'
+      }
+    } else {
+      type = 'Sell'
+    }
     const volRaw = item.Volume ?? item.volume ?? 0
     const volume = Number(volRaw) / 10000
     const openPrice = item.PriceOpen ?? item.OpenPrice ?? item.openPrice ?? item.Price ?? 0
@@ -98,4 +109,3 @@ export function useTradeHistory({ accountId, period = 'month', from, to, enabled
 
   return { closedPositions, isLoading, error, refetch: fetchHistory }
 }
-

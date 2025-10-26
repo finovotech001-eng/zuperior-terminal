@@ -57,8 +57,22 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
 
     const symbol = (pos.Symbol ?? pos.symbol ?? pos.SymbolName ?? '').toString()
 
-    const t = pos.Type ?? pos.type
-    const type: 'Buy' | 'Sell' = (t === 0 || t === 'Buy') ? 'Buy' : 'Sell'
+    const rawT = pos.Type ?? pos.type ?? pos.Action ?? pos.action ?? pos.PositionType ?? pos.positionType ?? pos.Cmd ?? pos.cmd ?? pos.Side ?? pos.side
+    let type: 'Buy' | 'Sell'
+    if (rawT !== undefined && rawT !== null) {
+      const n = Number(rawT)
+      if (Number.isFinite(n)) {
+        // MT5: 0 = Buy, 1 = Sell
+        type = n === 0 ? 'Buy' : 'Sell'
+      } else {
+        const s = String(rawT).toLowerCase()
+        if (s.includes('buy')) type = 'Buy'
+        else if (s.includes('sell')) type = 'Sell'
+        else type = 'Sell'
+      }
+    } else {
+      type = 'Sell'
+    }
 
     // Build a stable, unique id per row - always prefer ticket number if it exists
     let id: string

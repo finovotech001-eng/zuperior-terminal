@@ -3,6 +3,7 @@ import { Manrope, JetBrains_Mono } from "next/font/google";
 import { Provider } from "jotai";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
+import ConsoleFilter from "@/components/misc/console-filter";
 
 const manrope = Manrope({
   variable: "--font-manrope",
@@ -33,6 +34,7 @@ export default function RootLayout({
       >
         <Provider>
           <ThemeProvider defaultTheme="dark" storageKey="zuperior-theme">
+            <ConsoleFilter />
             {children}
           </ThemeProvider>
         </Provider>

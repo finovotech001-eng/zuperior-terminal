@@ -125,7 +125,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         onClick={() => onSell?.({
           orderType,
           volume: parseFloat(volume),
-          openPrice: openPrice ? parseFloat(openPrice) : undefined
+          openPrice: openPrice ? parseFloat(openPrice) : currentSellPrice
         })}
         className="rounded-md p-3 bg-[#FF5555] hover:bg-[#FF5555]/90 transition-colors cursor-pointer text-left"
       >
@@ -142,7 +142,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         onClick={() => onBuy?.({
           orderType,
           volume: parseFloat(volume),
-          openPrice: openPrice ? parseFloat(openPrice) : undefined
+          openPrice: openPrice ? parseFloat(openPrice) : currentBuyPrice
         })}
         className="rounded-md p-3 bg-[#4A9EFF] hover:bg-[#4A9EFF]/90 transition-colors cursor-pointer text-right"
       >
@@ -169,7 +169,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         onClick={() => onSell?.({
           orderType,
           volume: parseFloat(volume),
-          openPrice: openPrice ? parseFloat(openPrice) : undefined
+          openPrice: openPrice ? parseFloat(openPrice) : currentSellPrice
         })}
         className="rounded-md p-3 border-2 border-[#FF5555] bg-transparent hover:bg-[#FF5555]/10 transition-colors cursor-pointer text-left"
       >
@@ -186,7 +186,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         onClick={() => onBuy?.({
           orderType,
           volume: parseFloat(volume),
-          openPrice: openPrice ? parseFloat(openPrice) : undefined
+          openPrice: openPrice ? parseFloat(openPrice) : currentBuyPrice
         })}
         className="rounded-md p-3 border-2 border-[#4A9EFF] bg-transparent hover:bg-[#4A9EFF]/10 transition-colors cursor-pointer text-right"
       >
@@ -722,7 +722,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   <button
                     onClick={() => {
                       // Handle Set SL and Risk action
-                      console.log("Set SL and Risk clicked")
+                      
                     }}
                     className="w-full py-2.5 px-4 rounded-md text-sm font-medium bg-white/10 text-white border border-white/20 hover:bg-white/[0.15] transition-colors cursor-pointer"
                   >
