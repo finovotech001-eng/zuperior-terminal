@@ -198,6 +198,36 @@
   @apply border-danger;
 }
 
+@keyframes signal-blink-green {
+  0% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes signal-blink-red {
+  0% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.signal-blink-up {
+  animation: signal-blink-green 0.5s ease-in-out infinite alternate;
+}
+
+.signal-blink-down {
+  animation: signal-blink-red 0.5s ease-in-out infinite alternate;
+}
+
 /* Subtle Hover Effect */
 .hover-lift:hover {
   transform: translateY(-1px);

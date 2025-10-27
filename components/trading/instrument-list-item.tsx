@@ -5,6 +5,53 @@ import { Star, GripVertical, TrendingUp, TrendingDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { InstrumentColumnConfig } from "@/lib/store"
 
+interface PriceBlinkBadgeProps {
+  value: number
+  formatter: (value: number) => string
+}
+
+const PriceBlinkBadge: React.FC<PriceBlinkBadgeProps> = ({ value, formatter }) => {
+  const [direction, setDirection] = React.useState<"up" | "down" | null>(null)
+  const previousValueRef = React.useRef(value)
+
+  React.useEffect(() => {
+    const previous = previousValueRef.current
+    if (value !== previous) {
+      setDirection(value > previous ? "up" : "down")
+      previousValueRef.current = value
+    }
+  }, [value])
+
+  return (
+    <span
+      className={cn(
+        "price-font text-[0.78rem] px-2 py-1 rounded-md font-semibold leading-none tracking-tight",
+        "inline-flex items-center justify-center transition-colors duration-200 text-black w-fit",
+        direction === "up" && "bg-[#16A34A]",
+        direction === "down" && "bg-[#EF4444]",
+        direction === null && "bg-white/60 text-black/70"
+      )}
+    >
+      {formatter(value)}
+    </span>
+  )
+}
+
+const SignalIndicator: React.FC<{ signal: "up" | "down" }> = ({ signal }) => (
+  <div
+    className={cn(
+      "flex items-center justify-center w-full",
+      signal === "up" ? "signal-blink-up" : "signal-blink-down"
+    )}
+  >
+    {signal === "up" ? (
+      <TrendingUp className="h-3.5 w-3.5 text-success" />
+    ) : (
+      <TrendingDown className="h-3.5 w-3.5 text-danger" />
+    )}
+  </div>
+)
+
 export interface InstrumentListItemProps {
   symbol: string
   signal: "up" | "down"
@@ -56,30 +103,22 @@ const InstrumentListItem = React.forwardRef<HTMLDivElement, InstrumentListItemPr
             </div>
           )
         case "signal":
-          return (
-            <div className="flex items-center justify-center w-full">
-              {signal === "up" ? (
-                <TrendingUp className="h-3.5 w-3.5 text-success" />
-              ) : (
-                <TrendingDown className="h-3.5 w-3.5 text-danger" />
-              )}
-            </div>
-          )
+          return <SignalIndicator signal={signal} />
         case "bid":
           return (
-            <div className="flex items-center justify-end w-full">
-              <span className="price-font text-xs text-white">{formatPrice(bid)}</span>
+            <div className="flex items-center justify-start w-full ml-2 space-x-2">
+              <PriceBlinkBadge value={bid} formatter={formatPrice} />
             </div>
           )
         case "ask":
           return (
-            <div className="flex items-center justify-end w-full">
-              <span className="price-font text-xs text-white">{formatPrice(ask)}</span>
+            <div className="flex items-center justify-start w-full ml-2 space-x-2">
+              <PriceBlinkBadge value={ask} formatter={formatPrice} />
             </div>
           )
         case "change":
           return (
-            <div className="flex items-center justify-end w-full">
+            <div className="flex items-center justify-start w-full ml-2 space-x-2">
               <span
                 className={cn(
                   "text-xs price-font font-medium",
@@ -93,7 +132,7 @@ const InstrumentListItem = React.forwardRef<HTMLDivElement, InstrumentListItemPr
           )
         case "pnl":
           return (
-            <div className="flex items-center justify-end w-full">
+            <div className="flex items-center justify-start w-full ml-2 space-x-2">
               {pnl !== undefined ? (
                 <span
                   className={cn(
@@ -172,4 +211,3 @@ const InstrumentListItem = React.forwardRef<HTMLDivElement, InstrumentListItemPr
 InstrumentListItem.displayName = "InstrumentListItem"
 
 export { InstrumentListItem }
-

@@ -248,14 +248,15 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
             {/* Dynamic Headers */}
             {visibleColumns.map((column) => {
               const isSymbol = column.key === "symbol"
+              const centerAlignedKeys = ["signal", "bid", "ask", "change", "pnl"]
               return (
                 <div
                   key={column.key}
                   className={cn(
                     "relative flex items-center px-3 py-2 text-xs font-medium text-white/60 group shrink-0",
                     isSymbol && "sticky left-[28px] z-20 backdrop-blur-xl bg-white/[0.03] border-r border-white/10",
-                    column.key === "signal" && "justify-center",
-                    (column.key === "bid" || column.key === "ask" || column.key === "change" || column.key === "pnl") && "justify-end"
+                    column.key === "signal" && "pl-6",
+                    centerAlignedKeys.includes(column.key) && "justify-center text-center"
                   )}
                   style={{ width: `${column.width}px` }}
                 >
