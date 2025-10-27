@@ -1,21 +1,8 @@
 import type { Metadata } from "next";
-import { Manrope, JetBrains_Mono } from "next/font/google";
 import { Provider } from "jotai";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 import ConsoleFilter from "@/components/misc/console-filter";
-
-const manrope = Manrope({
-  variable: "--font-manrope",
-  subsets: ["latin"],
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Zuperior - Trading Terminal",
@@ -29,9 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body
-        className={`${manrope.variable} ${jetbrainsMono.variable} antialiased`}
-      >
+      <body className="antialiased">
         <Provider>
           <ThemeProvider defaultTheme="dark" storageKey="zuperior-theme">
             <ConsoleFilter />

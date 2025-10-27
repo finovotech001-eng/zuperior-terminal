@@ -3,7 +3,7 @@
 /* Override Pro UI colors to match dark theme */
 .klinecharts-pro {
   background-color: #01040D !important;
-  font-family: 'Manrope', sans-serif !important;
+  font-family: sans-serif !important;
 }
 
 /* Toolbar styling */
@@ -223,7 +223,7 @@
 
 /* Chart info overlay (OHLCV display) */
 .klinecharts-pro-chart-info {
-  font-family: 'Manrope', sans-serif !important;
+  font-family: sans-serif !important;
   font-size: 12px !important;
   color: #9CA3AF !important;
   padding: 8px 12px !important;
@@ -240,7 +240,7 @@
 
 /* Indicator labels */
 .klinecharts-pro-indicator-label {
-  font-family: 'Manrope', sans-serif !important;
+  font-family: sans-serif !important;
   font-size: 11px !important;
   font-weight: 500 !important;
   color: #9CA3AF !important;
@@ -248,12 +248,12 @@
 
 /* Price labels on Y-axis */
 .klinecharts-pro canvas {
-  font-family: 'Manrope', sans-serif !important;
+  font-family: sans-serif !important;
 }
 
 /* Crosshair info */
 .klinecharts-pro-crosshair-info {
-  font-family: 'Manrope', sans-serif !important;
+  font-family: sans-serif !important;
   font-size: 11px !important;
   background-color: #1F2937 !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;

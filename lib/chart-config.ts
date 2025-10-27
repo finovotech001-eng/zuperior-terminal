@@ -9,7 +9,7 @@ export const chartOptions: DeepPartial<ChartOptions> = {
     background: { type: ColorType.Solid, color: '#01040D' },
     textColor: '#FAFAFA',
     fontSize: 12,
-    fontFamily: 'Manrope, -apple-system, sans-serif',
+    fontFamily: 'sans-serif',
   },
   grid: {
     vertLines: {

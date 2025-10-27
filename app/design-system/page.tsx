@@ -572,25 +572,25 @@ export default function DesignSystemPage() {
         {/* Typography */}
         <ComponentSection
           title="Typography"
-          description="Manrope for UI text, JetBrains Mono for numbers and prices"
+          description="Sans-serif typography keeps UI text and numeric data consistent"
         >
           <Card>
             <CardContent className="pt-6 space-y-4">
               <div>
-                <h1 className="text-4xl font-bold">Heading 1 - Manrope</h1>
+                <h1 className="text-4xl font-bold">Heading 1 - Sans Serif</h1>
                 <p className="text-muted-foreground">48px / Bold / Display</p>
               </div>
               <div>
-                <h2 className="text-3xl font-bold">Heading 2 - Manrope</h2>
+                <h2 className="text-3xl font-bold">Heading 2 - Sans Serif</h2>
                 <p className="text-muted-foreground">36px / Bold / Titles</p>
               </div>
               <div>
-                <p className="text-base">Body text in Manrope font. Clean and modern.</p>
+                <p className="text-base">Body text in the sans-serif system font keeps things clean.</p>
                 <p className="text-muted-foreground">16px / Regular / Body</p>
               </div>
               <div>
                 <p className="text-2xl price-font font-bold">1,234.56789</p>
-                <p className="text-muted-foreground">JetBrains Mono / Prices & Numbers</p>
+                <p className="text-muted-foreground">Sans-serif / Prices & Numbers</p>
               </div>
             </CardContent>
           </Card>
@@ -976,7 +976,7 @@ export default function DesignSystemPage() {
             <CardHeader>
               <CardTitle>Professional Trading Chart - Exness Style</CardTitle>
               <CardDescription>
-                TradingView Lightweight Charts with exact Exness layout. Features: Compact top bar with symbol/price info and zoom controls, Left vertical toolbar with drawing tools (trendlines, horizontal lines, shapes, text), Clean candlestick chart (no volume), Bottom timeframe selector (1D to All) with smooth animations. Perfectly integrated with Zuperior design system: Dark background (#01040D), Success Green (#16A34A), Danger Red (#EF4444), Purple crosshair (#8B5CF6), Manrope font.
+                TradingView Lightweight Charts with exact Exness layout. Features: Compact top bar with symbol/price info and zoom controls, Left vertical toolbar with drawing tools (trendlines, horizontal lines, shapes, text), Clean candlestick chart (no volume), Bottom timeframe selector (1D to All) with smooth animations. Perfectly integrated with Zuperior design system: Dark background (#01040D), Success Green (#16A34A), Danger Red (#EF4444), Purple crosshair (#8B5CF6), sans-serif typography.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
