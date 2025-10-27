@@ -712,6 +712,12 @@ function TerminalContent() {
     }
     return 'No User';
   });
+  const [userEmail, setUserEmail] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('userEmail') || '';
+    }
+    return '';
+  });
   const [isUserLoading, setIsUserLoading] = React.useState(true);
 
   // Fetch user data on mount
@@ -736,6 +742,7 @@ function TerminalContent() {
             localStorage.setItem('userName', name);
             // Also store email for reference
             if (data.user.email) {
+              setUserEmail(data.user.email);
               localStorage.setItem('userEmail', data.user.email);
             }
           }
@@ -744,10 +751,12 @@ function TerminalContent() {
           localStorage.removeItem('userName');
           localStorage.removeItem('userEmail');
           setUserName('No User');
+          setUserEmail('');
         }
       } catch (error) {
         console.error('Error fetching user:', error);
         setUserName('No User');
+        setUserEmail('');
       } finally {
         setIsUserLoading(false);
       }
@@ -755,6 +764,38 @@ function TerminalContent() {
 
     fetchUser();
   }, [currentAccountId]);
+  const maskEmail = React.useCallback((email: string) => {
+    if (!email) return '***';
+    const [local, domain] = email.split('@');
+    if (!domain) return '***';
+    if (!local || local.length === 0) return `***@${domain}`;
+    const first = local[0];
+    const last = local.length > 1 ? local[local.length - 1] : '';
+    const maskLength = Math.max(local.length - 2, 4);
+    const masked = '*'.repeat(maskLength);
+    return `${first}${masked}${last ? last : ''}@${domain}`;
+  }, []);
+  const maskedEmail = React.useMemo(() => maskEmail(userEmail), [maskEmail, userEmail]);
+
+  const handleSignOut = React.useCallback(async () => {
+    try {
+      await fetch('/apis/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Sign out failed:', error);
+    } finally {
+      try {
+        localStorage.removeItem('userName');
+        localStorage.removeItem('userEmail');
+        localStorage.removeItem('accountId');
+      } catch {}
+      window.location.href = 'https://dashboard.zuperior.com/login';
+    }
+  }, []);
+
   const formatBalanceDisplay = (value: number) =>
     isBalanceLoading
       ? "Loading..."
@@ -1692,20 +1733,30 @@ function TerminalContent() {
                 <div className="px-3 py-2.5">
                   <div className="flex items-center gap-2 text-sm text-white/80">
                     <User className="h-4 w-4" />
-                    <span className="font-mono">f****0@gmail.com</span>
+                    <span className="font-mono">
+                      {isUserLoading ? 'Loading...' : maskedEmail}
+                    </span>
                   </div>
                 </div>
                 <Separator />
-                <button className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded transition-colors group">
+                <a
+                  href="https://dashboard.zuperior.com/support"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded transition-colors group"
+                >
                   <LifeBuoy className="h-4 w-4 text-white/60 group-hover:text-white" />
                   <span className="text-white/80 group-hover:text-white">Support</span>
-                </button>
+                </a>
                 <button className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded transition-colors group">
                   <Lightbulb className="h-4 w-4 text-white/60 group-hover:text-white" />
                   <span className="text-white/80 group-hover:text-white">Suggest a feature</span>
                 </button>
                 <Separator />
-                <button className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded transition-colors text-danger group">
+                <button
+                  className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded transition-colors text-danger group"
+                  onClick={handleSignOut}
+                >
                   <LogOut className="h-4 w-4" />
                   <span>Sign Out</span>
                 </button>
@@ -1978,7 +2029,3 @@ function TerminalContent() {
     </div>
   )
 }
-
-
-
-
