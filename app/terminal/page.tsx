@@ -761,7 +761,7 @@ function TerminalContent() {
       : balanceError
         ? "Error"
         : hideBalance
-          ? "â€¢â€¢â€¢â€¢â€¢â€¢"
+          ? "......"
           : formatCurrency(value, 2);
 
   // const displayEquity = formatBalanceDisplay(balanceData.equity);
@@ -773,7 +773,7 @@ function TerminalContent() {
   //   : balanceError
   //     ? "Error"
   //     : hideBalance
-  //       ? "â€¢â€¢â€¢â€¢â€¢â€¢"
+  //       ? "......"
   //       : `${balanceData.marginLevel.toFixed(2)} %`;
 
   // const displayTotalPL = formatBalanceDisplay(balanceData.totalPL);
@@ -1439,9 +1439,9 @@ function TerminalContent() {
                       </span>
 
                     </div>
-                    {/* ðŸš€ 1A: REAL-TIME EQUITY DISPLAY IN HEADER */}
+                    {/* 1A: REAL-TIME EQUITY DISPLAY IN HEADER */}
                     <span className="text-sm font-semibold text-success price-font">
-                      {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.equity, 2)} USD
+                      {hideBalance ? "......" : formatCurrency(liveEquity, 2)} USD
                     </span>
                   </div>
                   <ChevronDown className="h-4 w-4 text-white/40 group-hover:text-white/60" />
@@ -1465,7 +1465,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Balance</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
-                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.balance, 2)} USD
+                          {hideBalance ? "......" : formatCurrency(balanceData.balance, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1482,7 +1482,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Equity</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-success price-font">
-                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.equity, 2)} USD
+                          {hideBalance ? "......" : formatCurrency(liveEquity, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1499,7 +1499,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Margin</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
-                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.margin, 2)} USD
+                          {hideBalance ? "......" : formatCurrency(balanceData.margin, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1516,7 +1516,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Free margin</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
-                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : formatCurrency(balanceData.freeMargin, 2)} USD
+                          {hideBalance ? "......" : formatCurrency(balanceData.freeMargin, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1534,7 +1534,7 @@ function TerminalContent() {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
                           {/* Format margin level as a percentage with 2 decimal places */}
-                          {hideBalance ? "â€¢â€¢â€¢â€¢â€¢â€¢" : `${balanceData.marginLevel.toFixed(2)} %`}
+                          {hideBalance ? "......" : `${balanceData.marginLevel.toFixed(2)} %`}
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -1605,8 +1605,13 @@ function TerminalContent() {
                                 : balanceError
                                   ? "Error"
                                   : hideBalance
-                                    ? "â€¢â€¢â€¢â€¢â€¢â€¢"
-                                    : `${formatCurrency(balances[account.accountId]?.equity || 0, 2)} USD`
+                                    ? "......"
+                                    : `${formatCurrency(
+                                        (currentAccountId === account.accountId
+                                          ? liveEquity
+                                          : balances[account.accountId]?.equity) || 0,
+                                        2
+                                      )} USD`
                               }
                             </span>
                           </div>
@@ -1888,31 +1893,31 @@ function TerminalContent() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Equity:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "••••••" : `${formatCurrency(liveEquity, 2)} USD`}
+                  {hideBalance ? "......" : `${formatCurrency(liveEquity, 2)} USD`}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Free Margin:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "••••••" : formatCurrency(balanceData.freeMargin, 2)} USD
+                  {hideBalance ? "......" : formatCurrency(balanceData.freeMargin, 2)} USD
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Balance:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "••••••" : formatCurrency(balanceData.balance, 2)} USD
+                  {hideBalance ? "......" : formatCurrency(balanceData.balance, 2)} USD
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60"> </span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "••••••" : formatCurrency(balanceData.margin, 2)} USD
+                  {hideBalance ? "......" : formatCurrency(balanceData.margin, 2)} USD
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Margin level:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                    {hideBalance ? "••••••" : `${balanceData.marginLevel.toFixed(2)} %`}
+                    {hideBalance ? "......" : `${balanceData.marginLevel.toFixed(2)} %`}
                 </span>
               </div>
             </div>
@@ -1925,7 +1930,7 @@ function TerminalContent() {
                   "text-sm font-semibold price-font",
                   liveTotalPL >= 0 ? "text-success" : "text-danger"
                 )}>
-                  {hideBalance ? "••••••" : `${liveTotalPL.toFixed(2)} USD`}
+                  {hideBalance ? "......" : `${liveTotalPL.toFixed(2)} USD`}
                 </span>
               </div>
               <Popover>
@@ -1956,10 +1961,6 @@ function TerminalContent() {
     </div>
   )
 }
-
-
-
-
 
 
 
