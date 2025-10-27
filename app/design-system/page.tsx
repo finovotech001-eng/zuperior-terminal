@@ -46,6 +46,7 @@ import { InstrumentListItem } from "@/components/trading/instrument-list-item"
 import { InstrumentList } from "@/components/trading/instrument-list"
 import { PositionsTable } from "@/components/trading/positions-table"
 import { PositionManagementPanel } from "@/components/trading/position-management-panel"
+import { Popover } from "@/components/ui/popover"
 import { AccountSwitcher } from "@/components/trading/account-switcher"
 import { BalanceDisplay } from "@/components/trading/balance-display"
 import { EconomicCalendarEvent } from "@/components/trading/economic-calendar-event"
@@ -904,14 +905,16 @@ export default function DesignSystemPage() {
           </ShowcaseCard>
 
             <ShowcaseCard title="Position Management Panel" description="Modify, partial close, and close by panel" className="col-span-2">
-            <div className="flex justify-center">
-              <PositionManagementPanel
-                position={samplePosition}
-                onClose={() => console.log('Close panel')}
-                onModify={(data) => console.log('Modify:', data)}
-                onPartialClose={(volume) => console.log('Partial close:', volume)}
-              />
-            </div>
+            <Popover open>
+              <div className="flex justify-center">
+                <PositionManagementPanel
+                  position={samplePosition}
+                  onClose={() => console.log('Close panel')}
+                  onModify={(data) => console.log('Modify:', data)}
+                  onPartialClose={(volume) => console.log('Partial close:', volume)}
+                />
+              </div>
+            </Popover>
           </ShowcaseCard>
           </VariantGrid>
         </ComponentSection>
@@ -1033,4 +1036,3 @@ export default function DesignSystemPage() {
     </div>
   )
 }
-
