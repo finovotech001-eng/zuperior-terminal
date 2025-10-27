@@ -6,6 +6,8 @@ import { useAtom } from "jotai"
 import { motion, AnimatePresence } from "framer-motion"
 import { placeMarketOrder } from "@/components/trading/placeOrder";
 import { cn, formatCurrency } from "@/lib/utils"
+import Image from "next/image"
+import brandLogo from "@/public/logo.png"
 import { 
   ListIcon, 
   Calendar, 
@@ -1403,7 +1405,10 @@ function TerminalContent() {
       <header className="flex items-center h-14 px-4 border-b border-white/8 bg-[#01040D] shrink-0 z-30 gap-4">
         {/* Left: Logo + Instrument Tabs */}
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <h1 className="text-xl font-bold gradient-text shrink-0">Zuperior</h1>
+          <div className="flex items-center gap-2 shrink-0">
+            <Image src={brandLogo} alt="Zuperior logo" width={40} height={40} className="rounded-sm object-contain" priority />
+            <h1 className="text-2xl font-bold gradient-text">Zuperior</h1>
+          </div>
           
           {/* Instrument Tabs - takes remaining width */}
           <div className="flex-1 min-w-0">
@@ -1951,8 +1956,6 @@ function TerminalContent() {
     </div>
   )
 }
-
-
 
 
 

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image, { StaticImageData } from "next/image"
 import { Bell, Menu } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SearchInput } from "@/components/forms/search-input"
@@ -8,10 +9,12 @@ import { IconButton } from "@/components/ui/icon-button"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { UserProfile } from "@/components/auth/user-profile"
+import defaultLogo from "@/public/logo.png"
 
 export interface HeaderProps extends React.HTMLAttributes<HTMLElement> {
   onMenuClick?: () => void
   showSearch?: boolean
+  logo?: StaticImageData
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -34,7 +37,8 @@ const Header: React.FC<HeaderProps> = ({
           <Menu className="h-5 w-5" />
         </IconButton>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <Image src={props?.logo ?? defaultLogo} alt="Zuperior logo" width={28} height={28} className="rounded-sm object-contain" priority />
           <div className="text-2xl font-bold bg-gradient-to-r from-purple-500 to-blue-500 bg-clip-text text-transparent">
             Zuperior
           </div>
@@ -65,4 +69,3 @@ const Header: React.FC<HeaderProps> = ({
 }
 
 export { Header }
-
