@@ -299,7 +299,7 @@ export function AdvancedChart({
           { multiplier: 1, timespan: 'week', text: '1W' },
         ],
         timezone: 'America/New_York',
-        mainIndicators: ['MA', 'EMA', 'BOLL'],
+        mainIndicators: [],
         subIndicators: [], // No sub-indicators by default
         datafeed: datafeedRef.current
       })
