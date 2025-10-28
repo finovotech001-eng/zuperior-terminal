@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>TradingView Test</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #000; color: #fff; font-family: monospace; }
+    #chart { width: 100%; height: 600px; border: 1px solid #333; }
+    .log { background: #111; padding: 10px; margin: 10px 0; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>TradingView Chart Test</h1>
+  <div class="log" id="status">Loading...</div>
+  <div id="chart"></div>
+
+  <script src="/charting_library/charting_library.standalone.js"></script>
+  <script>
+    console.log('✅ TradingView loaded:', typeof window.TradingView);
+    
+    class SimpleDatafeed {
+      onReady(callback) {
+        callback({
+          supported_resolutions: ['1', '5', '15', '30', '60', '240', 'D'],
+          supports_search: true,
+          supports_group_request: false,
+          supports_marks: false,
+          supports_time: true,
+          supports_timescale_marks: false,
+        });
+      }
+
+      resolveSymbol(symbolName, onResolved, onError) {
+        setTimeout(() => {
+          onResolved({
+            name: symbolName,
+            ticker: symbolName,
+            description: symbolName,
+            type: 'forex',
+            session: '24x7',
+            timezone: 'Etc/UTC',
+            exchange: 'FOREX',
+            minmov: 1,
+            pricescale: 100,
+            has_intraday: true,
+            supported_resolutions: ['1', '5', '15', '30', '60', '240', 'D'],
+            volume_precision: 2,
+            data_status: 'streaming',
+          });
+        }, 0);
+      }
+
+      async getBars(symbolInfo, resolution, periodParams, onHistoryCallback, onErrorCallback) {
+        console.log('🔵 getBars called:', { symbol: symbolInfo.ticker, resolution });
+        
+        try {
+          const url = `/apis/chart/proxy?symbol=${symbolInfo.ticker}&timeframe=${resolution}&count=300`;
+          const response = await fetch(url);
+          const data = await response.json();
+          
+          console.log('✅ Got data:', data.length, 'bars');
+          
+          const bars = data.map(candle => ({
+            time: new Date(candle.time).getTime(),
+            low: candle.low,
+            high: candle.high,
+            open: candle.open,
+            close: candle.close,
+            volume: candle.volume,
+          }));
+          
+          onHistoryCallback(bars);
+        } catch (error) {
+          console.error('❌ Error:', error);
+          onErrorCallback(error.message);
+        }
+      }
+
+      subscribeBars(symbolInfo, resolution, onTick, subscriberUID, onResetCache) {
+        console.log('🔵 subscribeBars:', subscriberUID);
+      }
+
+      unsubscribeBars(subscriberUID) {
+        console.log('🔵 unsubscribeBars:', subscriberUID);
+      }
+    }
+
+    if (!window.TradingView) {
+      document.getElementById('status').textContent = '❌ TradingView not loaded';
+    } else {
+      document.getElementById('status').textContent = '✅ Initializing widget...';
+      
+      const widget = new window.TradingView.widget({
+        debug: true,
+        symbol: 'XAUUSD',
+        interval: '1',
+        container: 'chart',
+        library_path: '/charting_library/',
+        locale: 'en',
+        datafeed: new SimpleDatafeed(),
+        theme: 'dark',
+        autosize: true,
+      });
+
+      widget.onChartReady(() => {
+        document.getElementById('status').textContent = '✅ Chart ready!';
+        console.log('✅ Chart ready');
+      });
+    }
+  </script>
+</body>
+</html>
+
