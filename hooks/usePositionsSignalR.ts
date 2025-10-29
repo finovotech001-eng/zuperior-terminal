@@ -110,13 +110,130 @@ export function usePositionsSignalR({
         clientPlatform: 'ReactNative',
         deviceId: `web-${Date.now()}`,
       }).toString();
+      
+      // Build hub URL - use original HTTP URL
       const hubUrl = `${SIGNALR_HUB_URL}?${qp}`;
+
+      // Create SignalR connection using a custom HTTP client that proxies negotiate requests
+      // This avoids CORS issues by routing negotiate through our Next.js API
+      class ProxyHttpClient extends signalR.HttpClient {
+        get(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          // If this is a negotiate request, route it through our proxy
+          if (url.includes('/negotiate')) {
+            const urlObj = new URL(url);
+            const proxyUrl = `/apis/signalr/negotiate?hub=mobiletrading&${urlObj.searchParams.toString()}`;
+            console.log('[SignalR] Proxying negotiate request to:', proxyUrl);
+            
+            return fetch(proxyUrl, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` }),
+                ...options?.headers,
+              },
+            }).then(async (response) => {
+              const data = await response.json();
+              return new signalR.HttpResponse(
+                response.status,
+                response.statusText,
+                JSON.stringify(data)
+              );
+            });
+          }
+          
+          // For non-negotiate requests, use fetch directly
+          return fetch(url, {
+            method: options?.method || 'GET',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(
+              response.status,
+              response.statusText,
+              content
+            );
+          });
+        }
+
+        post(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          return fetch(url, {
+            method: 'POST',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(
+              response.status,
+              response.statusText,
+              content
+            );
+          });
+        }
+
+        delete(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          return fetch(url, {
+            method: 'DELETE',
+            headers: options?.headers,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(
+              response.status,
+              response.statusText,
+              content
+            );
+          });
+        }
+
+        send(request: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          const url = request.url || '';
+          const method = request.method || 'GET';
+          
+          // If this is a negotiate request, route it through our proxy
+          if (url.includes('/negotiate')) {
+            const urlObj = new URL(url);
+            const proxyUrl = `/apis/signalr/negotiate?hub=mobiletrading&${urlObj.searchParams.toString()}`;
+            console.log('[SignalR] Proxying negotiate request to:', proxyUrl);
+            
+            return fetch(proxyUrl, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` }),
+                ...request.headers,
+              },
+            }).then(async (response) => {
+              const data = await response.json();
+              return new signalR.HttpResponse(
+                response.status,
+                response.statusText,
+                JSON.stringify(data)
+              );
+            });
+          }
+          
+          // For other requests, use fetch directly
+          return fetch(url, {
+            method: method,
+            headers: request.headers,
+            body: request.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(
+              response.status,
+              response.statusText,
+              content
+            );
+          });
+        }
+      }
 
       // Create SignalR connection
       const connection = new signalR.HubConnectionBuilder()
         .withUrl(hubUrl, {
           accessTokenFactory: () => token || '',
-          transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling,
+          httpClient: new ProxyHttpClient(),
+          transport: signalR.HttpTransportType.LongPolling, // Use LongPolling to avoid mixed content issues on HTTPS
           withCredentials: false,
         })
         .withAutomaticReconnect({
@@ -125,64 +242,67 @@ export function usePositionsSignalR({
         .configureLogging(signalR.LogLevel.Information)
         .build();
 
-      // Set up event handlers
-      connection.on('PositionUpdate', (data: any) => {
+      // Helper to format positions
+      const formatSinglePosition = (pos: any): SignalRPosition => ({
+        id: (pos.PositionId ?? pos.PositionID ?? pos.Ticket ?? pos.ticket ?? pos.Id ?? pos.id ?? Math.random()).toString(),
+        ticket: Number(pos.Ticket ?? pos.ticket ?? pos.PositionId ?? pos.PositionID ?? 0) || 0,
+        positionId: Number(pos.PositionId ?? pos.PositionID ?? 0) || undefined,
+        symbol: pos.Symbol || pos.symbol || '',
+        type: (pos.Type === 0 || pos.type === 0 || pos.Type === 'Buy' || pos.type === 'Buy') ? 'Buy' as const : 'Sell' as const,
+        volume: pos.Volume || pos.volume || 0,
+        openPrice: pos.OpenPrice || pos.openPrice || pos.PriceOpen || pos.priceOpen || 0,
+        currentPrice: pos.PriceCurrent ?? pos.priceCurrent ?? pos.CurrentPrice ?? pos.currentPrice ?? 0,
+        takeProfit: pos.TakeProfit || pos.takeProfit || pos.TP || pos.tp || undefined,
+        stopLoss: pos.StopLoss || pos.stopLoss || pos.SL || pos.sl || undefined,
+        openTime: pos.TimeSetup || pos.timeSetup || pos.OpenTime || pos.openTime || new Date().toISOString(),
+        swap: pos.Swap || pos.swap || 0,
+        profit: pos.Profit || pos.profit || 0,
+        commission: pos.Commission || pos.commission || 0,
+        comment: pos.Comment || pos.comment || undefined,
+      });
+
+      const formatPositions = (data: any): SignalRPosition[] => {
+        if (Array.isArray(data)) {
+          return data.map((pos: any) => formatSinglePosition(pos));
+        } else if (data && typeof data === 'object') {
+          return [formatSinglePosition(data)];
+        }
+        return [];
+      };
+
+      // Handle position updates - listen to multiple event names
+      const handlePositionUpdate = (data: any, eventName: string) => {
         if (!isMountedRef.current) return;
         
-        console.log('dY"S Position update received:', data);
+        console.log(`[SignalR] ${eventName} received:`, data);
         
-        // Handle position update
+        const formattedPositions = formatPositions(data);
+        
         if (Array.isArray(data)) {
-          const formattedPositions = data.map((pos: any) => ({
-            id: (pos.PositionId ?? pos.PositionID ?? pos.Ticket ?? pos.ticket ?? pos.Id ?? pos.id ?? Math.random()).toString(),
-            ticket: Number(pos.Ticket ?? pos.ticket ?? pos.PositionId ?? pos.PositionID ?? 0) || 0,
-            positionId: Number(pos.PositionId ?? pos.PositionID ?? 0) || undefined,
-            symbol: pos.Symbol || pos.symbol || '',
-            type: (pos.Type === 0 || pos.type === 0 || pos.Type === 'Buy' || pos.type === 'Buy') ? 'Buy' : 'Sell',
-            volume: pos.Volume || pos.volume || 0,
-            openPrice: pos.OpenPrice || pos.openPrice || pos.PriceOpen || pos.priceOpen || 0,
-            currentPrice: pos.PriceCurrent || pos.priceCurrent || pos.CurrentPrice || pos.currentPrice || 0,
-            takeProfit: pos.TakeProfit || pos.takeProfit || pos.TP || pos.tp || undefined,
-            stopLoss: pos.StopLoss || pos.stopLoss || pos.SL || pos.sl || undefined,
-            openTime: pos.TimeSetup || pos.timeSetup || pos.OpenTime || pos.openTime || new Date().toISOString(),
-            swap: pos.Swap || pos.swap || 0,
-            profit: pos.Profit || pos.profit || 0,
-            commission: pos.Commission || pos.commission || 0,
-            comment: pos.Comment || pos.comment || undefined,
-          }));
-          
+          // Full list replacement
           setPositions(formattedPositions);
-        } else if (data && typeof data === 'object') {
+        } else {
           // Single position update
-          const formattedPosition: SignalRPosition = {
-            id: (data.PositionId ?? data.PositionID ?? data.Ticket ?? data.ticket ?? data.Id ?? data.id ?? Math.random()).toString(),
-            ticket: Number(data.Ticket ?? data.ticket ?? data.PositionId ?? data.PositionID ?? 0) || 0,
-            positionId: Number(data.PositionId ?? data.PositionID ?? 0) || undefined,
-            symbol: data.Symbol || data.symbol || '',
-            type: (data.Type === 0 || data.type === 0 || data.Type === 'Buy' || data.type === 'Buy') ? 'Buy' : 'Sell',
-            volume: data.Volume || data.volume || 0,
-            openPrice: data.OpenPrice || data.openPrice || data.PriceOpen || data.priceOpen || 0,
-            currentPrice: data.PriceCurrent || data.priceCurrent || data.CurrentPrice || data.currentPrice || 0,
-            takeProfit: data.TakeProfit || data.takeProfit || data.TP || data.tp || undefined,
-            stopLoss: data.StopLoss || data.stopLoss || data.SL || data.sl || undefined,
-            openTime: data.TimeSetup || data.timeSetup || data.OpenTime || data.openTime || new Date().toISOString(),
-            swap: data.Swap || data.swap || 0,
-            profit: data.Profit || data.profit || 0,
-            commission: data.Commission || data.commission || 0,
-            comment: data.Comment || data.comment || undefined,
-          };
-          
-          setPositions(prev => {
-            const index = prev.findIndex(p => p.id === formattedPosition.id);
-            if (index !== -1) {
-              const updated = [...prev];
-              updated[index] = formattedPosition;
-              return updated;
-            }
-            return [...prev, formattedPosition];
-          });
+          const formattedPosition = formattedPositions[0];
+          if (formattedPosition) {
+            setPositions(prev => {
+              const index = prev.findIndex(p => p.id === formattedPosition.id || p.ticket === formattedPosition.ticket);
+              if (index !== -1) {
+                const updated = [...prev];
+                updated[index] = formattedPosition;
+                return updated;
+              }
+              return [...prev, formattedPosition];
+            });
+          }
         }
-      });
+      };
+
+      // Register handlers for all possible event names
+      connection.on('PositionUpdate', (data: any) => handlePositionUpdate(data, 'PositionUpdate'));
+      connection.on('positions', (data: any) => handlePositionUpdate(data, 'positions'));
+      connection.on('Positions', (data: any) => handlePositionUpdate(data, 'Positions'));
+      connection.on('PositionsUpdate', (data: any) => handlePositionUpdate(data, 'PositionsUpdate'));
 
       connection.on('PositionClosed', (data: any) => {
         if (!isMountedRef.current) return;
@@ -193,14 +313,26 @@ export function usePositionsSignalR({
         setPositions(prev => prev.filter(p => p.ticket !== ticketToRemove));
       });
 
-      connection.on('PositionOpened', (data: any) => {
+      connection.on('PositionOpened', async (data: any) => {
         if (!isMountedRef.current) return;
         
-        console.log('dYYS Position opened:', data);
+        console.log('✅ Position opened:', data);
         // Trigger a positions refresh
-        connection.invoke('GetPositions').catch(err => {
+        try {
+          const positions = await tryInvokeWithResult(
+            'GetPositions',
+            'GetOpenPositions',
+            ['GetPositionsByAccount', accId],
+          );
+          if (positions) {
+            const formatted = formatPositions(positions);
+            if (formatted.length > 0) {
+              setPositions(formatted);
+            }
+          }
+        } catch (err) {
           console.error('Error fetching positions after open:', err);
-        });
+        }
       });
 
       connection.onreconnecting(() => {
@@ -210,17 +342,80 @@ export function usePositionsSignalR({
         setIsConnected(false);
       });
 
-      connection.onreconnected(() => {
+      connection.onreconnected(async () => {
         if (!isMountedRef.current) return;
-        console.log('\u000e SignalR reconnected');
+        console.log('✅ SignalR reconnected');
         setIsConnecting(false);
         setIsConnected(true);
         setError(null);
         
-        // Re-subscribe to positions
-        connection.invoke('GetPositions').catch(err => {
+        // Re-subscribe and fetch positions after reconnect
+        try {
+          // Helper functions defined below - they'll be available in closure
+          const reconnectTryInvoke = async (...candidates: Array<string | [string, ...any[]]>): Promise<boolean> => {
+            for (const c of candidates) {
+              try {
+                if (Array.isArray(c)) {
+                  await connection.invoke(c[0], ...c.slice(1));
+                } else {
+                  await connection.invoke(c);
+                }
+                return true;
+              } catch (err) {
+                console.log(`❌ Reconnect failed for: ${Array.isArray(c) ? c[0] : c}`);
+              }
+            }
+            return false;
+          };
+
+          const reconnectTryInvokeWithResult = async (...candidates: Array<string | [string, ...any[]]>): Promise<any> => {
+            for (const c of candidates) {
+              try {
+                let res: any;
+                if (Array.isArray(c)) {
+                  res = await connection.invoke(c[0], ...c.slice(1));
+                } else {
+                  res = await connection.invoke(c);
+                }
+                return res;
+              } catch (err) {
+                console.log(`❌ Reconnect fetch failed for: ${Array.isArray(c) ? c[0] : c}`);
+              }
+            }
+            return null;
+          };
+
+          // Try setting account again
+          await reconnectTryInvoke(
+            ['SetAccountId', accId],
+            ['SelectAccount', accId],
+            ['SetLogin', parseInt(accId, 10)],
+            ['SetLogin', accId],
+          );
+          
+          // Try subscribing again
+          await reconnectTryInvoke(
+            'SubscribeToPositions',
+            'SubscribePositions',
+            ['SubscribeToPositions', accId],
+          );
+          
+          // Try fetching positions
+          const positions = await reconnectTryInvokeWithResult(
+            'GetPositions',
+            'GetOpenPositions',
+            ['GetPositionsByAccount', accId],
+          );
+          
+          if (positions) {
+            const formatted = formatPositions(positions);
+            if (formatted.length > 0) {
+              setPositions(formatted);
+            }
+          }
+        } catch (err) {
           console.error('Error fetching positions after reconnect:', err);
-        });
+        }
       });
 
       connection.onclose((err) => {
@@ -243,31 +438,125 @@ export function usePositionsSignalR({
 
       // Start connection
       await connection.start();
-      console.log('\u000e SignalR connected successfully');
+      console.log('✅ SignalR connected successfully');
       
       connectionRef.current = connection;
       setIsConnected(true);
       setIsConnecting(false);
       setError(null);
 
-      // Subscribe to positions
-      await connection.invoke('SubscribeToPositions');
-      console.log('dY"S Subscribed to positions');
+      // Helper to try multiple method names
+      const tryInvoke = async (...candidates: Array<string | [string, ...any[]]>): Promise<boolean> => {
+        for (const c of candidates) {
+          try {
+            if (Array.isArray(c)) {
+              await connection.invoke(c[0], ...c.slice(1));
+            } else {
+              await connection.invoke(c);
+            }
+            console.log(`✅ Successfully called method: ${Array.isArray(c) ? c[0] : c}`);
+            return true;
+          } catch (err) {
+            console.log(`❌ Failed to call method: ${Array.isArray(c) ? c[0] : c}`, err);
+          }
+        }
+        return false;
+      };
 
-      // Get initial positions
-      await connection.invoke('GetPositions');
-      console.log('dY"S Requested initial positions');
+      const tryInvokeWithResult = async (...candidates: Array<string | [string, ...any[]]>): Promise<any> => {
+        for (const c of candidates) {
+          try {
+            let res: any;
+            if (Array.isArray(c)) {
+              res = await connection.invoke(c[0], ...c.slice(1));
+            } else {
+              res = await connection.invoke(c);
+            }
+            console.log(`✅ Successfully got result from: ${Array.isArray(c) ? c[0] : c}`, res);
+            return res;
+          } catch (err) {
+            console.log(`❌ Failed to get result from: ${Array.isArray(c) ? c[0] : c}`, err);
+          }
+        }
+        return null;
+      };
+
+      // Set account/login after connection (required by some hubs)
+      console.log('📝 Setting account/login...');
+      await tryInvoke(
+        ['SetAccountId', accId],
+        ['SelectAccount', accId],
+        ['SetLogin', parseInt(accId, 10)],
+        ['SetLogin', accId],
+      );
+
+      // Small delay after setting account
+      await new Promise(res => setTimeout(res, 200));
+
+      // Subscribe to positions using multiple method names
+      console.log('📡 Subscribing to positions...');
+      await tryInvoke(
+        'SubscribeToPositions',
+        'SubscribePositions',
+        'Subscribe',
+        ['SubscribePositionsForAccount', accId],
+        ['SubscribeToPositions', accId],
+        ['SubscribeToPositionsForLogin', parseInt(accId, 10)],
+        ['SubscribeToPositionsForLogin', accId],
+        ['SubscribeForPositions', accId],
+        ['SubscribeAccountPositions', accId],
+        ['SubscribePositionsByLogin', parseInt(accId, 10)],
+      );
+
+      // Get initial positions using multiple method names
+      console.log('📥 Fetching initial positions...');
+      const initialPositions = await tryInvokeWithResult(
+        'GetPositions',
+        'GetOpenPositions',
+        'Positions',
+        ['GetPositionsByLogin', parseInt(accId, 10)],
+        ['GetPositionsByLoginEx', parseInt(accId, 10)],
+        ['GetPositionsByAccount', accId],
+        ['GetAccountPositions', accId],
+        'GetPositionsList',
+        'OpenPositions',
+        'GetTrades',
+        'GetPositionsSnapshot',
+        ['GetPositionsForAccount', accId],
+      );
+
+      // If we got positions from initial fetch, set them
+      if (initialPositions) {
+        const formatted = formatPositions(initialPositions);
+        if (formatted.length > 0) {
+          console.log(`✅ Received ${formatted.length} initial positions`);
+          setPositions(formatted);
+        }
+      }
 
       // Set up periodic position updates (every 300ms)
       if (updateIntervalRef.current) {
         clearInterval(updateIntervalRef.current);
       }
       
-      updateIntervalRef.current = setInterval(() => {
+      updateIntervalRef.current = setInterval(async () => {
         if (connectionRef.current?.state === signalR.HubConnectionState.Connected) {
-          connectionRef.current.invoke('GetPositions').catch(err => {
+          try {
+            // Try multiple method names for periodic updates
+            const positions = await tryInvokeWithResult(
+              'GetPositions',
+              'GetOpenPositions',
+              ['GetPositionsByAccount', accId],
+            );
+            if (positions) {
+              const formatted = formatPositions(positions);
+              if (formatted.length > 0) {
+                setPositions(formatted);
+              }
+            }
+          } catch (err) {
             console.error('Error in periodic position update:', err);
-          });
+          }
         }
       }, UPDATE_INTERVAL);
 

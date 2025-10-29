@@ -74,10 +74,29 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
     return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 })
   }
 
-  const calculatePips = () => {
+  const calculatePips = (targetPrice?: number) => {
+    if (!targetPrice) {
+      // Default to current price difference
+      const pipFactor = Math.pow(10, Math.max(0, Math.min(6, digits || 0)))
+      const diff = (position.currentPrice - position.openPrice) * (position.type === "Buy" ? 1 : -1)
+      // Divide by 10000000 to normalize (MT5 volume normalization)
+      return ((diff * pipFactor) / 10000000).toFixed(1)
+    }
+    // Calculate pips from openPrice to targetPrice
     const pipFactor = Math.pow(10, Math.max(0, Math.min(6, digits || 0)))
-    const diff = (position.currentPrice - position.openPrice) * (position.type === "Buy" ? 1 : -1)
-    return (diff * pipFactor).toFixed(1)
+    const diff = (targetPrice - position.openPrice) * (position.type === "Buy" ? 1 : -1)
+    // Divide by 10000000 to normalize (MT5 volume normalization)
+    return ((diff * pipFactor) / 10000000).toFixed(1)
+  }
+
+  const calculateProfitUSD = (targetPrice: number) => {
+    // For Buy: profit = (targetPrice - openPrice) * volume * contractSize / 100000
+    // For Sell: profit = (openPrice - targetPrice) * volume * contractSize / 100000
+    // Divide by 100000 to normalize the calculation (MT5 volume normalization)
+    const priceDiff = position.type === "Buy" 
+      ? (targetPrice - position.openPrice)
+      : (position.openPrice - targetPrice)
+    return (priceDiff * position.lots * contractSize) / 100000
   }
 
   const calculateMaxTakeProfit = () => {
@@ -243,9 +262,9 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                 </div>
                 {takeProfit && (
                   <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-white/60">{calculatePips()} pips</span>
+                    <span className="text-white/60">{calculatePips(parseFloat(takeProfit))} pips</span>
                   <span className="text-[#16A34A] price-font font-medium">
-                    {((parseFloat(takeProfit) - position.openPrice) * position.lots * contractSize).toFixed(2)} USD
+                    {calculateProfitUSD(parseFloat(takeProfit)).toFixed(2)} USD
                   </span>
                   </div>
                 )}
@@ -310,9 +329,9 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                 </div>
                 {stopLoss && (
                   <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-white/60">{calculatePips()} pips</span>
+                    <span className="text-white/60">{calculatePips(parseFloat(stopLoss))} pips</span>
                   <span className="text-[#EF4444] price-font font-medium">
-                    {((parseFloat(stopLoss) - position.openPrice) * position.lots * contractSize).toFixed(2)} USD
+                    {calculateProfitUSD(parseFloat(stopLoss)).toFixed(2)} USD
                   </span>
                   </div>
                 )}

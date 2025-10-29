@@ -48,7 +48,11 @@ export async function POST(request: NextRequest) {
     await prisma.defaultMT5Account.upsert({
       where: { userId: session.userId },
       update: { mt5AccountId: mt5.accountId },
-      create: { userId: session.userId, mt5AccountId: mt5.accountId },
+      create: { 
+        id: crypto.randomUUID(),
+        userId: session.userId, 
+        mt5AccountId: mt5.accountId 
+      },
     })
 
     return NextResponse.json({ success: true })

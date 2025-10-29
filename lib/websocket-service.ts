@@ -109,12 +109,85 @@ class WebSocketManager {
       
       console.log(`🔌 Attempting to connect to: ${LIVE_DATA_HUB}`)
       
+      // Create SignalR connection using a custom HTTP client that proxies negotiate requests
+      // This avoids CORS issues by routing negotiate through our Next.js API
+      class ProxyHttpClient extends signalR.HttpClient {
+        get(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          // If this is a negotiate request, route it through our proxy
+          if (url.includes('/negotiate')) {
+            const urlObj = new URL(url);
+            const proxyUrl = `/apis/signalr/negotiate?hub=livedata&${urlObj.searchParams.toString()}`;
+            console.log('[LiveData] Proxying negotiate request to:', proxyUrl);
+            
+            return fetch(proxyUrl, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` }),
+                ...options?.headers,
+              },
+            }).then(async (response) => {
+              const data = await response.json();
+              return new signalR.HttpResponse(
+                response.status,
+                response.statusText,
+                JSON.stringify(data)
+              );
+            });
+          }
+          
+          // For non-negotiate requests, use fetch directly
+          return fetch(url, {
+            method: options?.method || 'GET',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(
+              response.status,
+              response.statusText,
+              content
+            );
+          });
+        }
+
+        post(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          return fetch(url, {
+            method: 'POST',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(
+              response.status,
+              response.statusText,
+              content
+            );
+          });
+        }
+
+        delete(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          return fetch(url, {
+            method: 'DELETE',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(
+              response.status,
+              response.statusText,
+              content
+            );
+          });
+        }
+      }
+      
       this.liveDataConnection = new signalR.HubConnectionBuilder()
         .withUrl(LIVE_DATA_HUB, {
           accessTokenFactory: () => token || '',
-          skipNegotiation: true, // Skip negotiation and use WebSocket directly
-          transport: signalR.HttpTransportType.WebSockets,
+          transport: signalR.HttpTransportType.LongPolling, // Use LongPolling to avoid mixed content issues on HTTPS
           withCredentials: false, // Don't send credentials for CORS
+          httpClient: new ProxyHttpClient(), // Use proxy client to avoid CORS
         })
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: (retryContext) => {
@@ -180,12 +253,69 @@ class WebSocketManager {
       
       console.log(`🔌 Attempting to connect to: ${CHART_HUB}`)
       
+      // Create proxy HTTP client for chart hub to avoid CORS
+      class ProxyHttpClient extends signalR.HttpClient {
+        get(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          if (url.includes('/negotiate')) {
+            const urlObj = new URL(url);
+            const proxyUrl = `/apis/signalr/negotiate?hub=chart&${urlObj.searchParams.toString()}`;
+            console.log('[Chart] Proxying negotiate request to:', proxyUrl);
+            
+            return fetch(proxyUrl, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` }),
+                ...options?.headers,
+              },
+            }).then(async (response) => {
+              const data = await response.json();
+              return new signalR.HttpResponse(
+                response.status,
+                response.statusText,
+                JSON.stringify(data)
+              );
+            });
+          }
+          return fetch(url, {
+            method: options?.method || 'GET',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(response.status, response.statusText, content);
+          });
+        }
+
+        post(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          return fetch(url, {
+            method: 'POST',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(response.status, response.statusText, content);
+          });
+        }
+
+        delete(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          return fetch(url, {
+            method: 'DELETE',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(response.status, response.statusText, content);
+          });
+        }
+      }
+      
       this.chartConnection = new signalR.HubConnectionBuilder()
         .withUrl(CHART_HUB, {
           accessTokenFactory: () => token || '',
-          skipNegotiation: true,
-          transport: signalR.HttpTransportType.WebSockets,
+          transport: signalR.HttpTransportType.LongPolling, // Use LongPolling to avoid mixed content issues on HTTPS
           withCredentials: false,
+          httpClient: new ProxyHttpClient(), // Use proxy client to avoid CORS
         })
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: () => 5000
@@ -232,12 +362,69 @@ class WebSocketManager {
       
       console.log(`🔌 Attempting to connect to: ${TRADING_HUB}`)
       
+      // Create proxy HTTP client for trading hub to avoid CORS
+      class ProxyHttpClient extends signalR.HttpClient {
+        get(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          if (url.includes('/negotiate')) {
+            const urlObj = new URL(url);
+            const proxyUrl = `/apis/signalr/negotiate?hub=mobiletrading&${urlObj.searchParams.toString()}`;
+            console.log('[Trading] Proxying negotiate request to:', proxyUrl);
+            
+            return fetch(proxyUrl, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token && { 'Authorization': `Bearer ${token}` }),
+                ...options?.headers,
+              },
+            }).then(async (response) => {
+              const data = await response.json();
+              return new signalR.HttpResponse(
+                response.status,
+                response.statusText,
+                JSON.stringify(data)
+              );
+            });
+          }
+          return fetch(url, {
+            method: options?.method || 'GET',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(response.status, response.statusText, content);
+          });
+        }
+
+        post(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          return fetch(url, {
+            method: 'POST',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(response.status, response.statusText, content);
+          });
+        }
+
+        delete(url: string, options?: signalR.HttpRequest): Promise<signalR.HttpResponse> {
+          return fetch(url, {
+            method: 'DELETE',
+            headers: options?.headers,
+            body: options?.content,
+          }).then(async (response) => {
+            const content = await response.text();
+            return new signalR.HttpResponse(response.status, response.statusText, content);
+          });
+        }
+      }
+      
       this.tradingConnection = new signalR.HubConnectionBuilder()
         .withUrl(TRADING_HUB, {
           accessTokenFactory: () => token || '',
-          skipNegotiation: true,
-          transport: signalR.HttpTransportType.WebSockets,
+          transport: signalR.HttpTransportType.LongPolling, // Use LongPolling to avoid mixed content issues on HTTPS
           withCredentials: false,
+          httpClient: new ProxyHttpClient(), // Use proxy client to avoid CORS
         })
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: () => 5000

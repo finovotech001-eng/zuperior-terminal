@@ -40,7 +40,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useWebSocketConnection } from "@/hooks/useWebSocket"
-import { usePositionsSignalR } from "@/hooks/usePositionsSignalR"
+import { usePositionsSignalR } from "@/hooks/usePositionsSSE"
 import { useTradeHistory } from "@/hooks/useTradeHistory"
 import { 
   instrumentsAtom, 

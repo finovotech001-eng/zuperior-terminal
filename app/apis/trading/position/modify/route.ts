@@ -75,11 +75,10 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Build payload for upstream client endpoint
+    // Build payload for upstream client endpoint - match exact API format (positionId, stopLoss, takeProfit, comment only)
     const payload: any = {
       positionId: Number(positionId),
       comment: typeof comment === 'string' ? comment : 'Modified via web terminal',
-      login: parseInt(String(accountId), 10),
     }
     if (stopLoss !== undefined && stopLoss !== null && Number(stopLoss) > 0) payload.stopLoss = Number(stopLoss)
     if (takeProfit !== undefined && takeProfit !== null && Number(takeProfit) > 0) payload.takeProfit = Number(takeProfit)

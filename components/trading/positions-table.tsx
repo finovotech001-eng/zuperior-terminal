@@ -62,6 +62,9 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   const [isCollapsed, setIsCollapsed] = useAtom(positionsIsCollapsedAtom)
   const [columns] = useAtom(positionsColumnsAtom)
   const [, toggleColumn] = useAtom(togglePositionColumnAtom)
+  
+  // Track which modify popover is open: positionId_columnKey (e.g., "123_tp", "123_sl", "123_actions")
+  const [openModifyPopover, setOpenModifyPopover] = React.useState<string | null>(null)
 
   const tabs = [
     { id: "open", label: "Open", count: openPositions.length },
@@ -159,7 +162,10 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
       {/* T/P */}
       {columns.find(c => c.key === "tp")?.visible && (
         <div className="flex items-center">
-          <Popover>
+          <Popover 
+            open={openModifyPopover === `${position.id}_tp`} 
+            onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_tp` : null)}
+          >
             <PopoverTrigger asChild>
               {Number(position.takeProfit || 0) > 0 ? (
                 <button
@@ -227,16 +233,47 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                   })
+                  
+                  console.log('[Modify] Response status:', res.status, res.statusText)
                   const text = await res.text().catch(() => '')
+                  console.log('[Modify] Response text:', text?.substring(0, 500))
+                  
                   let json: any = null
-                  try { json = text ? JSON.parse(text) : null } catch { json = text }
-                  if (!res.ok || json?.success === false) {
-                    console.error('[Modify] Failed', { status: res.status, json })
+                  try { 
+                    json = text ? JSON.parse(text) : null
+                    console.log('[Modify] Parsed JSON:', json)
+                  } catch (e) { 
+                    console.warn('[Modify] Failed to parse JSON:', e)
+                    json = text 
+                  }
+                  
+                  // Check for success: status: true, success: true, or json?.data?.status === true
+                  // Also check for HTTP 200-299 status codes
+                  const isSuccess = res.ok && (
+                    json?.status === true || 
+                    json?.success === true || 
+                    json?.data?.status === true || 
+                    json?.data?.success === true ||
+                    (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error'))
+                  )
+                  
+                  if (isSuccess) {
+                    console.log('[Modify] ✅ Success - closing modal', json)
+                    // Close the popover on success
+                    setOpenModifyPopover(null)
                   } else {
-                    console.log('[Modify] Success', json)
+                    const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                    console.error('[Modify] ❌ Failed', { 
+                      status: res.status, 
+                      statusText: res.statusText,
+                      json,
+                      errorMsg 
+                    })
+                    // Keep modal open on error so user can see/retry
                   }
                 } catch (e) {
-                  console.error('[Modify] Error', e)
+                  console.error('[Modify] ❌ Exception:', e)
+                  // Keep modal open on exception
                 }
               }}
               onPartialClose={() => {}}
@@ -249,7 +286,10 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
       {/* S/L */}
       {columns.find(c => c.key === "sl")?.visible && (
         <div className="flex items-center">
-          <Popover>
+          <Popover 
+            open={openModifyPopover === `${position.id}_sl`} 
+            onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_sl` : null)}
+          >
             <PopoverTrigger asChild>
               {Number(position.stopLoss || 0) > 0 ? (
                 <button
@@ -317,16 +357,47 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                   })
+                  
+                  console.log('[Modify] Response status:', res.status, res.statusText)
                   const text = await res.text().catch(() => '')
+                  console.log('[Modify] Response text:', text?.substring(0, 500))
+                  
                   let json: any = null
-                  try { json = text ? JSON.parse(text) : null } catch { json = text }
-                  if (!res.ok || json?.success === false) {
-                    console.error('[Modify] Failed', { status: res.status, json })
+                  try { 
+                    json = text ? JSON.parse(text) : null
+                    console.log('[Modify] Parsed JSON:', json)
+                  } catch (e) { 
+                    console.warn('[Modify] Failed to parse JSON:', e)
+                    json = text 
+                  }
+                  
+                  // Check for success: status: true, success: true, or json?.data?.status === true
+                  // Also check for HTTP 200-299 status codes
+                  const isSuccess = res.ok && (
+                    json?.status === true || 
+                    json?.success === true || 
+                    json?.data?.status === true || 
+                    json?.data?.success === true ||
+                    (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error'))
+                  )
+                  
+                  if (isSuccess) {
+                    console.log('[Modify] ✅ Success - closing modal', json)
+                    // Close the popover on success
+                    setOpenModifyPopover(null)
                   } else {
-                    console.log('[Modify] Success', json)
+                    const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                    console.error('[Modify] ❌ Failed', { 
+                      status: res.status, 
+                      statusText: res.statusText,
+                      json,
+                      errorMsg 
+                    })
+                    // Keep modal open on error so user can see/retry
                   }
                 } catch (e) {
-                  console.error('[Modify] Error', e)
+                  console.error('[Modify] ❌ Exception:', e)
+                  // Keep modal open on exception
                 }
               }}
               onPartialClose={() => {}}
@@ -363,7 +434,10 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
 
       {/* Actions */}
       <div className="flex items-center justify-center gap-1" style={{ position: 'relative', zIndex: 10 }}>
-        <Popover>
+        <Popover 
+          open={openModifyPopover === `${position.id}_actions`} 
+          onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_actions` : null)}
+        >
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
@@ -431,16 +505,47 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                   })
+                  
+                  console.log('[Modify] Response status:', res.status, res.statusText)
                   const text = await res.text().catch(() => '')
+                  console.log('[Modify] Response text:', text?.substring(0, 500))
+                  
                   let json: any = null
-                  try { json = text ? JSON.parse(text) : null } catch { json = text }
-                  if (!res.ok || json?.success === false) {
-                    console.error('[Modify] Failed', { status: res.status, json })
+                  try { 
+                    json = text ? JSON.parse(text) : null
+                    console.log('[Modify] Parsed JSON:', json)
+                  } catch (e) { 
+                    console.warn('[Modify] Failed to parse JSON:', e)
+                    json = text 
+                  }
+                  
+                  // Check for success: status: true, success: true, or json?.data?.status === true
+                  // Also check for HTTP 200-299 status codes
+                  const isSuccess = res.ok && (
+                    json?.status === true || 
+                    json?.success === true || 
+                    json?.data?.status === true || 
+                    json?.data?.success === true ||
+                    (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error'))
+                  )
+                  
+                  if (isSuccess) {
+                    console.log('[Modify] ✅ Success - closing modal', json)
+                    // Close the popover on success
+                    setOpenModifyPopover(null)
                   } else {
-                    console.log('[Modify] Success', json)
+                    const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                    console.error('[Modify] ❌ Failed', { 
+                      status: res.status, 
+                      statusText: res.statusText,
+                      json,
+                      errorMsg 
+                    })
+                    // Keep modal open on error so user can see/retry
                   }
                 } catch (e) {
-                  console.error('[Modify] Error', e)
+                  console.error('[Modify] ❌ Exception:', e)
+                  // Keep modal open on exception
                 }
               }}
               onPartialClose={() => {}}
