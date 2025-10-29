@@ -23,6 +23,7 @@ export async function GET(_request: NextRequest) {
       select: {
         id: true,
         accountId: true,
+        accountType: true,
         createdAt: true
       },
       orderBy: {
@@ -57,6 +58,7 @@ export async function GET(_request: NextRequest) {
       id: account.id,
       accountId: account.accountId,
       displayAccountId: `#${account.accountId}`,
+      accountType: account.accountType || 'Live', // Default to 'Live' if not set
       linkedAt: account.createdAt
     }));
 

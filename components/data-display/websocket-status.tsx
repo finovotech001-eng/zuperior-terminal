@@ -9,20 +9,27 @@ import { cn } from '@/lib/utils'
 interface WebSocketStatusProps {
   className?: string
   showDetails?: boolean
+  positionsConnected?: boolean // SignalR positions connection status
 }
 
-export function WebSocketStatus({ className, showDetails = false }: WebSocketStatusProps) {
+export function WebSocketStatus({ className, showDetails = false, positionsConnected }: WebSocketStatusProps) {
   const status = useWebSocketStatus()
 
-  const isAllConnected = 
+  // Consider user "Live" if positions are connected (SignalR) OR if WebSocket connections are working
+  // This fixes the "Offline" issue when user is online but WebSockets might not all be connected
+  const isAllWebSocketConnected = 
     status.liveData === 'Connected' &&
     status.chart === 'Connected' &&
     status.trading === 'Connected'
 
-  const isAnyConnected = 
+  const isAnyWebSocketConnected = 
     status.liveData === 'Connected' ||
     status.chart === 'Connected' ||
     status.trading === 'Connected'
+
+  // User is considered "Live" if positions are connected OR if WebSockets are connected
+  const isUserOnline = positionsConnected === true || isAnyWebSocketConnected
+  const isAllConnected = positionsConnected === true && isAllWebSocketConnected
 
   const getStatusColor = (state: string) => {
     if (state === 'Connected') return 'text-green-500'
@@ -44,17 +51,17 @@ export function WebSocketStatus({ className, showDetails = false }: WebSocketSta
           <span
             className={cn(
               'text-xs font-medium',
-              isAllConnected
+              isUserOnline
                 ? 'text-green-500'
-                : isAnyConnected
+                : isAnyWebSocketConnected
                 ? 'text-yellow-500'
                 : 'text-red-500'
             )}
           >
-            {getStatusIcon(isAllConnected ? 'Connected' : isAnyConnected ? 'Connecting' : 'Disconnected')}
+            {getStatusIcon(isUserOnline ? 'Connected' : isAnyWebSocketConnected ? 'Connecting' : 'Disconnected')}
           </span>
           <span className="text-xs text-white/60">
-            {isAllConnected ? 'Live' : isAnyConnected ? 'Connecting...' : 'Offline'}
+            {isUserOnline ? 'Live' : isAnyWebSocketConnected ? 'Connecting...' : 'Offline'}
           </span>
         </div>
       )}

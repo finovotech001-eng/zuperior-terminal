@@ -40,7 +40,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useWebSocketConnection } from "@/hooks/useWebSocket"
-import { usePositionsSignalR } from "@/hooks/usePositionsSSE"
+import { usePositionsSignalR } from "@/hooks/usePositionsSignalR"
 import { useTradeHistory } from "@/hooks/useTradeHistory"
 import { 
   instrumentsAtom, 
@@ -57,9 +57,10 @@ type LeftPanelView = "instruments" | "calendar" | "settings" | null
 interface MT5Account {
   id: string
   accountId: string
-  name:string
+  name: string
   displayAccountId: string
-  equity:number
+  equity: number
+  accountType: string // 'Demo' | 'Live'
   linkedAt: string
 }
 
@@ -184,7 +185,8 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
     });
   }, [accountIds]);
 
-  // Fetch balance for a specific account
+  // Fetch balance for a specific account using getClientProfile API (NOT getBalance)
+  // This endpoint provides comprehensive account data including Balance, Equity, Margin, etc.
   const fetchAccountBalance = React.useCallback(async (accountId: string, _isInitial = false) => {
     const API_PATH = `/apis/user/${accountId}/getClientProfile`;
 
@@ -198,8 +200,29 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
 
       const result = await response.json();
 
-      if (result.success && result.data) {
-        const apiData = result.data as {
+      // Debug: Log the raw response (log every 10th call to avoid spam, or on initial)
+      const shouldLog = _isInitial || Math.random() < 0.1;
+      if (shouldLog) {
+        console.log('[Balance][getClientProfile] Raw API response:', {
+          success: result.success,
+          hasData: !!(result.data || result.Data),
+          hasResult: !!result,
+          keys: Object.keys(result),
+          dataType: typeof result.data,
+          dataSample: result.data ? Object.keys(result.data).slice(0, 5) : 'no data',
+          fullResponse: JSON.stringify(result).substring(0, 500)
+        });
+      }
+
+      // Check if response has data - might be nested in Data or data property
+      const responseData = result.data || result.Data || result;
+      
+      if (shouldLog && responseData) {
+        console.log('[Balance][getClientProfile] Response data keys:', Object.keys(responseData));
+      }
+      
+      if (result.success && responseData) {
+        const apiData = responseData as {
           Balance?: number;
           balance?: number;
           Equity?: number;
@@ -212,6 +235,7 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
           MarginLevel?: number;
           marginLevel?: number;
           profit?: number;
+          Profit?: number;
           Leverage?: string;
           leverage?: string;
           Name?: string;
@@ -222,11 +246,54 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
           accountType?: string;
         };
 
-        const balance = apiData.Balance ?? apiData.balance ?? 0;
-        const equity = apiData.Equity ?? apiData.equity ?? 0;
-        const margin = apiData.Margin ?? apiData.MarginUsed ?? apiData.marginUsed ?? 0;
-        const freeMargin = apiData.FreeMargin ?? apiData.freeMargin ?? 0;
+        // Extract balance values - try multiple possible field names and ensure they're numbers
+        const balance = Number(apiData.Balance ?? apiData.balance ?? 0) || 0;
+        const equity = Number(apiData.Equity ?? apiData.equity ?? 0) || 0;
+        const margin = Number(apiData.Margin ?? apiData.MarginUsed ?? apiData.marginUsed ?? apiData.margin ?? 0) || 0;
+        const freeMargin = Number(apiData.FreeMargin ?? apiData.freeMargin ?? 0) || 0;
         const totalPL = equity - balance;
+        const profit = Number(apiData.Profit ?? apiData.profit ?? totalPL) || totalPL;
+        
+        // Debug: Log extracted values periodically
+        const shouldLog = _isInitial || Math.random() < 0.1;
+        if (shouldLog) {
+          console.log('[Balance][getClientProfile] Extracted values:', {
+            balance,
+            equity,
+            margin,
+            freeMargin,
+            totalPL,
+            profit,
+            rawValues: {
+              Balance: apiData.Balance,
+              balance: apiData.balance,
+              Equity: apiData.Equity,
+              equity: apiData.equity,
+              Margin: apiData.Margin,
+              MarginUsed: apiData.MarginUsed
+            }
+          });
+        }
+
+        // Extract accountGroup and determine accountType from Group field
+        const groupValue = apiData.Group ?? apiData.group ?? '';
+        const accountGroup = groupValue ? groupValue.split('\\').pop()?.toLowerCase() || 'standard' : 'standard';
+        
+        // Determine accountType from Group field - Priority: Group field (most reliable)
+        // Common patterns: "Demo\\Standard", "DemoAccount", "LiveAccount", "Demo", "Live", etc.
+        const groupLower = groupValue.toLowerCase();
+        let finalAccountType: 'Demo' | 'Live' = 'Live'; // Default to Live
+        
+        // Check Group field first (primary source)
+        if (groupLower.includes('demo')) {
+          finalAccountType = 'Demo';
+        } else if (groupLower.includes('live')) {
+          finalAccountType = 'Live';
+        } else {
+          // If Group doesn't contain demo/live, check AccountType field
+          const accountTypeFromField = (apiData.AccountType === 'Live' || apiData.accountType === 'Live') ? 'Live' : 'Demo';
+          finalAccountType = accountTypeFromField;
+        }
 
         const newBalanceData: BalanceData = {
           balance: balance,
@@ -234,18 +301,74 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
           margin: margin,
           freeMargin: freeMargin,
           marginLevel: apiData.MarginLevel ?? apiData.marginLevel ?? 0,
-          profit: apiData.profit ?? apiData.profit ?? 0,
+          profit: profit,
           leverage: apiData.Leverage ?? apiData.leverage ?? "1:200",
           totalPL: parseFloat(totalPL.toFixed(2)),
           name: apiData.Name ?? apiData.name ?? 'Test',
-          accountGroup: (apiData.Group ?? apiData.group ?? 'Standard').split('\\').pop()?.toLowerCase() || 'standard',
-          accountType: (apiData.AccountType === 'Live' || apiData.accountType === 'Live') ? 'Live' : 'Demo',
+          accountGroup: accountGroup,
+          accountType: finalAccountType,
         };
+        
+        // Debug: Log accountType determination
+        if (shouldLog || _isInitial) {
+          console.log('[Balance][getClientProfile] AccountType determination:', {
+            groupValue,
+            accountGroup,
+            finalAccountType,
+            AccountType: apiData.AccountType,
+            accountType: apiData.accountType,
+            detectedFrom: groupLower.includes('demo') ? 'Group (Demo)' : 
+                          groupLower.includes('live') ? 'Group (Live)' : 
+                          'AccountType field'
+          });
+        }
 
-        setBalances(prev => ({ ...prev, [accountId]: newBalanceData }));
+        // Debug: Log extracted values
+        if (_isInitial) {
+          console.log('[Balance][getClientProfile] Extracted balance data:', {
+            balance,
+            equity,
+            margin,
+            freeMargin,
+            totalPL,
+            profit,
+            apiDataKeys: Object.keys(apiData)
+          });
+        }
+
+        // Always update state - create new object references to force re-render
+        setBalances(prev => {
+          const current = prev[accountId];
+          // Check if values actually changed
+          const hasChanged = !current || (
+            current.balance !== balance ||
+            current.equity !== equity ||
+            current.margin !== margin ||
+            current.freeMargin !== freeMargin ||
+            current.totalPL !== newBalanceData.totalPL
+          );
+          
+          if (hasChanged && current) {
+            console.log('[Balance][getClientProfile] Balance updated:', {
+              accountId,
+              old: { balance: current.balance, equity: current.equity, margin: current.margin },
+              new: { balance, equity, margin }
+            });
+          }
+          
+          // Always create a new object to ensure React detects the change
+          return { ...prev, [accountId]: { ...newBalanceData } };
+        });
         setErrors(prev => ({ ...prev, [accountId]: null }));
       } else {
-        throw new Error(result.error || "Failed to load account data.");
+        // Log the actual response structure if success is false
+        console.warn('[Balance][getClientProfile] Response structure:', {
+          success: result.success,
+          hasData: !!(result.data || result.Data),
+          keys: Object.keys(result),
+          result: JSON.stringify(result).substring(0, 200)
+        });
+        throw new Error(result.error || result.message || "Failed to load account data.");
       }
     } catch (e) {
       const errorMessage = `Failed to fetch balance for ${accountId}: ${e instanceof Error ? e.message : 'Unknown error'}`;
@@ -279,12 +402,12 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
         clearInterval(intervalRef.current);
       }
 
-      // Set up polling interval for all accounts
+      // Set up polling interval for all accounts (every 300ms for real-time updates)
       intervalRef.current = setInterval(() => {
         accountIdsRef.current.forEach(accountId => {
           fetchAccountBalance(accountId, false);
         });
-      }, 6000);
+      }, 300);
     });
 
     return () => {
@@ -295,7 +418,14 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
     };
   }, [accountIds, fetchAccountBalance]); // Include missing dependencies
 
-  return { balances, isLoading, errors };
+  // Expose refresh function to manually trigger balance updates
+  const refreshBalance = React.useCallback((accountId: string) => {
+    if (accountId && accountIdsRef.current.includes(accountId)) {
+      fetchAccountBalance(accountId, false);
+    }
+  }, [fetchAccountBalance]);
+
+  return { balances, isLoading, errors, refreshBalance };
 }
 
 // Helper function to format date from ISO string
@@ -697,12 +827,78 @@ function TerminalContent() {
 
   // Hook for multiple account balances
   const accountIds = useMemo(() => mt5Accounts.map(account => account.accountId), [mt5Accounts]);
-  const { balances } = useMultiAccountBalancePolling(accountIds);
+  const { balances, refreshBalance } = useMultiAccountBalancePolling(accountIds);
+
+  // Track position changes more reliably - use both length and a position IDs hash
+  const positionsHash = React.useMemo(() => {
+    return signalRPositions.map(p => `${p.ticket}-${p.symbol}`).sort().join('|');
+  }, [signalRPositions]);
+
+  // Trigger balance refresh when positions actually change (new trade opened/closed)
+  React.useEffect(() => {
+    if (currentAccountId && positionsConnected && refreshBalance && signalRPositions.length >= 0) {
+      // Small delay to ensure server has updated balance after trade event
+      const timeoutId = setTimeout(() => {
+        refreshBalance(currentAccountId);
+        console.log('[Balance] Refreshed getClientProfile after position change detected');
+      }, 200);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [positionsHash, currentAccountId, positionsConnected, refreshBalance]);
+
+  // Get accountType from MT5Account instead of from getClientProfile
+  const currentAccount = React.useMemo(() => {
+    return mt5Accounts.find(acc => acc.accountId === currentAccountId);
+  }, [mt5Accounts, currentAccountId]);
 
   // For compatibility with existing code
-  const balanceData = balances[currentAccountId || ''] || initialBalanceData;
+  const balanceDataFromAPI = balances[currentAccountId || ''] || initialBalanceData;
+  
+  // Merge accountType: Priority order:
+  // 1. From getClientProfile Group field (most reliable)
+  // 2. From getClientProfile AccountType field
+  // 3. From MT5Account table (fallback)
+  const balanceData: BalanceData = React.useMemo(() => {
+    // getClientProfile already extracts accountType from Group field, so use that
+    // It's already in balanceDataFromAPI.accountType
+    // Only fallback to MT5Account if getClientProfile didn't provide it
+    let accountType = balanceDataFromAPI.accountType;
+    
+    // If not available from API, use MT5Account
+    if (!accountType || accountType === 'Live') {
+      const mt5AccountType = currentAccount?.accountType === 'Demo' ? 'Demo' : 'Live';
+      // Prefer API data, but use MT5Account as fallback
+      accountType = balanceDataFromAPI.accountType || (mt5AccountType as 'Demo' | 'Live');
+    }
+    
+    return {
+      ...balanceDataFromAPI,
+      accountType: accountType as 'Demo' | 'Live'
+    };
+  }, [balanceDataFromAPI, currentAccount?.accountType]);
+  
   const isBalanceLoading = false;
   const balanceError = null;
+
+  // Debug: Track balance changes (using ref at component level, not in effect)
+  const prevBalanceRef = React.useRef<{ balance: number; equity: number } | null>(null);
+  
+  React.useEffect(() => {
+    if (currentAccountId && balanceData && balanceData.balance > 0) {
+      const prev = prevBalanceRef.current;
+      if (prev && (prev.balance !== balanceData.balance || prev.equity !== balanceData.equity)) {
+        console.log('[Balance][UI Update] Balance changed:', {
+          accountId: currentAccountId,
+          oldBalance: prev.balance,
+          newBalance: balanceData.balance,
+          oldEquity: prev.equity,
+          newEquity: balanceData.equity,
+          totalPL: balanceData.totalPL
+        });
+      }
+      prevBalanceRef.current = { balance: balanceData.balance, equity: balanceData.equity };
+    }
+  }, [currentAccountId, balanceData.balance, balanceData.equity]);
 
   // State for user data
   const [userName, setUserName] = React.useState(() => {
@@ -896,11 +1092,29 @@ function TerminalContent() {
         const response = await fetch(url, { cache: 'no-store' });
 
         if (!response.ok) {
-          const result = await response.json();
-          throw new Error(result.error || `HTTP error! status: ${response.status}`);
+          // Handle 503 Service Unavailable gracefully (often means no data yet)
+          if (response.status === 503) {
+            console.warn('[Market Data] Service temporarily unavailable - will retry later');
+            setIsLoadingInitial(false);
+            return; // Exit gracefully without throwing
+          }
+          let result;
+          try {
+            result = await response.json();
+          } catch {
+            result = {};
+          }
+          throw new Error(result.error || result.message || `HTTP error! status: ${response.status}`);
         }
 
-        const result = await response.json();
+        let result;
+        try {
+          result = await response.json();
+        } catch (e) {
+          console.error('[Market Data] Failed to parse response:', e);
+          setIsLoadingInitial(false);
+          return;
+        }
         if (result.success && Array.isArray(result.data)) {
           // Set the total count based on the API response
           setTotalSymbolsCount(result.total || result.data.length);
@@ -922,8 +1136,16 @@ function TerminalContent() {
           throw new Error(result.error || "Failed to load initial instrument data.");
         }
       } catch (e: unknown) {
-        const errorMessage = e instanceof Error ? e.message : 'Unknown error';
-        console.error('Error fetching initial instruments:', errorMessage);
+        // Don't log network errors that are expected (server down, service unavailable, etc.)
+        const error = e instanceof Error ? e : new Error('Unknown error');
+        const errorMessage = error.message;
+        
+        // Only log if it's not a network/server error (5xx)
+        if (!errorMessage.includes('HTTP') || (!errorMessage.includes('503') && !errorMessage.includes('502') && !errorMessage.includes('500'))) {
+          console.error('[Market Data] Error fetching initial instruments:', errorMessage);
+        } else {
+          console.warn('[Market Data] Server temporarily unavailable - using cached data if available');
+        }
       } finally {
         setIsLoadingInitial(false);
       }
@@ -1350,10 +1572,10 @@ function TerminalContent() {
         : await placeMarketOrder(order)
       console.log('[Trade][BUY] success', response)
       setTradeNotice({ type: 'success', message: `Buy ${order.symbol} @ ${order.price}` })
-      try { positionsReconnect?.() } catch {}
-      setTimeout(() => { try { positionsReconnect?.() } catch {} }, 800)
-      setTimeout(() => { try { positionsReconnect?.() } catch {} }, 1800)
-      setTimeout(() => { try { positionsReconnect?.() } catch {} }, 3500)
+      // Immediately refresh balance after trade (SignalR PositionOpened will also trigger, but this ensures quick update)
+      if (refreshBalance && currentAccountId) {
+        setTimeout(() => refreshBalance(currentAccountId), 200);
+      }
       // Add to pending table immediately if pending
       if (order.orderType === 'pending') {
         const orderId = Number((response?.OrderId ?? response?.orderId ?? response?.Id ?? response?.id) || 0)
@@ -1403,10 +1625,10 @@ function TerminalContent() {
         : await placeMarketOrder(order)
       console.log('[Trade][SELL] success', response)
       setTradeNotice({ type: 'success', message: `Sell ${order.symbol} @ ${order.price}` })
-      try { positionsReconnect?.() } catch {}
-      setTimeout(() => { try { positionsReconnect?.() } catch {} }, 800)
-      setTimeout(() => { try { positionsReconnect?.() } catch {} }, 1800)
-      setTimeout(() => { try { positionsReconnect?.() } catch {} }, 3500)
+      // Immediately refresh balance after trade (SignalR PositionOpened will also trigger, but this ensures quick update)
+      if (refreshBalance && currentAccountId) {
+        setTimeout(() => refreshBalance(currentAccountId), 200);
+      }
       if (order.orderType === 'pending') {
         const orderId = Number((response?.OrderId ?? response?.orderId ?? response?.Id ?? response?.id) || 0)
         setPendingOrders(prev => [
@@ -1464,9 +1686,12 @@ function TerminalContent() {
         </div>
 
         {/* Right: WebSocket Status, Account, Alerts, User, Deposit */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* WebSocket Connection Status */}
-          <WebSocketStatus showDetails={false} />
+          <div className="flex items-center gap-2 shrink-0">
+            {/* WebSocket Connection Status */}
+            <WebSocketStatus 
+              showDetails={false}
+              positionsConnected={positionsConnected}
+            />
           
           {/* Account Dropdown */}
           <Popover>
@@ -1475,8 +1700,16 @@ function TerminalContent() {
                   <div className="flex flex-col items-start">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-white/60">
-                        <span className="bg-warning/20 text-warning">Live&nbsp;&nbsp;</span>
-                            {isUserLoading ? 'Loading...' : userName}
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-xs font-medium",
+                          balanceData.accountType === 'Live' 
+                            ? "bg-warning/20 text-warning" 
+                            : "bg-info/20 text-info"
+                        )}>
+                          {balanceData.accountType}
+                        </span>
+                        &nbsp;&nbsp;
+                        {isUserLoading ? 'Loading...' : userName}
                       </span>
 
                     </div>
@@ -1635,12 +1868,11 @@ function TerminalContent() {
                             <div className="flex items-center gap-2">
                               <span className={cn(
                                 "px-1.5 py-0.5 rounded text-[10px] font-medium",
-                                  // 'Live' === 'Live'
-                                  "bg-warning/20 text-warning"
-                                  // : "bg-success/20 text-success"
+                                account.accountType === 'Live'
+                                  ? "bg-warning/20 text-warning"
+                                  : "bg-info/20 text-info"
                               )}>
-                                {/* {balanceData.accountType} */}
-                                Live
+                                {account.accountType || 'Live'}
                               </span>
                               <span className="text-xs text-white/60">
                                 {account.displayAccountId} 
@@ -1891,37 +2123,103 @@ function TerminalContent() {
                   onClose={async (id) => {
                     try {
                       console.log('[Close] Closing position:', id);
-                      if (!currentAccountId) { console.warn('[Close] No account selected'); return }
+                      if (!currentAccountId) { 
+                        console.error('[Close] No account selected'); 
+                        setTradeNotice({ type: 'error', message: 'No account selected' });
+                        return; 
+                      }
 
                       // Extract position or pending by id
                       let position = formattedPositions.find(p => p.id === id)
                       const isPending = !position ? pendingOrders.some(p => p.id === id) : false
-                      if (!position && isPending) { position = pendingOrders.find(p => p.id === id)! }
+                      if (!position && isPending) { 
+                        position = pendingOrders.find(p => p.id === id)! 
+                      }
 
-                      if (!position) { console.error('[Close] Position not found:', id); return }
-                      if (!position.ticket || position.ticket === 0) { console.error('[Close] No ticket/order id found:', position); return }
+                      if (!position) { 
+                        console.error('[Close] Position not found:', id, 'Available positions:', formattedPositions.map(p => ({ id: p.id, ticket: p.ticket })));
+                        setTradeNotice({ type: 'error', message: 'Position not found' });
+                        return; 
+                      }
 
-                      const positionId = position.ticket
+                      // Try to get positionId from ticket, position string, or id
+                      let positionId: number | null = null;
+                      
+                      if (position.ticket && position.ticket > 0) {
+                        positionId = position.ticket;
+                      } else if (position.position) {
+                        // Extract number from position string (e.g., "ticket-12345" -> 12345)
+                        const match = position.position.match(/\d+/);
+                        if (match) {
+                          positionId = parseInt(match[0], 10);
+                        }
+                      } else if (id.startsWith('ticket-')) {
+                        // Extract from id format "ticket-12345"
+                        const match = id.match(/ticket-(\d+)/);
+                        if (match) {
+                          positionId = parseInt(match[1], 10);
+                        }
+                      }
+
+                      if (!positionId || positionId === 0) { 
+                        console.error('[Close] No valid position ID found. Position:', {
+                          id: position.id,
+                          ticket: position.ticket,
+                          position: position.position,
+                          rawPosition: position
+                        });
+                        setTradeNotice({ type: 'error', message: 'Invalid position ID' });
+                        return; 
+                      }
+
                       if (isPending) {
                         console.log('[Pending] Cancel order:', positionId)
                         const res = await cancelPendingOrder({ accountId: currentAccountId, orderId: Number(positionId), comment: 'Cancel via web terminal' })
                         console.log('[Pending] Cancel response:', res)
                         setPendingOrders(prev => prev.filter(p => p.id !== id))
+                        setTradeNotice({ type: 'success', message: 'Order cancelled' });
                         return
                       }
 
-                      console.log('[Close] Calling close API with position ID:', positionId)
+                      console.log('[Close] Calling close API with position ID:', positionId, 'accountId:', currentAccountId)
                       const res = await fetch('/apis/trading/close', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 }),
                       })
+                      
+                      if (!res.ok) {
+                        const errorText = await res.text().catch(() => 'Unknown error');
+                        console.error('[Close] HTTP error:', res.status, errorText);
+                        setTradeNotice({ type: 'error', message: `Failed to close: ${res.status}` });
+                        return;
+                      }
+
                       const json = await res.json().catch(() => ({} as any))
                       console.log('[Close] API response:', json)
-                      if (json.success) { console.log('[Close] Position closed successfully'); try { positionsReconnect?.() } catch {} }
-                      else { console.error('[Close] Failed to close position:', json.message || 'Unknown error') }
+                      
+                      if (json.success || json.Success) { 
+                        console.log('[Close] Position closed successfully'); 
+                        setTradeNotice({ type: 'success', message: 'Position closed successfully' });
+                        
+                        // Immediately refresh balance using getClientProfile API after closing position
+                        if (refreshBalance && currentAccountId) {
+                          // Refresh immediately
+                          refreshBalance(currentAccountId);
+                          // Also refresh after a short delay to ensure server has processed the close
+                          setTimeout(() => refreshBalance(currentAccountId), 300);
+                          console.log('[Balance] Triggered getClientProfile refresh after position close');
+                        }
+                      }
+                      else { 
+                        const errorMsg = json.message || json.Message || json.error || 'Unknown error';
+                        console.error('[Close] Failed to close position:', errorMsg, json);
+                        setTradeNotice({ type: 'error', message: errorMsg });
+                      }
                     } catch (e) {
+                      const errorMsg = e instanceof Error ? e.message : 'Unexpected error';
                       console.error('[Close] Unexpected error during close operation:', e)
+                      setTradeNotice?.({ type: 'error', message: errorMsg });
                     }
                   }}
                 />

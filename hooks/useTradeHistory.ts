@@ -92,7 +92,15 @@ export function useTradeHistory({ accountId, period = 'month', from, to, enabled
 
       const res = await fetch(`/apis/history?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
       if (!res.ok) {
-        const txt = await res.text()
+        // Handle 5xx errors gracefully - server issues shouldn't break the UI
+        if (res.status >= 500 && res.status < 600) {
+          console.warn(`[Trade History] Server error ${res.status} - history data temporarily unavailable`);
+          setClosedPositions([]);
+          setError(null); // Don't set error for server issues - just show empty history
+          setIsLoading(false);
+          return;
+        }
+        const txt = await res.text().catch(() => '')
         throw new Error(txt || `HTTP ${res.status}`)
       }
       const json = await res.json().catch(() => ({} as any))
