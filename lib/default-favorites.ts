@@ -9,9 +9,8 @@ import { logger } from './logger'
 export const DEFAULT_FAVORITES = [
   'EURUSD',
   'XAUUSD',
-  'GBPUSD',
   'BTCUSD',
-  'ETHUSD',
+  'GBPJPY',
 ]
 
 /**

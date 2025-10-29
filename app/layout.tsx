@@ -16,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body className="antialiased">
+      <body className="antialiased" suppressHydrationWarning>
         <Provider>
           <ThemeProvider defaultTheme="dark" storageKey="zuperior-theme">
             <ConsoleFilter />

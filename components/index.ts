@@ -60,6 +60,8 @@ export { InstrumentTabs } from "./navigation/instrument-tabs"
 
 // Chart Components
 export { ChartContainer } from "./chart/chart-container"
+export { AdvancedChart } from "./chart/advanced-chart"
+export { LightweightChart } from "./chart/lightweight-chart"
 export { DrawingToolbar } from "./chart/drawing-toolbar"
 export { ChartToolbar } from "./chart/chart-toolbar"
 export { TimeframeSelector } from "./chart/timeframe-selector"

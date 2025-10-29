@@ -1859,6 +1859,7 @@ function TerminalContent() {
                 <ChartContainer 
                   symbol={activeTab?.symbol || "XAU/USD"}
                   className="h-full"
+                  chartType="tradingview" // Use "lightweight" for simpler chart
                 />
               </div>
 

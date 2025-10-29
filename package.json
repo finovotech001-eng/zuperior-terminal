@@ -12,12 +12,13 @@
     "sync:instruments": "npx tsx scripts/sync-instruments.ts",
     "sync:instruments:simple": "npx tsx scripts/sync-instruments-simple.ts",
     "sync:from:api": "npx tsx scripts/sync-from-api.ts",
+    "sync:instruments:api": "npx tsx scripts/sync-instruments-from-api.ts",
     "sync:mt5:symbols": "npx tsx scripts/sync-symbols-from-mt5.ts",
     "sync:favorites": "npx tsx scripts/add-default-favorites.ts",
+    "verify:setup": "npx tsx scripts/verify-setup.ts",
     "setup:instruments": "npm run db:generate && npm run db:migrate && npm run sync:instruments && npm run sync:favorites"
   },
   "dependencies": {
-    "@klinecharts/pro": "^0.1.1",
     "@microsoft/signalr": "^9.0.6",
     "@prisma/client": "^6.17.1",
     "@radix-ui/react-avatar": "^1.1.10",

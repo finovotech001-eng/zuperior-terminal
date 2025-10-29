@@ -9,9 +9,8 @@ import { prisma } from '../lib/prisma'
 const DEFAULT_FAVORITES = [
   'EURUSD',
   'XAUUSD',
-  'GBPUSD',
   'BTCUSD',
-  'ETHUSD',
+  'GBPJPY',
 ]
 
 /**

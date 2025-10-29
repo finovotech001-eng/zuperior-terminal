@@ -1,12 +1,14 @@
 "use client"
 
 import { AdvancedChart } from "./advanced-chart"
+import { LightweightChart } from "./lightweight-chart"
 
 export interface ChartContainerProps {
   symbol?: string
   interval?: string
   height?: number
   className?: string
+  chartType?: "tradingview" | "lightweight"
 }
 
 // Helper function to get descriptive name from symbol
@@ -36,11 +38,24 @@ function getSymbolName(symbol: string): string {
 
 export function ChartContainer({ 
   symbol = "EURUSD",
-  className 
+  className,
+  chartType = "tradingview"
 }: ChartContainerProps) {
+  // Normalize symbol by removing slashes
+  const normalizedSymbol = symbol.replace(/\//g, '')
+
+  if (chartType === "lightweight") {
+    return (
+      <LightweightChart
+        symbol={normalizedSymbol}
+        className={className}
+      />
+    )
+  }
+
   return (
     <AdvancedChart
-      symbol={symbol}
+      symbol={normalizedSymbol}
       symbolName={getSymbolName(symbol)}
       className={className}
     />
