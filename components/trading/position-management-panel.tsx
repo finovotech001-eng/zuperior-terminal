@@ -40,21 +40,25 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
   const [digits, setDigits] = React.useState<number>(3)
   const [contractSize, setContractSize] = React.useState<number>(100000)
 
+  // --- Instrument Meta Error State ---
+  const [instrumentMetaError, setInstrumentMetaError] = React.useState(false)
+
   React.useEffect(() => {
     let cancelled = false
     const loadMeta = async () => {
       try {
         const params = new URLSearchParams({ search: position.symbol, limit: '1' })
         const res = await fetch(`/apis/instruments?${params.toString()}`, { cache: 'no-store' })
-        if (!res.ok) return
+        if (!res.ok) { setInstrumentMetaError(true); return }
         const json = await res.json().catch(() => null as any)
         const item = Array.isArray(json?.data) ? json.data[0] : null
-        if (!item) return
+        if (!item) { setInstrumentMetaError(true); return }
         if (!cancelled) {
-          if (typeof item.digits === 'number') setDigits(item.digits)
-          if (typeof item.contractSize === 'number') setContractSize(item.contractSize)
+          setDigits(typeof item.digits === 'number' ? item.digits : 3)
+          setContractSize(typeof item.contractSize === 'number' ? item.contractSize : 100000)
+          setInstrumentMetaError(false)
         }
-      } catch {}
+      } catch { setInstrumentMetaError(true) }
     }
     loadMeta()
     return () => { cancelled = true }
@@ -114,11 +118,18 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
       : (position.currentPrice * 1.05).toFixed(3)
   }
 
+  const safeParseInput = (val: string, fallback: number) => {
+    const parsed = parseFloat(val)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
   const handleModify = () => {
     onModify?.({
       takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
       stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
     })
+    // Close the popover immediately after triggering modify
+    onClose?.()
   }
 
   const handlePartialClose = () => {
@@ -260,12 +271,13 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                 <div className="text-xs text-[#EF4444]">
                   Max {calculateMaxTakeProfit()}
                 </div>
-                {takeProfit && (
+                {instrumentMetaError && (
+                  <div className="text-xs text-yellow-400 pt-1">Unable to fetch instrument settings for accurate calculation. Defaults used.</div>
+                )}
+                {(takeProfit || takeProfit === "0") && (
                   <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-white/60">{calculatePips(parseFloat(takeProfit))} pips</span>
-                  <span className="text-[#16A34A] price-font font-medium">
-                    {calculateProfitUSD(parseFloat(takeProfit)).toFixed(2)} USD
-                  </span>
+                    <span className="text-white/60">{calculatePips(safeParseInput(takeProfit, position.openPrice))} pips</span>
+                    <span className="text-[#16A34A] price-font font-medium">{(calculateProfitUSD(safeParseInput(takeProfit, position.openPrice)) * 100000).toFixed(2)} USD</span>
                   </div>
                 )}
               </div>
@@ -327,23 +339,26 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                 <div className="text-xs text-[#EF4444]">
                   Max {calculateMaxStopLoss()}
                 </div>
-                {stopLoss && (
+                {instrumentMetaError && (
+                  <div className="text-xs text-yellow-400 pt-1">Unable to fetch instrument settings for accurate calculation. Defaults used.</div>
+                )}
+                {(stopLoss || stopLoss === "0") && (
                   <div className="flex items-center justify-between text-xs pt-1">
-                    <span className="text-white/60">{calculatePips(parseFloat(stopLoss))} pips</span>
-                  <span className="text-[#EF4444] price-font font-medium">
-                    {calculateProfitUSD(parseFloat(stopLoss)).toFixed(2)} USD
-                  </span>
+                    <span className="text-white/60">{calculatePips(safeParseInput(stopLoss, position.openPrice))} pips</span>
+                    <span className="text-[#EF4444] price-font font-medium">{(calculateProfitUSD(safeParseInput(stopLoss, position.openPrice)) * 100000).toFixed(2)} USD</span>
                   </div>
                 )}
               </div>
 
               {/* Action Button */}
-              <button
-                onClick={handleModify}
-                className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold rounded-md transition-colors cursor-pointer mt-2"
-              >
-                Modify position
-              </button>
+              <PopoverPrimitive.Close asChild>
+                <button
+                  onClick={handleModify}
+                  className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold rounded-md transition-colors cursor-pointer mt-2"
+                >
+                  Modify position
+                </button>
+              </PopoverPrimitive.Close>
             </motion.div>
           )}
         </AnimatePresence>

@@ -171,7 +171,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <button
                   className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted"
                 >
-                  {formatPrice(position.takeProfit)}
+                  {formatPrice(typeof position.takeProfit === 'number' ? position.takeProfit : 0)}
                 </button>
               ) : (
                 <button
@@ -196,87 +196,88 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   stopLoss: position.stopLoss,
                   pnl: position.pnl,
                 }}
-              onClose={() => {}}
-              onModify={async (data) => {
-                try {
-                  const direct = Number(position.ticket)
-                  const ticketStr = position.position || position.id
-                  const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
-                  const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
-                  if (!accountId || !Number.isFinite(ticket)) {
-                    console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
-                    return
-                  }
-                  // Acquire access token so server can skip DB auth
-                  let accessToken: string | undefined = undefined
+                onClose={() => setOpenModifyPopover(null)}
+                onModify={async (data) => {
                   try {
-                    const authRes = await fetch('/apis/auth/mt5-login', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ accountId })
-                    })
-                    const authJson = await authRes.json().catch(() => ({} as any))
-                    if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
-                  } catch {}
+                    const direct = Number(position.ticket)
+                    const ticketStr = position.position || position.id
+                    const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
+                    const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                    if (!accountId || !Number.isFinite(ticket)) {
+                      console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
+                      return
+                    }
+                    // Acquire access token so server can skip DB auth
+                    let accessToken: string | undefined = undefined
+                    try {
+                      const authRes = await fetch('/apis/auth/mt5-login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ accountId })
+                      })
+                      const authJson = await authRes.json().catch(() => ({} as any))
+                      if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                    } catch {}
 
-                  const payload: any = {
-                    accountId,
-                    positionId: ticket,
-                    comment: `Modify TP/SL via table for ${position.symbol}`,
-                    ...(accessToken ? { accessToken } : {}),
-                  }
-                  if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
-                  if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
-                  console.log('[Modify] Sending payload:', payload)
-                  const res = await fetch('/apis/trading/position/modify', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                  })
-                  
-                  console.log('[Modify] Response status:', res.status, res.statusText)
-                  const text = await res.text().catch(() => '')
-                  console.log('[Modify] Response text:', text?.substring(0, 500))
-                  
-                  let json: any = null
-                  try { 
-                    json = text ? JSON.parse(text) : null
-                    console.log('[Modify] Parsed JSON:', json)
-                  } catch (e) { 
-                    console.warn('[Modify] Failed to parse JSON:', e)
-                    json = text 
-                  }
-                  
-                  // Check for success: status: true, success: true, or json?.data?.status === true
-                  // Also check for HTTP 200-299 status codes
-                  const isSuccess = res.ok && (
-                    json?.status === true || 
-                    json?.success === true || 
-                    json?.data?.status === true || 
-                    json?.data?.success === true ||
-                    (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error'))
-                  )
-                  
-                  if (isSuccess) {
-                    console.log('[Modify] ✅ Success - closing modal', json)
-                    // Close the popover on success
-                    setOpenModifyPopover(null)
-                  } else {
-                    const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                    console.error('[Modify] ❌ Failed', { 
-                      status: res.status, 
-                      statusText: res.statusText,
-                      json,
-                      errorMsg 
+                    const payload: any = {
+                      accountId,
+                      positionId: ticket,
+                      comment: `Modify TP/SL via table for ${position.symbol}`,
+                      ...(accessToken ? { accessToken } : {}),
+                    }
+                    if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                    if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                    console.log('[Modify] Sending payload:', payload)
+                    const res = await fetch('/apis/trading/position/modify', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload),
                     })
-                    // Keep modal open on error so user can see/retry
+                    
+                    console.log('[Modify] Response status:', res.status, res.statusText)
+                    const text = await res.text().catch(() => '')
+                    console.log('[Modify] Response text:', text?.substring(0, 500))
+                    
+                    let json: any = null
+                    try { 
+                      json = text ? JSON.parse(text) : null
+                      console.log('[Modify] Parsed JSON:', json)
+                    } catch (e) { 
+                      console.warn('[Modify] Failed to parse JSON:', e)
+                      json = text 
+                    }
+                    
+                    // Check for success: status: true, success: true, or json?.data?.status === true
+                    // Also check for HTTP 200-299 status codes
+                    const isSuccess = res.ok && (
+                      json?.status === true || 
+                      json?.success === true || 
+                      json?.data?.status === true || 
+                      json?.data?.success === true ||
+                      (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error'))
+                    )
+                    
+                    if (isSuccess) {
+                      setOpenModifyPopover(null);
+                      if (typeof onClose === 'function') {
+                        onClose(position.id);
+                      }
+                    } else {
+                      const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                      console.error('[Modify] ❌ Failed', { 
+                        status: res.status, 
+                        statusText: res.statusText,
+                        json,
+                        errorMsg 
+                      })
+                      // Keep modal open on error so user can see/retry
+                    }
+                  } catch (e) {
+                    console.error('[Modify] ❌ Exception:', e)
+                    // Keep modal open on exception
                   }
-                } catch (e) {
-                  console.error('[Modify] ❌ Exception:', e)
-                  // Keep modal open on exception
-                }
-              }}
-              onPartialClose={() => {}}
+                }}
+                onPartialClose={() => {}}
               />
             </PopoverContent>
           </Popover>
@@ -295,7 +296,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <button
                   className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted"
                 >
-                  {formatPrice(position.stopLoss)}
+                  {formatPrice(typeof position.stopLoss === 'number' ? position.stopLoss : 0)}
                 </button>
               ) : (
                 <button
@@ -320,87 +321,88 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   stopLoss: position.stopLoss,
                   pnl: position.pnl,
                 }}
-              onClose={() => {}}
-              onModify={async (data) => {
-                try {
-                  const direct = Number(position.ticket)
-                  const ticketStr = position.position || position.id
-                  const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
-                  const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
-                  if (!accountId || !Number.isFinite(ticket)) {
-                    console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
-                    return
-                  }
-                  // Acquire access token so server can skip DB auth
-                  let accessToken: string | undefined = undefined
+                onClose={() => setOpenModifyPopover(null)}
+                onModify={async (data) => {
                   try {
-                    const authRes = await fetch('/apis/auth/mt5-login', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ accountId })
-                    })
-                    const authJson = await authRes.json().catch(() => ({} as any))
-                    if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
-                  } catch {}
+                    const direct = Number(position.ticket)
+                    const ticketStr = position.position || position.id
+                    const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
+                    const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                    if (!accountId || !Number.isFinite(ticket)) {
+                      console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
+                      return
+                    }
+                    // Acquire access token so server can skip DB auth
+                    let accessToken: string | undefined = undefined
+                    try {
+                      const authRes = await fetch('/apis/auth/mt5-login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ accountId })
+                      })
+                      const authJson = await authRes.json().catch(() => ({} as any))
+                      if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                    } catch {}
 
-                  const payload: any = {
-                    accountId,
-                    positionId: ticket,
-                    comment: `Modify TP/SL via table for ${position.symbol}`,
-                    ...(accessToken ? { accessToken } : {}),
-                  }
-                  if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
-                  if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
-                  console.log('[Modify] Sending payload:', payload)
-                  const res = await fetch('/apis/trading/position/modify', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                  })
-                  
-                  console.log('[Modify] Response status:', res.status, res.statusText)
-                  const text = await res.text().catch(() => '')
-                  console.log('[Modify] Response text:', text?.substring(0, 500))
-                  
-                  let json: any = null
-                  try { 
-                    json = text ? JSON.parse(text) : null
-                    console.log('[Modify] Parsed JSON:', json)
-                  } catch (e) { 
-                    console.warn('[Modify] Failed to parse JSON:', e)
-                    json = text 
-                  }
-                  
-                  // Check for success: status: true, success: true, or json?.data?.status === true
-                  // Also check for HTTP 200-299 status codes
-                  const isSuccess = res.ok && (
-                    json?.status === true || 
-                    json?.success === true || 
-                    json?.data?.status === true || 
-                    json?.data?.success === true ||
-                    (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error'))
-                  )
-                  
-                  if (isSuccess) {
-                    console.log('[Modify] ✅ Success - closing modal', json)
-                    // Close the popover on success
-                    setOpenModifyPopover(null)
-                  } else {
-                    const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                    console.error('[Modify] ❌ Failed', { 
-                      status: res.status, 
-                      statusText: res.statusText,
-                      json,
-                      errorMsg 
+                    const payload: any = {
+                      accountId,
+                      positionId: ticket,
+                      comment: `Modify TP/SL via table for ${position.symbol}`,
+                      ...(accessToken ? { accessToken } : {}),
+                    }
+                    if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                    if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                    console.log('[Modify] Sending payload:', payload)
+                    const res = await fetch('/apis/trading/position/modify', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(payload),
                     })
-                    // Keep modal open on error so user can see/retry
+                    
+                    console.log('[Modify] Response status:', res.status, res.statusText)
+                    const text = await res.text().catch(() => '')
+                    console.log('[Modify] Response text:', text?.substring(0, 500))
+                    
+                    let json: any = null
+                    try { 
+                      json = text ? JSON.parse(text) : null
+                      console.log('[Modify] Parsed JSON:', json)
+                    } catch (e) { 
+                      console.warn('[Modify] Failed to parse JSON:', e)
+                      json = text 
+                    }
+                    
+                    // Check for success: status: true, success: true, or json?.data?.status === true
+                    // Also check for HTTP 200-299 status codes
+                    const isSuccess = res.ok && (
+                      json?.status === true || 
+                      json?.success === true || 
+                      json?.data?.status === true || 
+                      json?.data?.success === true ||
+                      (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error'))
+                    )
+                    
+                    if (isSuccess) {
+                      setOpenModifyPopover(null);
+                      if (typeof onClose === 'function') {
+                        onClose(position.id);
+                      }
+                    } else {
+                      const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                      console.error('[Modify] ❌ Failed', { 
+                        status: res.status, 
+                        statusText: res.statusText,
+                        json,
+                        errorMsg 
+                      })
+                      // Keep modal open on error so user can see/retry
+                    }
+                  } catch (e) {
+                    console.error('[Modify] ❌ Exception:', e)
+                    // Keep modal open on exception
                   }
-                } catch (e) {
-                  console.error('[Modify] ❌ Exception:', e)
-                  // Keep modal open on exception
-                }
-              }}
-              onPartialClose={() => {}}
+                }}
+                onPartialClose={() => {}}
               />
             </PopoverContent>
           </Popover>
@@ -468,7 +470,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 stopLoss: position.stopLoss,
                 pnl: position.pnl,
               }}
-              onClose={() => {}}
+              onClose={() => setOpenModifyPopover(null)}
               onModify={async (data) => {
                 try {
                   const direct = Number(position.ticket)
@@ -530,9 +532,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   )
                   
                   if (isSuccess) {
-                    console.log('[Modify] ✅ Success - closing modal', json)
-                    // Close the popover on success
-                    setOpenModifyPopover(null)
+                    setOpenModifyPopover(null); // Ensure modal closes
                   } else {
                     const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
                     console.error('[Modify] ❌ Failed', { 

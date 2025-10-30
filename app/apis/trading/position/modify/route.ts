@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/session'
 
-const API_BASE = (process.env.LIVE_API_URL || 'http://18.130.5.209:5003/api').replace(/\/$/, '')
+// Always ensure trailing /api in API_BASE
+const RAW_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.LIVE_API_URL || 'http://18.130.5.209:5003/api';
+const API_BASE = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : RAW_API_BASE.replace(/\/$/, '') + '/api';
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
