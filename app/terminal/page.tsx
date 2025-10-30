@@ -730,7 +730,17 @@ const mockCalendarEvents: EventsByDate[] = [
   },
 ]
 
-
+// Add helper above component:
+function detectAccountType(account) {
+  if (!account) return 'Live';
+  const group = (account.accountGroup || account.group || '').toLowerCase();
+  if (group.includes('demo')) return 'Demo';
+  if (group.includes('live')) return 'Live';
+  // fallback
+  const apiField = account.accountType || account.AccountType;
+  if (apiField === 'Live' || apiField === 'Demo') return apiField;
+  return 'Live';
+}
 
 export default function TerminalPage() {
   return <TerminalContent />
@@ -822,7 +832,7 @@ function TerminalContent() {
     { id: "aapl", symbol: "AAPL", icon: <span className="text-base">ðŸŽ</span> },
   ])
   const [hideBalance, setHideBalance] = React.useState(false)
-  // ðŸ’¥ FIX: Define the missing state for the right panel
+  // ðŸ'¥ FIX: Define the missing state for the right panel
   // const [activePanel, setActivePanel] = React.useState<"order" | "settings" | "calendar">("order"); // â¬…ï¸ NEW STATE DEFINITION
 
   // Hook for multiple account balances
@@ -1056,6 +1066,10 @@ function TerminalContent() {
   const [, addTab] = useAtom(addTabAtom)
   const [, removeTab] = useAtom(removeTabAtom)
 
+  // --- Insert after currentAccountId state ---
+  const [pendingAccountType, setPendingAccountType] = React.useState<string | null>(null);
+
+  const selectedAccountType = mt5Accounts.find(acc => acc.accountId === currentAccountId)?.accountType || 'Live';
 
    // --- EFFECT 1: INITIAL LOAD (Cache Check or First Chunk) - RE-INTRODUCED ---
   React.useEffect(() => {
@@ -1363,7 +1377,7 @@ function TerminalContent() {
     return bal + liveTotalPL;
   }, [balanceData.balance, liveTotalPL]);
 
-  // Closed trades (history) â€“ default period 'month'
+  // Closed trades (history) â€" default period 'month'
   const { closedPositions, isLoading: closedLoading } = useTradeHistory({ accountId: currentAccountId, period: 'month', enabled: true })
   
   // Debug samples (non-intrusive)
@@ -1374,7 +1388,7 @@ function TerminalContent() {
       // Check for positions without valid tickets
       const noTickets = signalRPositions.filter(p => !p.ticket || p.ticket <= 0)
       if (noTickets.length > 0) {
-        console.warn('âš ï¸ [Positions] Found', noTickets.length, 'positions without valid tickets:', noTickets.map(p => ({ id: p.id, symbol: p.symbol })))
+        console.warn('âš ï¸ [Positions] Found', noTickets.length, 'positions without valid tickets:', noTickets.map(p => ({ id: p.id, symbol: p.symbol })))
       }
     }
   }, [signalRPositions, formattedPositions])
@@ -1398,10 +1412,16 @@ function TerminalContent() {
       console.log('âœ… Positions Connected. Count:', formattedPositions.length);
     }
     if (positionsConnecting) {
-      console.log('ðŸ”„ Positions Connecting...');
+      console.log('ðŸ"„ Positions Connecting...');
     }
   }, [positionsConnected, positionsConnecting, positionsError, formattedPositions.length]);
 
+  // When a new balance (for the selected id) loads, clear pending type:
+  React.useEffect(() => {
+    if (pendingAccountType && currentAccountId && balanceData.accountType) {
+      setPendingAccountType(null);
+    }
+  }, [balanceData.accountType, currentAccountId]);
 
   // Sidebar items definition (left as is)
   const sidebarItems: SidebarItem[] = [
@@ -1510,7 +1530,8 @@ function TerminalContent() {
           price: data.openPrice || selectedInstrument.ask || 0,
         };
 
-        console.log("ðŸ“¤ Sending BUY order:", order);
+        // Fix syntax error with correct string for emoji + message
+        console.log("🟢 Sending BUY order:", order);
 
         const response = order.orderType === 'pending' ? await placeSellLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Sell Limit via web' }) : await placeMarketOrder(order);
 
@@ -1537,7 +1558,8 @@ function TerminalContent() {
           price: data.openPrice || selectedInstrument.bid || 0,
         };
 
-        console.log("ðŸ“¤ Sending SELL order:", order);
+        // Fix syntax error with correct string for emoji + message
+        console.log("🔴 Sending SELL order:", order);
 
         // âœ… Call your API proxy
         const response = order.orderType === 'pending' ? await placeSellLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Sell Limit via web' }) : await placeMarketOrder(order);
@@ -1702,11 +1724,11 @@ function TerminalContent() {
                       <span className="text-xs text-white/60">
                         <span className={cn(
                           "px-1.5 py-0.5 rounded text-xs font-medium",
-                          balanceData.accountType === 'Live' 
-                            ? "bg-warning/20 text-warning" 
+                          selectedAccountType === 'Live'
+                            ? "bg-warning/20 text-warning"
                             : "bg-info/20 text-info"
                         )}>
-                          {balanceData.accountType}
+                          {selectedAccountType}
                         </span>
                         &nbsp;&nbsp;
                         {isUserLoading ? 'Loading...' : userName}
@@ -1856,7 +1878,12 @@ function TerminalContent() {
                       {mt5Accounts.map((account) => (
                         <button
                           key={account.id}
-                          onClick={() => setCurrentAccountId(account.accountId)}
+                          onClick={() => {
+                            const detectedType = detectAccountType(account);
+                            console.log('[ACCOUNT SWITCH]', {account, detectedType});
+                            setPendingAccountType(detectedType);
+                            setCurrentAccountId(account.accountId);
+                          }}
                           className={cn(
                             "w-full flex items-center justify-between px-3 py-2.5 rounded-md transition-colors",
                             currentAccountId === account.accountId
