@@ -214,15 +214,17 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
             onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_tp` : null)}
           >
             <PopoverTrigger asChild>
-              {Number(position.takeProfit || 0) > 0 ? (
+              {position.takeProfit !== undefined && position.takeProfit !== null && Number(position.takeProfit) > 0 ? (
                 <button
                   className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted"
+                  title={`Take Profit: ${formatPrice(position.takeProfit)}`}
                 >
-                  {formatPrice(typeof position.takeProfit === 'number' ? position.takeProfit : 0)}
+                  {formatPrice(position.takeProfit)}
                 </button>
               ) : (
                 <button
                   className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted"
+                  title="Click to set Take Profit"
                 >
                   Modify
                 </button>
@@ -274,25 +276,36 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     }
                     if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
                     if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
-                    console.log('[Modify] Sending payload:', payload)
+                    
+                    console.log('═══════════════════════════════════════════════════════════')
+                    console.log('[Modify] 🚀 MODIFY POSITION API CALL')
+                    console.log('[Modify] Position:', { id: position.id, ticket: position.ticket, symbol: position.symbol })
+                    console.log('[Modify] Account ID:', accountId)
+                    console.log('[Modify] Request URL: PUT /apis/trading/position/modify')
+                    console.log('[Modify] Request Payload:', JSON.stringify(payload, null, 2))
+                    console.log('[Modify] Data received from panel:', data)
+                    console.log('───────────────────────────────────────────────────────────')
+                    
                     const res = await fetch('/apis/trading/position/modify', {
                       method: 'PUT',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(payload),
                     })
                     
-                    console.log('[Modify] Response status:', res.status, res.statusText)
+                    console.log('[Modify] Response Status:', res.status, res.statusText)
                     const text = await res.text().catch(() => '')
-                    console.log('[Modify] Response text:', text?.substring(0, 500))
+                    console.log('[Modify] Response Headers:', Object.fromEntries(res.headers.entries()))
+                    console.log('[Modify] Response Body (first 1000 chars):', text?.substring(0, 1000))
                     
                     let json: any = null
                     try { 
                       json = text ? JSON.parse(text) : null
-                      console.log('[Modify] Parsed JSON:', json)
+                      console.log('[Modify] Parsed Response JSON:', JSON.stringify(json, null, 2))
                     } catch (e) { 
                       console.warn('[Modify] Failed to parse JSON:', e)
                       json = text 
                     }
+                    console.log('═══════════════════════════════════════════════════════════')
                     
                     // Check for success: status: true, success: true, or json?.data?.status === true
                     // Also check for HTTP 200-299 status codes
@@ -305,10 +318,15 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     )
                     
                     if (isSuccess) {
-                      setOpenModifyPopover(null);
-                      if (typeof onClose === 'function') {
-                        onClose(position.id);
-                      }
+                      // Show success alert
+                      alert(`Position modified successfully for ${position.symbol}`);
+                      // Keep popover open for a moment so user can see the updated values
+                      // Close after a short delay to allow user to see the changes
+                      setTimeout(() => {
+                        setOpenModifyPopover(null);
+                      }, 2000); // Close after 2 seconds
+                      // Don't call onClose here - it would close the position!
+                      // The positions will refresh automatically via SSE/polling
                     } else {
                       const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
                       console.error('[Modify] ❌ Failed', { 
@@ -317,10 +335,14 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                         json,
                         errorMsg 
                       })
+                      // Show error alert
+                      alert(`Failed to modify position: ${errorMsg}`);
                       // Keep modal open on error so user can see/retry
                     }
                   } catch (e) {
                     console.error('[Modify] ❌ Exception:', e)
+                    // Show error alert
+                    alert(`Failed to modify position: ${e instanceof Error ? e.message : 'Unknown error'}`);
                     // Keep modal open on exception
                   }
                 }}
@@ -339,15 +361,17 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
             onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_sl` : null)}
           >
             <PopoverTrigger asChild>
-              {Number(position.stopLoss || 0) > 0 ? (
+              {position.stopLoss !== undefined && position.stopLoss !== null && Number(position.stopLoss) > 0 ? (
                 <button
                   className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted"
+                  title={`Stop Loss: ${formatPrice(position.stopLoss)}`}
                 >
-                  {formatPrice(typeof position.stopLoss === 'number' ? position.stopLoss : 0)}
+                  {formatPrice(position.stopLoss)}
                 </button>
               ) : (
                 <button
                   className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted"
+                  title="Click to set Stop Loss"
                 >
                   Modify
                 </button>
@@ -399,25 +423,36 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     }
                     if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
                     if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
-                    console.log('[Modify] Sending payload:', payload)
+                    
+                    console.log('═══════════════════════════════════════════════════════════')
+                    console.log('[Modify] 🚀 MODIFY POSITION API CALL')
+                    console.log('[Modify] Position:', { id: position.id, ticket: position.ticket, symbol: position.symbol })
+                    console.log('[Modify] Account ID:', accountId)
+                    console.log('[Modify] Request URL: PUT /apis/trading/position/modify')
+                    console.log('[Modify] Request Payload:', JSON.stringify(payload, null, 2))
+                    console.log('[Modify] Data received from panel:', data)
+                    console.log('───────────────────────────────────────────────────────────')
+                    
                     const res = await fetch('/apis/trading/position/modify', {
                       method: 'PUT',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(payload),
                     })
                     
-                    console.log('[Modify] Response status:', res.status, res.statusText)
+                    console.log('[Modify] Response Status:', res.status, res.statusText)
                     const text = await res.text().catch(() => '')
-                    console.log('[Modify] Response text:', text?.substring(0, 500))
+                    console.log('[Modify] Response Headers:', Object.fromEntries(res.headers.entries()))
+                    console.log('[Modify] Response Body (first 1000 chars):', text?.substring(0, 1000))
                     
                     let json: any = null
                     try { 
                       json = text ? JSON.parse(text) : null
-                      console.log('[Modify] Parsed JSON:', json)
+                      console.log('[Modify] Parsed Response JSON:', JSON.stringify(json, null, 2))
                     } catch (e) { 
                       console.warn('[Modify] Failed to parse JSON:', e)
                       json = text 
                     }
+                    console.log('═══════════════════════════════════════════════════════════')
                     
                     // Check for success: status: true, success: true, or json?.data?.status === true
                     // Also check for HTTP 200-299 status codes
@@ -430,10 +465,15 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     )
                     
                     if (isSuccess) {
-                      setOpenModifyPopover(null);
-                      if (typeof onClose === 'function') {
-                        onClose(position.id);
-                      }
+                      // Show success alert
+                      alert(`Position modified successfully for ${position.symbol}`);
+                      // Keep popover open for a moment so user can see the updated values
+                      // Close after a short delay to allow user to see the changes
+                      setTimeout(() => {
+                        setOpenModifyPopover(null);
+                      }, 2000); // Close after 2 seconds
+                      // Don't call onClose here - it would close the position!
+                      // The positions will refresh automatically via SSE/polling
                     } else {
                       const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
                       console.error('[Modify] ❌ Failed', { 
@@ -442,10 +482,14 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                         json,
                         errorMsg 
                       })
+                      // Show error alert
+                      alert(`Failed to modify position: ${errorMsg}`);
                       // Keep modal open on error so user can see/retry
                     }
                   } catch (e) {
                     console.error('[Modify] ❌ Exception:', e)
+                    // Show error alert
+                    alert(`Failed to modify position: ${e instanceof Error ? e.message : 'Unknown error'}`);
                     // Keep modal open on exception
                   }
                 }}
@@ -549,25 +593,36 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   }
                   if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
                   if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
-                  console.log('[Modify] Sending payload:', payload)
+                  
+                  console.log('═══════════════════════════════════════════════════════════')
+                  console.log('[Modify] 🚀 MODIFY POSITION API CALL (Actions Column)')
+                  console.log('[Modify] Position:', { id: position.id, ticket: position.ticket, symbol: position.symbol })
+                  console.log('[Modify] Account ID:', accountId)
+                  console.log('[Modify] Request URL: PUT /apis/trading/position/modify')
+                  console.log('[Modify] Request Payload:', JSON.stringify(payload, null, 2))
+                  console.log('[Modify] Data received from panel:', data)
+                  console.log('───────────────────────────────────────────────────────────')
+                  
                   const res = await fetch('/apis/trading/position/modify', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                   })
                   
-                  console.log('[Modify] Response status:', res.status, res.statusText)
+                  console.log('[Modify] Response Status:', res.status, res.statusText)
                   const text = await res.text().catch(() => '')
-                  console.log('[Modify] Response text:', text?.substring(0, 500))
+                  console.log('[Modify] Response Headers:', Object.fromEntries(res.headers.entries()))
+                  console.log('[Modify] Response Body (first 1000 chars):', text?.substring(0, 1000))
                   
                   let json: any = null
                   try { 
                     json = text ? JSON.parse(text) : null
-                    console.log('[Modify] Parsed JSON:', json)
+                    console.log('[Modify] Parsed Response JSON:', JSON.stringify(json, null, 2))
                   } catch (e) { 
                     console.warn('[Modify] Failed to parse JSON:', e)
                     json = text 
                   }
+                  console.log('═══════════════════════════════════════════════════════════')
                   
                   // Check for success: status: true, success: true, or json?.data?.status === true
                   // Also check for HTTP 200-299 status codes
@@ -580,7 +635,13 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   )
                   
                   if (isSuccess) {
-                    setOpenModifyPopover(null); // Ensure modal closes
+                    // Show success alert
+                    alert(`Position modified successfully for ${position.symbol}`);
+                    // Keep popover open for a moment so user can see the updated values
+                    // Close after a short delay to allow user to see the changes
+                    setTimeout(() => {
+                      setOpenModifyPopover(null);
+                    }, 2000); // Close after 2 seconds
                   } else {
                     const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
                     console.error('[Modify] ❌ Failed', { 
@@ -589,6 +650,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                       json,
                       errorMsg 
                     })
+                    // Show error alert
+                    alert(`Failed to modify position: ${errorMsg}`);
                     // Keep modal open on error so user can see/retry
                   }
                 } catch (e) {

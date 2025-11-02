@@ -1089,18 +1089,25 @@ function TerminalContent() {
 
   // Convert SignalR positions to Position format for the table
   const formattedPositions = React.useMemo((): Position[] => {
-    console.log('🔄 [Format] Raw signalR positions:', signalRPositions)
-    console.log('🔄 [Format] Count:', signalRPositions.length)
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('[Format Positions] 🔄 FORMATTING POSITIONS')
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('📥 Raw signalR positions count:', signalRPositions.length)
+    console.log('📋 Raw signalR positions:', JSON.stringify(signalRPositions, null, 2))
+    console.log('───────────────────────────────────────────────────────────')
     
     // Map incoming live positions to table rows - USE TICKET AS ID!
-    const rows = signalRPositions.map((pos): Position => {
+    const rows = signalRPositions.map((pos, index): Position => {
       // Use ticket number as the ID for reliable closing
       const ticketNum = pos.ticket && pos.ticket > 0 ? pos.ticket : 0;
       const posId = ticketNum > 0 ? `ticket-${ticketNum}` : pos.id;
       
-      console.log(`🔄 [Format] Mapping position: ticket=${ticketNum}, id=${posId}, symbol=${pos.symbol}`)
+      console.log(`[Format Positions] Mapping position [${index}]:`)
+      console.log(`  Ticket: ${ticketNum}, ID: ${posId}, Symbol: ${pos.symbol}`)
+      console.log(`  Take Profit: ${pos.takeProfit} (${typeof pos.takeProfit})`)
+      console.log(`  Stop Loss: ${pos.stopLoss} (${typeof pos.stopLoss})`)
       
-      return {
+      const formatted = {
         id: posId,  // Use ticket-based ID
         ticket: ticketNum,
         symbol: pos.symbol,
@@ -1117,12 +1124,27 @@ function TerminalContent() {
         swap: pos.swap,
         pnl: pos.profit,
       }
+      
+      console.log(`  ✅ Formatted position [${index}]:`, JSON.stringify(formatted, null, 2))
+      console.log('───────────────────────────────────────────────────────────')
+      
+      return formatted
     })
+    
     // Deduplicate by id to avoid React key collisions if backend sends duplicates
     const byId = new Map<string, Position>()
     rows.forEach(r => byId.set(r.id, r))
     const result = Array.from(byId.values())
-    console.log('✅ [Format] Final formatted positions:', result)
+    
+    console.log('✅ [Format Positions] FINAL RESULT:')
+    console.log(`  Total unique positions: ${result.length}`)
+    result.forEach((pos, idx) => {
+      console.log(`  [${idx}] ${pos.symbol} (Ticket: ${pos.ticket}):`)
+      console.log(`      Take Profit: ${pos.takeProfit} (${typeof pos.takeProfit})`)
+      console.log(`      Stop Loss: ${pos.stopLoss} (${typeof pos.stopLoss})`)
+    })
+    console.log('═══════════════════════════════════════════════════════════')
+    
     return result
   }, [signalRPositions]);
 

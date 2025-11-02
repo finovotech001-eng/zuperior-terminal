@@ -67,9 +67,53 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
   const [takeProfitMode, setTakeProfitMode] = React.useState<"price" | "pips" | "money" | "equity">("price")
   const [stopLossMode, setStopLossMode] = React.useState<"price" | "pips" | "money" | "equity">("price")
   
-  // Modify Tab State
-  const [takeProfit, setTakeProfit] = React.useState(position.takeProfit?.toString() || "")
-  const [stopLoss, setStopLoss] = React.useState(position.stopLoss?.toString() || "")
+  // Modify Tab State - initialize from position prop
+  const [takeProfit, setTakeProfit] = React.useState(() => {
+    return (position.takeProfit !== undefined && position.takeProfit !== null && Number(position.takeProfit) > 0) 
+      ? position.takeProfit.toString() 
+      : ""
+  })
+  const [stopLoss, setStopLoss] = React.useState(() => {
+    return (position.stopLoss !== undefined && position.stopLoss !== null && Number(position.stopLoss) > 0) 
+      ? position.stopLoss.toString() 
+      : ""
+  })
+  
+  // Sync takeProfit and stopLoss with position prop when it changes
+  // This ensures that when SSE updates arrive with modified values, they are displayed
+  React.useEffect(() => {
+    console.log('[PositionManagementPanel] Position prop updated:', {
+      symbol: position.symbol,
+      takeProfit: position.takeProfit,
+      stopLoss: position.stopLoss,
+      takeProfitType: typeof position.takeProfit,
+      stopLossType: typeof position.stopLoss
+    })
+    
+    // Always sync Take Profit if it exists and is valid
+    if (position.takeProfit !== undefined && position.takeProfit !== null && Number(position.takeProfit) > 0) {
+      const tpStr = position.takeProfit.toString()
+      setTakeProfit(prev => {
+        if (prev !== tpStr) {
+          console.log('[PositionManagementPanel] Updating Take Profit from', prev, 'to', tpStr)
+          return tpStr
+        }
+        return prev
+      })
+    }
+    
+    // Always sync Stop Loss if it exists and is valid
+    if (position.stopLoss !== undefined && position.stopLoss !== null && Number(position.stopLoss) > 0) {
+      const slStr = position.stopLoss.toString()
+      setStopLoss(prev => {
+        if (prev !== slStr) {
+          console.log('[PositionManagementPanel] Updating Stop Loss from', prev, 'to', slStr)
+          return slStr
+        }
+        return prev
+      })
+    }
+  }, [position.takeProfit, position.stopLoss, position.symbol])
   
   // Partial Close Tab State
   const [volumeToClose, setVolumeToClose] = React.useState(position.lots)
@@ -123,13 +167,27 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
     return Number.isFinite(parsed) ? parsed : fallback
   }
 
-  const handleModify = () => {
-    onModify?.({
+  const handleModify = async () => {
+    const modifyData = {
       takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
       stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
-    })
-    // Close the popover immediately after triggering modify
-    onClose?.()
+    }
+    
+    // Update local state immediately with the values we're sending
+    // This ensures the UI reflects the changes even before SSE updates
+    if (modifyData.takeProfit !== undefined) {
+      setTakeProfit(modifyData.takeProfit.toString())
+    }
+    if (modifyData.stopLoss !== undefined) {
+      setStopLoss(modifyData.stopLoss.toString())
+    }
+    
+    // Call the modify handler (async, but we don't wait for it)
+    // The panel will stay open so user can see the updated values
+    onModify?.(modifyData)
+    
+    // Don't close the popover here - let the parent handle it after success
+    // This allows the user to see the modified values
   }
 
   const handlePartialClose = () => {
@@ -268,9 +326,6 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                     <Plus className="h-4 w-4 text-white/60" />
                   </button>
                 </div>
-                <div className="text-xs text-[#EF4444]">
-                  Max {calculateMaxTakeProfit()}
-                </div>
                 {instrumentMetaError && (
                   <div className="text-xs text-yellow-400 pt-1">Unable to fetch instrument settings for accurate calculation. Defaults used.</div>
                 )}
@@ -351,14 +406,12 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
               </div>
 
               {/* Action Button */}
-              <PopoverPrimitive.Close asChild>
-                <button
-                  onClick={handleModify}
-                  className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold rounded-md transition-colors cursor-pointer mt-2"
-                >
-                  Modify position
-                </button>
-              </PopoverPrimitive.Close>
+              <button
+                onClick={handleModify}
+                className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold rounded-md transition-colors cursor-pointer mt-2"
+              >
+                Modify position
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

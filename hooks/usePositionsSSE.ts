@@ -48,6 +48,48 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
   const snapshotTimeout = useRef<NodeJS.Timeout | null>(null)
 
   const toPosition = (pos: any, idx?: number): SignalRPosition => {
+    // 🔍 DETAILED LOGGING: Print complete API response for position
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log(`[Positions API] 📥 RAW POSITION DATA [${idx ?? 'N/A'}]`)
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('📋 Complete Raw Object:', JSON.stringify(pos, null, 2))
+    console.log('🔑 All Keys in Object:', Object.keys(pos))
+    console.log('───────────────────────────────────────────────────────────')
+    
+    // Extract and log Take Profit fields
+    const tpFields = {
+      'TakeProfit': pos.TakeProfit,
+      'takeProfit': pos.takeProfit,
+      'TAKE_PROFIT': pos.TAKE_PROFIT,
+      'Take_Profit': pos.Take_Profit,
+      'tp': pos.tp,
+      'TP': pos.TP
+    }
+    console.log('💰 TAKE PROFIT FIELDS:')
+    Object.entries(tpFields).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        console.log(`  ${key}:`, value, `(type: ${typeof value})`)
+      }
+    })
+    
+    // Extract and log Stop Loss fields
+    const slFields = {
+      'StopLoss': pos.StopLoss,
+      'stopLoss': pos.stopLoss,
+      'STOP_LOSS': pos.STOP_LOSS,
+      'Stop_Loss': pos.Stop_Loss,
+      'sl': pos.sl,
+      'SL': pos.SL
+    }
+    console.log('🛑 STOP LOSS FIELDS:')
+    Object.entries(slFields).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        console.log(`  ${key}:`, value, `(type: ${typeof value})`)
+      }
+    })
+    
+    console.log('───────────────────────────────────────────────────────────')
+    
     // Debug: Show raw socket data
     const hasPositionId = pos.PositionId || pos.PositionID
     if (hasPositionId && typeof window !== 'undefined') {
@@ -115,7 +157,16 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
       console.warn('[SSE] Position without ticket - using fallback ID:', id, 'Raw data keys:', Object.keys(pos))
     }
 
-    return {
+    // Extract Take Profit and Stop Loss with detailed logging
+    const extractedTakeProfit = pos.TakeProfit ?? pos.takeProfit ?? pos.TP ?? pos.tp ?? undefined
+    const extractedStopLoss = pos.StopLoss ?? pos.stopLoss ?? pos.SL ?? pos.sl ?? undefined
+    
+    console.log('✅ EXTRACTED VALUES:')
+    console.log(`  TakeProfit: ${extractedTakeProfit} (${typeof extractedTakeProfit})`)
+    console.log(`  StopLoss: ${extractedStopLoss} (${typeof extractedStopLoss})`)
+    console.log('═══════════════════════════════════════════════════════════')
+    
+    const result = {
       id,
       ticket: ticketNum,
       positionId: positionIdNum,
@@ -124,14 +175,20 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
       volume: normalizedVolume,
       openPrice: pos.OpenPrice ?? pos.openPrice ?? pos.PriceOpen ?? pos.priceOpen ?? 0,
       currentPrice: pos.PriceCurrent ?? pos.priceCurrent ?? pos.CurrentPrice ?? pos.currentPrice ?? 0,
-      takeProfit: pos.TakeProfit ?? pos.takeProfit ?? pos.TP ?? pos.tp ?? undefined,
-      stopLoss: pos.StopLoss ?? pos.stopLoss ?? pos.SL ?? pos.sl ?? undefined,
+      takeProfit: extractedTakeProfit,
+      stopLoss: extractedStopLoss,
       openTime: pos.TimeSetup ?? pos.timeSetup ?? pos.OpenTime ?? pos.openTime ?? new Date().toISOString(),
       swap: pos.Swap ?? pos.swap ?? 0,
       profit: pos.Profit ?? pos.profit ?? 0,
       commission: pos.Commission ?? pos.commission ?? 0,
       comment: pos.Comment ?? pos.comment ?? undefined,
     }
+    
+    console.log('📤 FINAL MAPPED POSITION:')
+    console.log(JSON.stringify(result, null, 2))
+    console.log('═══════════════════════════════════════════════════════════')
+    
+    return result
   }
 
   // Authenticate and get access token
