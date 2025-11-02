@@ -167,12 +167,7 @@ function transformEvent(apiEvent: ApiEconomicEvent): TransformedEvent | null {
   const eventTitle = apiEvent.title || apiEvent.Title || apiEvent.indicator || apiEvent.Indicator || 'Untitled Event'
   
   if (!eventId || (!eventTitle || eventTitle === 'Untitled Event') && !apiEvent.indicator && !apiEvent.Indicator) {
-    console.warn('[Economic Calendar] Skipping event with missing required fields:', {
-      id: apiEvent.id || apiEvent.Id,
-      title: apiEvent.title || apiEvent.Title,
-      indicator: apiEvent.indicator || apiEvent.Indicator,
-      fullEvent: apiEvent
-    })
+    // Skipping event with missing required fields
     return null
   }
 
@@ -244,7 +239,6 @@ export function useEconomicCalendar({
       // Use accountId from props, fallback to localStorage
       const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
       if (!effectiveAccountId) {
-        console.warn('[Economic Calendar] No AccountId found, calendar may not work')
       }
 
       // Build query parameters (include accountId)
@@ -267,7 +261,6 @@ export function useEconomicCalendar({
       if (!res.ok) {
         // Handle server errors gracefully
         if (res.status >= 500 && res.status < 600) {
-          console.warn(`[Economic Calendar] Server error ${res.status} - calendar data temporarily unavailable`)
           setEvents([])
           setError(null)
           setIsLoading(false)
@@ -280,8 +273,6 @@ export function useEconomicCalendar({
       const json = await res.json().catch(() => ({} as any))
       
       // Debug: Log response to help identify data structure issues
-      console.log('[Economic Calendar] Raw API response:', JSON.stringify(json, null, 2))
-      console.log('[Economic Calendar] Response type:', typeof json, 'Is array?', Array.isArray(json))
       
       // Handle different response formats
       let apiEvents: ApiEconomicEvent[] = []
@@ -290,58 +281,37 @@ export function useEconomicCalendar({
       if (json && typeof json === 'object' && json.success === true && Array.isArray(json.data)) {
         // Our API route returns: { success: true, data: [...] }
         apiEvents = json.data
-        console.log('[Economic Calendar] Found events in success.data:', apiEvents.length)
       } else if (Array.isArray(json)) {
         // Direct array response (fallback)
         apiEvents = json
-        console.log('[Economic Calendar] Found direct array response with', apiEvents.length, 'events')
       } else if (json && typeof json === 'object') {
         // Try other wrapped formats
         if (Array.isArray(json.data)) {
           apiEvents = json.data
-          console.log('[Economic Calendar] Found events in json.data:', apiEvents.length)
         } else if (Array.isArray(json.Data)) {
           apiEvents = json.Data
-          console.log('[Economic Calendar] Found events in json.Data:', apiEvents.length)
         } else if (Array.isArray(json.events)) {
           apiEvents = json.events
-          console.log('[Economic Calendar] Found events in json.events:', apiEvents.length)
         } else if (Array.isArray(json.items)) {
           apiEvents = json.items
-          console.log('[Economic Calendar] Found events in json.items:', apiEvents.length)
-        } else {
-          console.warn('[Economic Calendar] Could not find events array. Response keys:', Object.keys(json))
-          console.warn('[Economic Calendar] Response sample:', JSON.stringify(json).substring(0, 500))
         }
       }
 
-      console.log('[Economic Calendar] Final extracted events count:', apiEvents.length)
-      if (apiEvents.length > 0) {
-        console.log('[Economic Calendar] Sample event:', apiEvents[0])
-      }
-
       // Transform API events to component format (filter out null values)
-      console.log('[Economic Calendar] Starting transformation of', apiEvents.length, 'events')
       const transformedEvents = apiEvents
         .map((event, idx) => {
           try {
             const transformed = transformEvent(event)
             if (!transformed) {
-              console.warn(`[Economic Calendar] Event ${idx} was filtered out:`, event)
             }
             return transformed
           } catch (err) {
-            console.error(`[Economic Calendar] Error transforming event ${idx}:`, err, event)
             return null
           }
         })
         .filter((event): event is TransformedEvent => event !== null)
 
-      console.log('[Economic Calendar] Transformation complete:', transformedEvents.length, 'valid events out of', apiEvents.length)
-
       if (transformedEvents.length === 0 && apiEvents.length > 0) {
-        console.error('[Economic Calendar] All events were filtered out during transformation!')
-        console.error('[Economic Calendar] Sample failed event:', apiEvents[0])
         setEvents([])
         setIsLoading(false)
         return
@@ -371,11 +341,6 @@ export function useEconomicCalendar({
       const eventsByDate: EventsByDate[] = Array.from(grouped.values())
         .sort((a, b) => a.date.localeCompare(b.date))
 
-      console.log('[Economic Calendar] Final grouped events by date:', eventsByDate.length, 'date groups')
-      eventsByDate.forEach(group => {
-        console.log(`[Economic Calendar] ${group.displayDate}: ${group.events.length} events`)
-      })
-      console.log('[Economic Calendar] Setting events state with', eventsByDate.length, 'date groups')
 
       setEvents(eventsByDate)
     } catch (e) {
@@ -446,7 +411,6 @@ export function useEconomicCalendar({
         })
         .withAutomaticReconnect({
           nextRetryDelayInMilliseconds: (retryContext) => {
-            console.log(`[Economic Calendar] Reconnect attempt ${retryContext.previousRetryCount + 1}`)
             return 5000
           }
         })
@@ -457,12 +421,10 @@ export function useEconomicCalendar({
       connectionRef.current.on('EconomicEventUpdate', (eventData: ApiEconomicEvent) => {
         if (!mountedRef.current) return
         
-        console.log('[Economic Calendar] Received real-time update:', eventData)
         
         // Transform the new event (may return null if invalid)
         const transformed = transformEvent(eventData)
         if (!transformed) {
-          console.warn('[Economic Calendar] Skipping invalid real-time event update')
           return
         }
         
@@ -527,26 +489,21 @@ export function useEconomicCalendar({
       })
 
       connectionRef.current.onreconnecting(() => {
-        console.log('[Economic Calendar] Reconnecting...')
         setIsConnected(false)
       })
 
       connectionRef.current.onreconnected(() => {
-        console.log('[Economic Calendar] Reconnected')
         setIsConnected(true)
       })
 
       connectionRef.current.onclose(() => {
-        console.log('[Economic Calendar] Connection closed')
         setIsConnected(false)
       })
 
       await connectionRef.current.start()
       setIsConnected(true)
       setIsConnecting(false)
-      console.log('[Economic Calendar] SignalR connected')
     } catch (err) {
-      console.warn('[Economic Calendar] SignalR connection failed (non-critical):', err)
       // Don't set error - allow app to continue without WebSocket
       setIsConnected(false)
       setIsConnecting(false)

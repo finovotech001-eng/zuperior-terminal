@@ -72,39 +72,6 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     { id: "closed", label: "Closed", count: closedPositions.length },
   ]
 
-  // DEEP DEBUG: Track props and rendering state
-  React.useEffect(() => {
-    console.log('[PositionsTable] ========== RENDER DEBUG ==========')
-    console.log('[PositionsTable] Active Tab:', activeTab)
-    console.log('[PositionsTable] Props received:')
-    console.log('[PositionsTable]   - openPositions:', openPositions.length)
-    console.log('[PositionsTable]   - pendingPositions:', pendingPositions.length)
-    console.log('[PositionsTable]   - closedPositions:', closedPositions.length)
-    console.log('[PositionsTable] closedPositions is Array:', Array.isArray(closedPositions))
-    console.log('[PositionsTable] closedPositions reference:', closedPositions)
-    
-    if (activeTab === 'closed') {
-      console.log('[PositionsTable] ✓✓✓ VIEWING CLOSED TAB')
-      if (closedPositions.length > 0) {
-        console.log('[PositionsTable] ✓✓✓ WILL RENDER', closedPositions.length, 'closed positions')
-        console.log('[PositionsTable] First position to render:', {
-          id: closedPositions[0].id,
-          symbol: closedPositions[0].symbol,
-          type: closedPositions[0].type,
-          volume: closedPositions[0].volume
-        })
-      } else {
-        console.warn('[PositionsTable] ⚠⚠⚠ CLOSED TAB ACTIVE BUT NO DATA!')
-        console.warn('[PositionsTable] Array length:', closedPositions.length)
-        console.warn('[PositionsTable] This means:')
-        console.warn('[PositionsTable]   1. Hook returned empty array')
-        console.warn('[PositionsTable]   2. State not updated properly')
-        console.warn('[PositionsTable]   3. Props not passed correctly')
-        console.warn('[PositionsTable] Check Terminal logs for [Terminal] entries')
-      }
-    }
-    console.log('[PositionsTable] ===================================')
-  }, [activeTab, closedPositions, openPositions, pendingPositions])
 
   const activeTabIndex = tabs.findIndex(tab => tab.id === activeTab)
   const tabRefs = React.useRef<(HTMLButtonElement | null)[]>([])
@@ -151,10 +118,6 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
 
   // ✨ FIX 2: Wrap renderPositionRow in useCallback to capture 'columns', 'formatPrice', and 'onClose' in its dependencies
   const renderPositionRow = React.useCallback((position: Position, index?: number) => {
-    // Debug: Log when rendering closed positions
-    if (position.id?.startsWith('hist-') && index === 0) {
-      console.log('[PositionsTable] renderPositionRow called for closed position:', position.id, position.symbol)
-    }
     
     // For closed positions, hide T/P, S/L, and Actions columns
     const isClosedPosition = position.id?.startsWith('hist-')
@@ -253,7 +216,6 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
                     const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
                     if (!accountId || !Number.isFinite(ticket)) {
-                      console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
                       return
                     }
                     // Acquire access token so server can skip DB auth
@@ -277,35 +239,20 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
                     if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
                     
-                    console.log('═══════════════════════════════════════════════════════════')
-                    console.log('[Modify] 🚀 MODIFY POSITION API CALL')
-                    console.log('[Modify] Position:', { id: position.id, ticket: position.ticket, symbol: position.symbol })
-                    console.log('[Modify] Account ID:', accountId)
-                    console.log('[Modify] Request URL: PUT /apis/trading/position/modify')
-                    console.log('[Modify] Request Payload:', JSON.stringify(payload, null, 2))
-                    console.log('[Modify] Data received from panel:', data)
-                    console.log('───────────────────────────────────────────────────────────')
-                    
                     const res = await fetch('/apis/trading/position/modify', {
                       method: 'PUT',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(payload),
                     })
                     
-                    console.log('[Modify] Response Status:', res.status, res.statusText)
                     const text = await res.text().catch(() => '')
-                    console.log('[Modify] Response Headers:', Object.fromEntries(res.headers.entries()))
-                    console.log('[Modify] Response Body (first 1000 chars):', text?.substring(0, 1000))
                     
                     let json: any = null
                     try { 
                       json = text ? JSON.parse(text) : null
-                      console.log('[Modify] Parsed Response JSON:', JSON.stringify(json, null, 2))
                     } catch (e) { 
-                      console.warn('[Modify] Failed to parse JSON:', e)
                       json = text 
                     }
-                    console.log('═══════════════════════════════════════════════════════════')
                     
                     // Check for success: status: true, success: true, or json?.data?.status === true
                     // Also check for HTTP 200-299 status codes
@@ -329,18 +276,11 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                       // The positions will refresh automatically via SSE/polling
                     } else {
                       const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                      console.error('[Modify] ❌ Failed', { 
-                        status: res.status, 
-                        statusText: res.statusText,
-                        json,
-                        errorMsg 
-                      })
                       // Show error alert
                       alert(`Failed to modify position: ${errorMsg}`);
                       // Keep modal open on error so user can see/retry
                     }
                   } catch (e) {
-                    console.error('[Modify] ❌ Exception:', e)
                     // Show error alert
                     alert(`Failed to modify position: ${e instanceof Error ? e.message : 'Unknown error'}`);
                     // Keep modal open on exception
@@ -400,7 +340,6 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
                     const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
                     if (!accountId || !Number.isFinite(ticket)) {
-                      console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
                       return
                     }
                     // Acquire access token so server can skip DB auth
@@ -424,35 +363,20 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
                     if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
                     
-                    console.log('═══════════════════════════════════════════════════════════')
-                    console.log('[Modify] 🚀 MODIFY POSITION API CALL')
-                    console.log('[Modify] Position:', { id: position.id, ticket: position.ticket, symbol: position.symbol })
-                    console.log('[Modify] Account ID:', accountId)
-                    console.log('[Modify] Request URL: PUT /apis/trading/position/modify')
-                    console.log('[Modify] Request Payload:', JSON.stringify(payload, null, 2))
-                    console.log('[Modify] Data received from panel:', data)
-                    console.log('───────────────────────────────────────────────────────────')
-                    
                     const res = await fetch('/apis/trading/position/modify', {
                       method: 'PUT',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(payload),
                     })
                     
-                    console.log('[Modify] Response Status:', res.status, res.statusText)
                     const text = await res.text().catch(() => '')
-                    console.log('[Modify] Response Headers:', Object.fromEntries(res.headers.entries()))
-                    console.log('[Modify] Response Body (first 1000 chars):', text?.substring(0, 1000))
                     
                     let json: any = null
                     try { 
                       json = text ? JSON.parse(text) : null
-                      console.log('[Modify] Parsed Response JSON:', JSON.stringify(json, null, 2))
                     } catch (e) { 
-                      console.warn('[Modify] Failed to parse JSON:', e)
                       json = text 
                     }
-                    console.log('═══════════════════════════════════════════════════════════')
                     
                     // Check for success: status: true, success: true, or json?.data?.status === true
                     // Also check for HTTP 200-299 status codes
@@ -476,18 +400,11 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                       // The positions will refresh automatically via SSE/polling
                     } else {
                       const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                      console.error('[Modify] ❌ Failed', { 
-                        status: res.status, 
-                        statusText: res.statusText,
-                        json,
-                        errorMsg 
-                      })
                       // Show error alert
                       alert(`Failed to modify position: ${errorMsg}`);
                       // Keep modal open on error so user can see/retry
                     }
                   } catch (e) {
-                    console.error('[Modify] ❌ Exception:', e)
                     // Show error alert
                     alert(`Failed to modify position: ${e instanceof Error ? e.message : 'Unknown error'}`);
                     // Keep modal open on exception
@@ -568,11 +485,10 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   const direct = Number(position.ticket)
                   const ticketStr = position.position || position.id
                   const ticketFromText = parseInt((ticketStr || '').replace(/[^0-9]/g, ''), 10)
-                  const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
-                  if (!accountId || !Number.isFinite(ticket)) {
-                    console.warn('[Modify] Missing accountId or invalid ticket', { accountId, ticketStr, direct, ticketFromText })
-                    return
-                  }
+                    const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                    if (!accountId || !Number.isFinite(ticket)) {
+                      return
+                    }
                   // Acquire access token so server can skip DB auth
                   let accessToken: string | undefined = undefined
                   try {
@@ -594,35 +510,20 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
                   if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
                   
-                  console.log('═══════════════════════════════════════════════════════════')
-                  console.log('[Modify] 🚀 MODIFY POSITION API CALL (Actions Column)')
-                  console.log('[Modify] Position:', { id: position.id, ticket: position.ticket, symbol: position.symbol })
-                  console.log('[Modify] Account ID:', accountId)
-                  console.log('[Modify] Request URL: PUT /apis/trading/position/modify')
-                  console.log('[Modify] Request Payload:', JSON.stringify(payload, null, 2))
-                  console.log('[Modify] Data received from panel:', data)
-                  console.log('───────────────────────────────────────────────────────────')
-                  
                   const res = await fetch('/apis/trading/position/modify', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                   })
                   
-                  console.log('[Modify] Response Status:', res.status, res.statusText)
                   const text = await res.text().catch(() => '')
-                  console.log('[Modify] Response Headers:', Object.fromEntries(res.headers.entries()))
-                  console.log('[Modify] Response Body (first 1000 chars):', text?.substring(0, 1000))
                   
                   let json: any = null
                   try { 
                     json = text ? JSON.parse(text) : null
-                    console.log('[Modify] Parsed Response JSON:', JSON.stringify(json, null, 2))
                   } catch (e) { 
-                    console.warn('[Modify] Failed to parse JSON:', e)
                     json = text 
                   }
-                  console.log('═══════════════════════════════════════════════════════════')
                   
                   // Check for success: status: true, success: true, or json?.data?.status === true
                   // Also check for HTTP 200-299 status codes
@@ -644,18 +545,11 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     }, 2000); // Close after 2 seconds
                   } else {
                     const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                    console.error('[Modify] ❌ Failed', { 
-                      status: res.status, 
-                      statusText: res.statusText,
-                      json,
-                      errorMsg 
-                    })
                     // Show error alert
                     alert(`Failed to modify position: ${errorMsg}`);
                     // Keep modal open on error so user can see/retry
                   }
                 } catch (e) {
-                  console.error('[Modify] ❌ Exception:', e)
                   // Keep modal open on exception
                 }
               }}
@@ -667,11 +561,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
           type="button"
           title="Close position"
           onClick={() => {
-            console.log('[Close] Button clicked for position:', position.id);
             if (onClose) {
               onClose(position.id);
-            } else {
-              console.error('[Close] onClose handler is undefined');
             }
           }}
           className="inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 h-7 w-7 hover:bg-white/5 text-danger hover:text-danger/80 cursor-pointer border-0 bg-transparent"
@@ -881,9 +772,6 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 {activeTab === "open" && openPositions.length > 0 && openPositions.map(renderPositionRow)}
                 {activeTab === "pending" && pendingPositions.length > 0 && pendingPositions.map(renderPositionRow)}
                 {activeTab === "closed" && closedPositions.length > 0 && closedPositions.map((pos, idx) => {
-                  if (idx === 0) {
-                    console.log('[PositionsTable] ✓✓✓ RENDERING - map() called for', closedPositions.length, 'closed positions')
-                  }
                   return renderPositionRow(pos, idx)
                 })}
 

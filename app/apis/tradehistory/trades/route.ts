@@ -213,43 +213,11 @@ export async function GET(request: NextRequest) {
 
     logger.info(`Fetched ${trades.length} trades from external API`)
     
-    // DETAILED PRINT: Log full response for debugging
-    console.log('\n' + '='.repeat(80))
-    console.log('TRADE HISTORY API RESPONSE')
-    console.log('='.repeat(80))
-    console.log('Total trades fetched:', trades.length)
-    console.log('Response structure keys:', data && typeof data === 'object' ? Object.keys(data) : 'N/A')
-    console.log()
-    
     if (trades.length > 0) {
-      console.log('ALL TRADES:')
-      trades.forEach((trade, index) => {
-        console.log(`\n[${index + 1}] Trade:`)
-        console.log(`  OrderId: ${trade.OrderId}`)
-        console.log(`  Symbol: "${trade.Symbol}"`)
-        console.log(`  OrderType: ${trade.OrderType}`)
-        console.log(`  Volume: ${trade.Volume}`)
-        console.log(`  OpenPrice: ${trade.OpenPrice}`)
-        console.log(`  ClosePrice: ${trade.ClosePrice}`)
-        console.log(`  Profit: ${trade.Profit}`)
-        console.log(`  TakeProfit: ${trade.TakeProfit}`)
-        console.log(`  StopLoss: ${trade.StopLoss}`)
-      })
-      
-      console.log('\n' + '-'.repeat(80))
-      console.log('FIRST TRADE (FULL JSON):')
-      console.log(JSON.stringify(trades[0], null, 2))
-      console.log('='.repeat(80) + '\n')
-      
       logger.info('Sample trade structure', { 
         sample: trades[0],
         keys: Object.keys(trades[0])
       })
-    } else {
-      console.warn('⚠️  No trades found in response!')
-      console.log('Full API response:')
-      console.log(JSON.stringify(data, null, 2))
-      console.log('='.repeat(80) + '\n')
     }
 
     // Return in a consistent format with pagination info

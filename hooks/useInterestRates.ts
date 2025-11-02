@@ -75,11 +75,7 @@ function transformInterestRate(apiRate: ApiInterestRate): InterestRate | null {
   const bankName = apiRate.bankName || apiRate.BankName || 'Unknown Bank'
   
   if (!rateId || !bankName || bankName === 'Unknown Bank') {
-    console.warn('[Interest Rates] Skipping rate with missing required fields:', {
-      id: apiRate.id || apiRate.Id,
-      bankName: apiRate.bankName || apiRate.BankName,
-      fullRate: apiRate
-    })
+    // Skipping rate with missing required fields
     return null
   }
 
@@ -143,7 +139,6 @@ export function useInterestRates({
       // Use accountId from props, fallback to localStorage
       const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
       if (!effectiveAccountId) {
-        console.warn('[Interest Rates] No AccountId found, rates may not work')
       }
 
       // Build query parameters (include accountId)
@@ -163,7 +158,6 @@ export function useInterestRates({
       if (!res.ok) {
         // Handle server errors gracefully
         if (res.status >= 500 && res.status < 600) {
-          console.warn(`[Interest Rates] Server error ${res.status} - rates data temporarily unavailable`)
           setInterestRates([])
           setError(null)
           setIsLoading(false)
@@ -176,8 +170,6 @@ export function useInterestRates({
       const json = await res.json().catch(() => ({} as any))
       
       // Debug: Log response to help identify data structure issues
-      console.log('[Interest Rates] Raw API response:', JSON.stringify(json, null, 2))
-      console.log('[Interest Rates] Response type:', typeof json, 'Is array?', Array.isArray(json))
       
       // Handle different response formats
       let apiRates: ApiInterestRate[] = []
@@ -186,56 +178,35 @@ export function useInterestRates({
       if (json && typeof json === 'object' && json.success === true && Array.isArray(json.data)) {
         // Our API route returns: { success: true, data: [...] }
         apiRates = json.data
-        console.log('[Interest Rates] Found rates in success.data:', apiRates.length)
       } else if (Array.isArray(json)) {
         // Direct array response (fallback)
         apiRates = json
-        console.log('[Interest Rates] Found direct array response with', apiRates.length, 'rates')
       } else if (json && typeof json === 'object') {
         // Try other wrapped formats
         if (Array.isArray(json.data)) {
           apiRates = json.data
-          console.log('[Interest Rates] Found rates in json.data:', apiRates.length)
         } else if (Array.isArray(json.Data)) {
           apiRates = json.Data
-          console.log('[Interest Rates] Found rates in json.Data:', apiRates.length)
         } else if (Array.isArray(json.interestRates)) {
           apiRates = json.interestRates
-          console.log('[Interest Rates] Found rates in json.interestRates:', apiRates.length)
         } else {
-          console.warn('[Interest Rates] Could not find rates array. Response keys:', Object.keys(json))
-          console.warn('[Interest Rates] Response sample:', JSON.stringify(json).substring(0, 500))
         }
       }
 
-      console.log('[Interest Rates] Final extracted rates count:', apiRates.length)
-      if (apiRates.length > 0) {
-        console.log('[Interest Rates] Sample rate:', apiRates[0])
-      }
-
       // Transform API rates to component format (filter out null values)
-      console.log('[Interest Rates] Starting transformation of', apiRates.length, 'rates')
       const transformedRates = apiRates
         .map((rate, idx) => {
           try {
             const transformed = transformInterestRate(rate)
             if (!transformed) {
-              console.warn(`[Interest Rates] Rate ${idx} was filtered out:`, rate)
             }
             return transformed
           } catch (err) {
-            console.error(`[Interest Rates] Error transforming rate ${idx}:`, err, rate)
             return null
           }
         })
         .filter((rate): rate is InterestRate => rate !== null)
 
-      console.log('[Interest Rates] Transformation complete:', transformedRates.length, 'valid rates out of', apiRates.length)
-
-      if (transformedRates.length === 0 && apiRates.length > 0) {
-        console.error('[Interest Rates] All rates were filtered out during transformation!')
-        console.error('[Interest Rates] Sample failed rate:', apiRates[0])
-      }
 
       setInterestRates(transformedRates)
     } catch (e) {

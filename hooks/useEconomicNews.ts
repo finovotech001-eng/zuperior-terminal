@@ -77,11 +77,7 @@ function transformNews(apiNews: ApiEconomicNews): EconomicNews | null {
   const title = apiNews.title || apiNews.Title || 'Untitled News'
   
   if (!newsId || !title || title === 'Untitled News') {
-    console.warn('[Economic News] Skipping news with missing required fields:', {
-      id: apiNews.id || apiNews.Id,
-      title: apiNews.title || apiNews.Title,
-      fullNews: apiNews
-    })
+    // Skipping news with missing required fields
     return null
   }
 
@@ -146,7 +142,6 @@ export function useEconomicNews({
       // Use accountId from props, fallback to localStorage
       const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
       if (!effectiveAccountId) {
-        console.warn('[Economic News] No AccountId found, news may not work')
       }
 
       // Build query parameters (include accountId)
@@ -168,7 +163,6 @@ export function useEconomicNews({
       if (!res.ok) {
         // Handle server errors gracefully
         if (res.status >= 500 && res.status < 600) {
-          console.warn(`[Economic News] Server error ${res.status} - news data temporarily unavailable`)
           setNews([])
           setError(null)
           setIsLoading(false)
@@ -181,8 +175,6 @@ export function useEconomicNews({
       const json = await res.json().catch(() => ({} as any))
       
       // Debug: Log response to help identify data structure issues
-      console.log('[Economic News] Raw API response:', JSON.stringify(json, null, 2))
-      console.log('[Economic News] Response type:', typeof json, 'Is array?', Array.isArray(json))
       
       // Handle different response formats
       let apiNewsItems: ApiEconomicNews[] = []
@@ -191,56 +183,35 @@ export function useEconomicNews({
       if (json && typeof json === 'object' && json.success === true && Array.isArray(json.data)) {
         // Our API route returns: { success: true, data: [...] }
         apiNewsItems = json.data
-        console.log('[Economic News] Found news in success.data:', apiNewsItems.length)
       } else if (Array.isArray(json)) {
         // Direct array response (fallback)
         apiNewsItems = json
-        console.log('[Economic News] Found direct array response with', apiNewsItems.length, 'news items')
       } else if (json && typeof json === 'object') {
         // Try other wrapped formats
         if (Array.isArray(json.data)) {
           apiNewsItems = json.data
-          console.log('[Economic News] Found news in json.data:', apiNewsItems.length)
         } else if (Array.isArray(json.Data)) {
           apiNewsItems = json.Data
-          console.log('[Economic News] Found news in json.Data:', apiNewsItems.length)
         } else if (Array.isArray(json.news)) {
           apiNewsItems = json.news
-          console.log('[Economic News] Found news in json.news:', apiNewsItems.length)
         } else {
-          console.warn('[Economic News] Could not find news array. Response keys:', Object.keys(json))
-          console.warn('[Economic News] Response sample:', JSON.stringify(json).substring(0, 500))
         }
       }
 
-      console.log('[Economic News] Final extracted news count:', apiNewsItems.length)
-      if (apiNewsItems.length > 0) {
-        console.log('[Economic News] Sample news:', apiNewsItems[0])
-      }
-
       // Transform API news to component format (filter out null values)
-      console.log('[Economic News] Starting transformation of', apiNewsItems.length, 'news items')
       const transformedNews = apiNewsItems
         .map((item, idx) => {
           try {
             const transformed = transformNews(item)
             if (!transformed) {
-              console.warn(`[Economic News] News item ${idx} was filtered out:`, item)
             }
             return transformed
           } catch (err) {
-            console.error(`[Economic News] Error transforming news item ${idx}:`, err, item)
             return null
           }
         })
         .filter((item): item is EconomicNews => item !== null)
 
-      console.log('[Economic News] Transformation complete:', transformedNews.length, 'valid news items out of', apiNewsItems.length)
-
-      if (transformedNews.length === 0 && apiNewsItems.length > 0) {
-        console.error('[Economic News] All news items were filtered out during transformation!')
-        console.error('[Economic News] Sample failed news:', apiNewsItems[0])
-      }
 
       setNews(transformedNews)
     } catch (e) {

@@ -14,8 +14,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { accountId, positionId, volume = 0 } = body
     
-    console.log('[Close] Request:', { accountId, positionId, volume });
-    
     if (!accountId || !positionId) {
       return NextResponse.json({ 
         success: false, 
@@ -54,7 +52,6 @@ export async function POST(request: NextRequest) {
     })
 
     if (!loginRes.ok) {
-      console.error('[Close] Login failed:', loginRes.status);
       return NextResponse.json({ 
         success: false, 
         message: 'MT5 login failed' 
@@ -72,8 +69,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Call DELETE /client/position/{positionId}
-    console.log(`[Close] DELETE ${API_BASE}/client/position/${positionId} with volume: ${volume}`);
-    
     const deleteRes = await fetch(`${API_BASE}/client/position/${positionId}`, {
       method: 'DELETE',
       headers: { 
@@ -92,8 +87,6 @@ export async function POST(request: NextRequest) {
       responseData = responseText
     }
 
-    console.log(`[Close] Response: ${deleteRes.status}`, responseData);
-
     if (deleteRes.ok || deleteRes.status === 204) {
       return NextResponse.json({ 
         success: true, 
@@ -109,7 +102,6 @@ export async function POST(request: NextRequest) {
     }, { status: deleteRes.status })
 
   } catch (error) {
-    console.error('[Close] Error:', error);
     return NextResponse.json({ 
       success: false, 
       message: error instanceof Error ? error.message : 'Internal server error' 

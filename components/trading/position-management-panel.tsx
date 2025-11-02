@@ -82,20 +82,11 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
   // Sync takeProfit and stopLoss with position prop when it changes
   // This ensures that when SSE updates arrive with modified values, they are displayed
   React.useEffect(() => {
-    console.log('[PositionManagementPanel] Position prop updated:', {
-      symbol: position.symbol,
-      takeProfit: position.takeProfit,
-      stopLoss: position.stopLoss,
-      takeProfitType: typeof position.takeProfit,
-      stopLossType: typeof position.stopLoss
-    })
-    
     // Always sync Take Profit if it exists and is valid
     if (position.takeProfit !== undefined && position.takeProfit !== null && Number(position.takeProfit) > 0) {
       const tpStr = position.takeProfit.toString()
       setTakeProfit(prev => {
         if (prev !== tpStr) {
-          console.log('[PositionManagementPanel] Updating Take Profit from', prev, 'to', tpStr)
           return tpStr
         }
         return prev
@@ -107,7 +98,6 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
       const slStr = position.stopLoss.toString()
       setStopLoss(prev => {
         if (prev !== slStr) {
-          console.log('[PositionManagementPanel] Updating Stop Loss from', prev, 'to', slStr)
           return slStr
         }
         return prev

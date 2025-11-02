@@ -69,11 +69,7 @@ function transformIndicator(apiIndicator: ApiEconomicIndicator): EconomicIndicat
   const indicatorName = apiIndicator.name || apiIndicator.Name || 'Untitled Indicator'
   
   if (!indicatorId || !indicatorName || indicatorName === 'Untitled Indicator') {
-    console.warn('[Economic Indicators] Skipping indicator with missing required fields:', {
-      id: apiIndicator.id || apiIndicator.Id,
-      name: apiIndicator.name || apiIndicator.Name,
-      fullIndicator: apiIndicator
-    })
+    // Skipping indicator with missing required fields
     return null
   }
 
@@ -133,7 +129,6 @@ export function useEconomicIndicators({
       // Use accountId from props, fallback to localStorage
       const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
       if (!effectiveAccountId) {
-        console.warn('[Economic Indicators] No AccountId found, indicators may not work')
       }
 
       // Build query parameters (include accountId)
@@ -153,7 +148,6 @@ export function useEconomicIndicators({
       if (!res.ok) {
         // Handle server errors gracefully
         if (res.status >= 500 && res.status < 600) {
-          console.warn(`[Economic Indicators] Server error ${res.status} - indicators data temporarily unavailable`)
           setIndicators([])
           setError(null)
           setIsLoading(false)
@@ -166,8 +160,6 @@ export function useEconomicIndicators({
       const json = await res.json().catch(() => ({} as any))
       
       // Debug: Log response to help identify data structure issues
-      console.log('[Economic Indicators] Raw API response:', JSON.stringify(json, null, 2))
-      console.log('[Economic Indicators] Response type:', typeof json, 'Is array?', Array.isArray(json))
       
       // Handle different response formats
       let apiIndicators: ApiEconomicIndicator[] = []
@@ -176,56 +168,35 @@ export function useEconomicIndicators({
       if (json && typeof json === 'object' && json.success === true && Array.isArray(json.data)) {
         // Our API route returns: { success: true, data: [...] }
         apiIndicators = json.data
-        console.log('[Economic Indicators] Found indicators in success.data:', apiIndicators.length)
       } else if (Array.isArray(json)) {
         // Direct array response (fallback)
         apiIndicators = json
-        console.log('[Economic Indicators] Found direct array response with', apiIndicators.length, 'indicators')
       } else if (json && typeof json === 'object') {
         // Try other wrapped formats
         if (Array.isArray(json.data)) {
           apiIndicators = json.data
-          console.log('[Economic Indicators] Found indicators in json.data:', apiIndicators.length)
         } else if (Array.isArray(json.Data)) {
           apiIndicators = json.Data
-          console.log('[Economic Indicators] Found indicators in json.Data:', apiIndicators.length)
         } else if (Array.isArray(json.indicators)) {
           apiIndicators = json.indicators
-          console.log('[Economic Indicators] Found indicators in json.indicators:', apiIndicators.length)
         } else {
-          console.warn('[Economic Indicators] Could not find indicators array. Response keys:', Object.keys(json))
-          console.warn('[Economic Indicators] Response sample:', JSON.stringify(json).substring(0, 500))
         }
       }
 
-      console.log('[Economic Indicators] Final extracted indicators count:', apiIndicators.length)
-      if (apiIndicators.length > 0) {
-        console.log('[Economic Indicators] Sample indicator:', apiIndicators[0])
-      }
-
       // Transform API indicators to component format (filter out null values)
-      console.log('[Economic Indicators] Starting transformation of', apiIndicators.length, 'indicators')
       const transformedIndicators = apiIndicators
         .map((indicator, idx) => {
           try {
             const transformed = transformIndicator(indicator)
             if (!transformed) {
-              console.warn(`[Economic Indicators] Indicator ${idx} was filtered out:`, indicator)
             }
             return transformed
           } catch (err) {
-            console.error(`[Economic Indicators] Error transforming indicator ${idx}:`, err, indicator)
             return null
           }
         })
         .filter((indicator): indicator is EconomicIndicator => indicator !== null)
 
-      console.log('[Economic Indicators] Transformation complete:', transformedIndicators.length, 'valid indicators out of', apiIndicators.length)
-
-      if (transformedIndicators.length === 0 && apiIndicators.length > 0) {
-        console.error('[Economic Indicators] All indicators were filtered out during transformation!')
-        console.error('[Economic Indicators] Sample failed indicator:', apiIndicators[0])
-      }
 
       setIndicators(transformedIndicators)
     } catch (e) {
