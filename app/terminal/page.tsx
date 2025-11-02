@@ -1188,8 +1188,58 @@ function TerminalContent() {
     return bal + liveTotalPL;
   }, [balanceData.balance, liveTotalPL]);
 
-  // Closed trades (history) â€" default period 'month'
-  const { closedPositions, isLoading: closedLoading } = useTradeHistory({ accountId: currentAccountId, period: 'month', enabled: true })
+  // Closed trades (history)
+  const { closedPositions, isLoading: closedLoading, error: closedError } = useTradeHistory({ accountId: currentAccountId, enabled: true })
+  
+  // DEEP DEBUG: Track closed positions state changes
+  React.useEffect(() => {
+    console.log('[Terminal] ========== CLOSED POSITIONS STATE CHANGE ==========')
+    console.log('[Terminal] closedPositions array reference changed')
+    console.log('[Terminal] closedPositions.length:', closedPositions.length)
+    console.log('[Terminal] closedPositions is Array:', Array.isArray(closedPositions))
+    console.log('[Terminal] isLoading:', closedLoading)
+    console.log('[Terminal] error:', closedError)
+    console.log('[Terminal] currentAccountId:', currentAccountId)
+    
+    if (closedPositions.length > 0) {
+      console.log('[Terminal] ✓✓✓ HAS DATA -', closedPositions.length, 'closed positions')
+      console.log('[Terminal] First position:', {
+        id: closedPositions[0].id,
+        symbol: closedPositions[0].symbol,
+        type: closedPositions[0].type,
+        volume: closedPositions[0].volume,
+        pnl: closedPositions[0].pnl,
+        openTime: closedPositions[0].openTime
+      })
+      console.log('[Terminal] First 3 closed positions full:', closedPositions.slice(0, 3).map(p => ({
+        id: p.id,
+        symbol: p.symbol,
+        type: p.type
+      })))
+    } else {
+      console.warn('[Terminal] ⚠⚠⚠ NO DATA - closedPositions array is EMPTY')
+      if (closedLoading) {
+        console.log('[Terminal] Still loading...')
+      } else if (closedError) {
+        console.error('[Terminal] Error state:', closedError)
+      } else {
+        console.warn('[Terminal] ⚠ Not loading, no error, but no data either!')
+        console.warn('[Terminal] This suggests:')
+        console.warn('[Terminal]   1. API returned empty array')
+        console.warn('[Terminal]   2. Data extraction failed silently')
+        console.warn('[Terminal]   3. All items were filtered out')
+        console.warn('[Terminal] Check hook logs for [Trade History] entries')
+      }
+    }
+    console.log('[Terminal] ===================================================')
+  }, [closedPositions, currentAccountId, closedLoading, closedError])
+  
+  // Also log when accountId changes to trigger new fetch
+  React.useEffect(() => {
+    if (currentAccountId) {
+      console.log('[Terminal] Account changed, will trigger trade history fetch for:', currentAccountId)
+    }
+  }, [currentAccountId])
   
   // Debug samples (non-intrusive)
   React.useEffect(() => {

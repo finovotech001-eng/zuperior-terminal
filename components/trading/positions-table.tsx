@@ -72,6 +72,40 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     { id: "closed", label: "Closed", count: closedPositions.length },
   ]
 
+  // DEEP DEBUG: Track props and rendering state
+  React.useEffect(() => {
+    console.log('[PositionsTable] ========== RENDER DEBUG ==========')
+    console.log('[PositionsTable] Active Tab:', activeTab)
+    console.log('[PositionsTable] Props received:')
+    console.log('[PositionsTable]   - openPositions:', openPositions.length)
+    console.log('[PositionsTable]   - pendingPositions:', pendingPositions.length)
+    console.log('[PositionsTable]   - closedPositions:', closedPositions.length)
+    console.log('[PositionsTable] closedPositions is Array:', Array.isArray(closedPositions))
+    console.log('[PositionsTable] closedPositions reference:', closedPositions)
+    
+    if (activeTab === 'closed') {
+      console.log('[PositionsTable] ✓✓✓ VIEWING CLOSED TAB')
+      if (closedPositions.length > 0) {
+        console.log('[PositionsTable] ✓✓✓ WILL RENDER', closedPositions.length, 'closed positions')
+        console.log('[PositionsTable] First position to render:', {
+          id: closedPositions[0].id,
+          symbol: closedPositions[0].symbol,
+          type: closedPositions[0].type,
+          volume: closedPositions[0].volume
+        })
+      } else {
+        console.warn('[PositionsTable] ⚠⚠⚠ CLOSED TAB ACTIVE BUT NO DATA!')
+        console.warn('[PositionsTable] Array length:', closedPositions.length)
+        console.warn('[PositionsTable] This means:')
+        console.warn('[PositionsTable]   1. Hook returned empty array')
+        console.warn('[PositionsTable]   2. State not updated properly')
+        console.warn('[PositionsTable]   3. Props not passed correctly')
+        console.warn('[PositionsTable] Check Terminal logs for [Terminal] entries')
+      }
+    }
+    console.log('[PositionsTable] ===================================')
+  }, [activeTab, closedPositions, openPositions, pendingPositions])
+
   const activeTabIndex = tabs.findIndex(tab => tab.id === activeTab)
   const tabRefs = React.useRef<(HTMLButtonElement | null)[]>([])
   const [indicatorStyle, setIndicatorStyle] = React.useState({ left: 0, width: 0 })
@@ -116,10 +150,23 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   }, [])
 
   // ✨ FIX 2: Wrap renderPositionRow in useCallback to capture 'columns', 'formatPrice', and 'onClose' in its dependencies
-  const renderPositionRow = React.useCallback((position: Position) => (
+  const renderPositionRow = React.useCallback((position: Position, index?: number) => {
+    // Debug: Log when rendering closed positions
+    if (position.id?.startsWith('hist-') && index === 0) {
+      console.log('[PositionsTable] renderPositionRow called for closed position:', position.id, position.symbol)
+    }
+    
+    // For closed positions, hide T/P, S/L, and Actions columns
+    const isClosedPosition = position.id?.startsWith('hist-')
+    
+    return (
     <TooltipProvider key={position.id} delayDuration={300}>
       <div
-        className="grid grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px] gap-4 px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 text-sm min-w-max"
+        className={`grid gap-4 px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 text-sm min-w-max ${
+          isClosedPosition
+            ? "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_150px_90px_100px]" // Without T/P, S/L, Actions
+            : "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]" // Full columns
+        }`}
       >
       {/* Symbol */}
       {columns.find(c => c.key === "symbol")?.visible && (
@@ -159,8 +206,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
         <div className="flex items-center price-font font-medium text-white">{formatPrice(position.currentPrice)}</div>
       )}
 
-      {/* T/P */}
-      {columns.find(c => c.key === "tp")?.visible && (
+      {/* T/P - Hidden for closed positions */}
+      {columns.find(c => c.key === "tp")?.visible && !isClosedPosition && (
         <div className="flex items-center">
           <Popover 
             open={openModifyPopover === `${position.id}_tp`} 
@@ -284,8 +331,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
         </div>
       )}
 
-      {/* S/L */}
-      {columns.find(c => c.key === "sl")?.visible && (
+      {/* S/L - Hidden for closed positions */}
+      {columns.find(c => c.key === "sl")?.visible && !isClosedPosition && (
         <div className="flex items-center">
           <Popover 
             open={openModifyPopover === `${position.id}_sl`} 
@@ -434,7 +481,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
         </div>
       )}
 
-      {/* Actions */}
+      {/* Actions - Hidden for closed positions */}
+      {!isClosedPosition && (
       <div className="flex items-center justify-center gap-1" style={{ position: 'relative', zIndex: 10 }}>
         <Popover 
           open={openModifyPopover === `${position.id}_actions`} 
@@ -569,9 +617,11 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
           <X className="h-3.5 w-3.5 pointer-events-none" />
         </button>
       </div>
+      )}
       </div>
     </TooltipProvider>
-  ), [columns, formatPrice, onClose]) // Dependencies must include everything used inside this function
+    )
+  }, [columns, formatPrice, onClose, activeTab]) // Dependencies must include everything used inside this function
 
   return (
     <div className="flex flex-col glass-card rounded-lg overflow-hidden h-full">
@@ -742,34 +792,45 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
           >
             <div className="inline-block min-w-full">
               {/* Table Header */}
-              <div className="grid grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px] gap-4 px-4 py-2 bg-white/5 text-xs font-medium text-white/60 border-b border-white/10 sticky top-0 z-10 min-w-max backdrop-blur-xl">
-                {/* FIX: columns should now be available in scope */}
+              <div className={`grid gap-4 px-4 py-2 bg-white/5 text-xs font-medium text-white/60 border-b border-white/10 sticky top-0 z-10 min-w-max backdrop-blur-xl ${
+                activeTab === "closed" 
+                  ? "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_150px_90px_100px]" // Without T/P, S/L, Actions
+                  : "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]" // Full columns
+              }`}>
                 {columns.find(c => c.key === "symbol")?.visible && <div>Symbol</div>}
                 {columns.find(c => c.key === "type")?.visible && <div>Type</div>}
                 {columns.find(c => c.key === "volume")?.visible && <div>Volume, lot</div>}
                 {columns.find(c => c.key === "openPrice")?.visible && <div>Open price</div>}
                 {columns.find(c => c.key === "currentPrice")?.visible && <div>Current price</div>}
-                {columns.find(c => c.key === "tp")?.visible && <div>T/P</div>}
-                {columns.find(c => c.key === "sl")?.visible && <div>S/L</div>}
+                {columns.find(c => c.key === "tp")?.visible && activeTab !== "closed" && <div>T/P</div>}
+                {columns.find(c => c.key === "sl")?.visible && activeTab !== "closed" && <div>S/L</div>}
                 {columns.find(c => c.key === "position")?.visible && <div>Position</div>}
                 {columns.find(c => c.key === "openTime")?.visible && <div>Open time</div>}
                 {columns.find(c => c.key === "swap")?.visible && <div>Swap, USD</div>}
                 {columns.find(c => c.key === "pnl")?.visible && <div>P/L, USD</div>}
-                <div></div>
+                {activeTab !== "closed" && <div></div>}
               </div>
 
               {/* Table Rows */}
               <div className="min-w-max">
-                {activeTab === "open" && openPositions.map(renderPositionRow)}
-                {activeTab === "pending" && pendingPositions.map(renderPositionRow)}
-                {activeTab === "closed" && closedPositions.map(renderPositionRow)}
+                {activeTab === "open" && openPositions.length > 0 && openPositions.map(renderPositionRow)}
+                {activeTab === "pending" && pendingPositions.length > 0 && pendingPositions.map(renderPositionRow)}
+                {activeTab === "closed" && closedPositions.length > 0 && closedPositions.map((pos, idx) => {
+                  if (idx === 0) {
+                    console.log('[PositionsTable] ✓✓✓ RENDERING - map() called for', closedPositions.length, 'closed positions')
+                  }
+                  return renderPositionRow(pos, idx)
+                })}
 
                 {/* Empty State */}
                 {((activeTab === "open" && openPositions.length === 0) ||
                   (activeTab === "pending" && pendingPositions.length === 0) ||
                   (activeTab === "closed" && closedPositions.length === 0)) && (
-                  <div className="flex items-center justify-center h-32 text-white/40 text-sm">
-                    No {activeTab} positions
+                  <div className="flex flex-col items-center justify-center h-32 text-white/40 text-sm gap-2">
+                    <div>No {activeTab} positions</div>
+                    {activeTab === "closed" && (
+                      <div className="text-xs text-white/20">Check browser console for debugging info</div>
+                    )}
                   </div>
                 )}
               </div>

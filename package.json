@@ -17,6 +17,7 @@
     "sync:mt5:symbols": "npx tsx scripts/sync-symbols-from-mt5.ts",
     "sync:favorites": "npx tsx scripts/add-default-favorites.ts",
     "verify:setup": "npx tsx scripts/verify-setup.ts",
+    "test:trade-history": "npx tsx scripts/test-trade-history-api.ts",
     "setup:instruments": "npm run db:generate && npm run db:migrate && npm run sync:instruments && npm run sync:favorites"
   },
   "dependencies": {
