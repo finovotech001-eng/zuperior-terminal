@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-const EXTERNAL_API_BASE_URL = 'http://18.130.5.209:5003/api/client';
+const EXTERNAL_API_BASE_URL = 'http://18.175.242.21:5003/api/client';
 
 interface CloseData {
   Volume?: number;

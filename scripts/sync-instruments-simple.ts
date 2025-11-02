@@ -11,7 +11,7 @@ import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
-const API_URL = process.env.SYMBOLS_API_URL || 'http://localhost:5000/api/Symbols'
+const API_URL = process.env.SYMBOLS_API_URL || 'http://localhost:5000/api/Symbols/Categories'
 const REQUIRES_AUTH = (process.env.SYMBOLS_API_REQUIRES_AUTH || 'false').toLowerCase() === 'true'
 const AUTH_TOKEN = process.env.SYMBOLS_API_TOKEN || ''
 

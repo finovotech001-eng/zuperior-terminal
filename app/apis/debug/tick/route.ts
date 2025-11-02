@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Call remote tick endpoint
-    const API_BASE = (process.env.LIVE_API_URL || 'http://18.130.5.209:5003/api').replace(/\/$/, '')
+    const API_BASE = (process.env.LIVE_API_URL || 'http://18.175.242.21:5003/api').replace(/\/$/, '')
     const url = `${API_BASE}/livedata/tick/${encodeURIComponent(symbol)}`
     const upstream = await fetch(url, {
       method: 'GET',

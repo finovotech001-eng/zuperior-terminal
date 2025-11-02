@@ -7,77 +7,110 @@
  * Run: npx tsx scripts/sync-symbols-from-mt5.ts
  */
 
+import { config } from 'dotenv';
+import { resolve } from 'path';
+import { randomUUID } from 'crypto';
+
+// Load environment variables from .env.local first, then .env
+// Using process.cwd() to get the project root directory
+config({ path: resolve(process.cwd(), '.env.local') });
+config({ path: resolve(process.cwd(), '.env') });
+
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 // MT5 API Configuration
-const MT5_API_URL = process.env.LIVE_API_URL || 'http://18.130.5.209:5003/api';
-const SYMBOLS_ENDPOINT = `${MT5_API_URL}/Symbols`;
+const MT5_API_URL = 'http://18.175.242.21:5003/api';
+const SYMBOLS_ENDPOINT = `${MT5_API_URL}/Symbols/categories`;
 
 interface MT5Symbol {
   Symbol: string;
   Description: string;
-  Path: string;
-  ISIN: string;
-  Sector: number;
-  Industry: number;
-  Country: string;
-  Currency: string;
-  CurrencyProfit: string;
-  CurrencyMargin: string;
+  Path?: string;
+  ISIN?: string;
+  Sector?: string | number;
+  Industry?: number;
+  Country?: string;
+  Currency?: string;
+  BaseCurrency?: string;
+  QuoteCurrency?: string;
+  CurrencyProfit?: string;
+  CurrencyMargin?: string;
+  Category?: string;
   Digits: number;
-  Point: number;
-  Multiply: number;
+  Point?: number;
+  Multiply?: number;
   TickSize: number;
-  TickValue: number;
-  ContractSize: number;
+  TickValue?: number;
+  ContractSize?: number;
   VolumeMin: number;
   VolumeMax: number;
-  VolumeStep: number;
-  VolumeLimit: number;
-  MarginInitial: number;
-  MarginMaintenance: number;
+  VolumeStep?: number;
+  VolumeLimit?: number;
+  MarginInitial?: number;
+  MarginMaintenance?: number;
   TradeMode: number;
-  TradeFlags: number;
-  CalcMode: number;
-  ExecMode: number;
+  TradeFlags?: number;
+  CalcMode?: number;
+  ExecMode?: number;
   Spread: number;
-  SwapLong: number;
-  SwapShort: number;
-  SwapMode: number;
+  SwapLong?: number;
+  SwapShort?: number;
+  SwapMode?: number;
 }
 
 interface MT5ApiResponse {
-  Symbols: MT5Symbol[];
-  Count: number;
+  Forex?: MT5Symbol[];
+  Stocks?: MT5Symbol[];
+  Crypto?: MT5Symbol[];
+  Indices?: MT5Symbol[];
+  Commodities?: MT5Symbol[];
+  Metals?: MT5Symbol[];
+  Energy?: MT5Symbol[];
+  [key: string]: MT5Symbol[] | undefined;
 }
 
-// Determine category based on Path
-function determineCategory(path: string): string {
-  const pathLower = path.toLowerCase();
-  
-  if (pathLower.includes('forex major') || pathLower.includes('forex minor') || pathLower.includes('forex exotic')) {
-    return 'forex';
-  } else if (pathLower.includes('stock')) {
-    return 'stocks';
-  } else if (pathLower.includes('crypto') || pathLower.includes('bitcoin') || pathLower.includes('ethereum')) {
-    return 'crypto';
-  } else if (pathLower.includes('indic') || pathLower.includes('index')) {
-    return 'indices';
-  } else if (pathLower.includes('commodit') || pathLower.includes('gold') || pathLower.includes('silver') || pathLower.includes('oil')) {
-    return 'commodities';
-  } else if (pathLower.includes('metal')) {
-    return 'metals';
-  } else if (pathLower.includes('energ')) {
-    return 'energy';
-  } else {
-    return 'other';
+// Determine category based on API Category field or Path
+function determineCategory(category: string | undefined, path: string | undefined): string {
+  // First try to use the Category field from API
+  if (category) {
+    const catLower = category.toLowerCase();
+    if (catLower.includes('forex')) return 'forex';
+    if (catLower.includes('stock')) return 'stocks';
+    if (catLower.includes('crypto')) return 'crypto';
+    if (catLower.includes('index') || catLower.includes('indices')) return 'indices';
+    if (catLower.includes('commodit')) return 'commodities';
+    if (catLower.includes('metal')) return 'metals';
+    if (catLower.includes('energ')) return 'energy';
   }
+  
+  // Fallback to Path if Category not available
+  if (path) {
+    const pathLower = path.toLowerCase();
+    if (pathLower.includes('forex major') || pathLower.includes('forex minor') || pathLower.includes('forex exotic')) {
+      return 'forex';
+    } else if (pathLower.includes('stock')) {
+      return 'stocks';
+    } else if (pathLower.includes('crypto') || pathLower.includes('bitcoin') || pathLower.includes('ethereum')) {
+      return 'crypto';
+    } else if (pathLower.includes('indic') || pathLower.includes('index')) {
+      return 'indices';
+    } else if (pathLower.includes('commodit') || pathLower.includes('gold') || pathLower.includes('silver') || pathLower.includes('oil')) {
+      return 'commodities';
+    } else if (pathLower.includes('metal')) {
+      return 'metals';
+    } else if (pathLower.includes('energ')) {
+      return 'energy';
+    }
+  }
+  
+  return 'other';
 }
 
 // Extract group from Path
-function extractGroup(path: string): string {
+function extractGroup(path: string | undefined): string {
+  if (!path) return 'Default';
   const parts = path.split('\\');
   // Return the second-to-last part (e.g., "Forex Major", "Stocks", etc.)
   return parts.length >= 2 ? parts[parts.length - 2] : parts[0] || 'Default';
@@ -105,9 +138,21 @@ async function fetchSymbolsFromMT5(): Promise<MT5Symbol[]> {
 
     const data: MT5ApiResponse = await response.json();
     
-    console.log(`✅ Fetched ${data.Count} symbols from MT5 API`);
+    // Flatten all categories into a single array
+    const allSymbols: MT5Symbol[] = [];
+    let totalCount = 0;
     
-    return data.Symbols || [];
+    for (const category in data) {
+      if (Array.isArray(data[category])) {
+        const categorySymbols = data[category] as MT5Symbol[];
+        allSymbols.push(...categorySymbols);
+        totalCount += categorySymbols.length;
+      }
+    }
+    
+    console.log(`✅ Fetched ${totalCount} symbols from MT5 API (${Object.keys(data).length} categories)`);
+    
+    return allSymbols;
   } catch (error) {
     console.error('❌ Error fetching symbols from MT5:', error);
     throw error;
@@ -130,7 +175,7 @@ async function syncSymbolsToDatabase(symbols: MT5Symbol[]) {
         continue;
       }
 
-      const category = determineCategory(symbol.Path);
+      const category = determineCategory(symbol.Category, symbol.Path);
       const group = extractGroup(symbol.Path);
 
       // Prepare instrument data
@@ -141,33 +186,40 @@ async function syncSymbolsToDatabase(symbols: MT5Symbol[]) {
         category: category,
         group: group,
         digits: symbol.Digits,
-        contractSize: symbol.ContractSize,
+        contractSize: symbol.ContractSize || 1,
         minVolume: convertVolume(symbol.VolumeMin),
         maxVolume: convertVolume(symbol.VolumeMax),
-        volumeStep: convertVolume(symbol.VolumeStep),
+        volumeStep: convertVolume(symbol.VolumeStep || 100),
         spread: symbol.Spread,
         isActive: symbol.TradeMode === 4, // TradeMode 4 = Full Access
         tradingHours: JSON.stringify({
-          swapLong: symbol.SwapLong,
-          swapShort: symbol.SwapShort,
-          swapMode: symbol.SwapMode,
-          currency: symbol.Currency,
-          currencyProfit: symbol.CurrencyProfit,
-          currencyMargin: symbol.CurrencyMargin,
-          country: symbol.Country,
-          isin: symbol.ISIN,
-          sector: symbol.Sector,
-          industry: symbol.Industry,
+          swapLong: symbol.SwapLong || 0,
+          swapShort: symbol.SwapShort || 0,
+          swapMode: symbol.SwapMode || 0,
+          currency: symbol.Currency || symbol.BaseCurrency || '',
+          baseCurrency: symbol.BaseCurrency || '',
+          quoteCurrency: symbol.QuoteCurrency || '',
+          currencyProfit: symbol.CurrencyProfit || '',
+          currencyMargin: symbol.CurrencyMargin || '',
+          country: symbol.Country || '',
+          isin: symbol.ISIN || '',
+          sector: symbol.Sector || '',
+          industry: symbol.Industry || 0,
           tickSize: symbol.TickSize,
-          tickValue: symbol.TickValue,
+          tickValue: symbol.TickValue || 0,
         }),
+        lastUpdated: new Date(),
+        updatedAt: new Date(),
       };
 
       // Upsert (create or update) the instrument
       await prisma.instrument.upsert({
         where: { symbol: symbol.Symbol },
         update: instrumentData,
-        create: instrumentData,
+        create: {
+          ...instrumentData,
+          id: randomUUID(), // Generate UUID for new instruments
+        },
       });
 
       // Check if it was an update or create

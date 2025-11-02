@@ -30,6 +30,7 @@ model User {
   transactions      Transaction[]      @relation("transactions")
   UserFavorite      UserFavorite[]
   withdrawals       Withdrawal[]       @relation("withdrawals")
+  userLoginLogs     UserLoginLog[]     @relation("userLoginLogs")
 }
 
 model KYC {
@@ -58,6 +59,8 @@ model MT5Account {
   updatedAt         DateTime            @updatedAt
   password          String?
   leverage          Int?
+  nameOnAccount     String?
+  package           String?
   DefaultMT5Account DefaultMT5Account[]
   deposits          Deposit[]           @relation("deposits")
   user              User?               @relation("mt5Accounts", fields: [userId], references: [id])
@@ -255,7 +258,7 @@ model DefaultMT5Account {
   userId       String     @unique
   mt5AccountId String
   createdAt    DateTime   @default(now())
-  updatedAt    DateTime
+  updatedAt    DateTime   @updatedAt
   MT5Account   MT5Account @relation(fields: [mt5AccountId], references: [accountId])
   User         User       @relation(fields: [userId], references: [id])
 
@@ -308,6 +311,21 @@ model UserFavorite {
   @@unique([userId, instrumentId])
   @@index([instrumentId])
   @@index([userId])
+}
+
+model UserLoginLog {
+  id            String   @id @default(uuid())
+  userId        String
+  user_agent    String?
+  device        String?
+  browser       String?
+  success       Boolean  @default(true)
+  failure_reason String?
+  createdAt     DateTime @default(now())
+  user          User     @relation("userLoginLogs", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model admin {

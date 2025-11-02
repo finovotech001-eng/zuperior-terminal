@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     // Build the target negotiate URL
     const TRADING_HUB_BASE = process.env.TRADING_HUB_URL || 
       (process.env.NEXT_PUBLIC_API_BASE_URL && `${process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, '')}/hubs/${hub}`) ||
-      `http://18.130.5.209:5003/hubs/${hub}`;
+      `http://18.175.242.21:5003/hubs/${hub}`;
     
     const negotiateUrl = `${TRADING_HUB_BASE}/negotiate${params.toString() ? '?' + params.toString() : ''}`;
     

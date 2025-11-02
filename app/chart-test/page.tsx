@@ -57,7 +57,7 @@ export default function ChartTestPage() {
         </div>
 
         <div className="mt-4 text-sm text-white/60">
-          <p>API Endpoint: <code className="bg-white/10 px-2 py-1 rounded">http://18.130.5.209:5003/api/chart/candle/history/</code></p>
+          <p>API Endpoint: <code className="bg-white/10 px-2 py-1 rounded">http://18.175.242.21:5003/api/chart/candle/history/</code></p>
           <p className="mt-2">Current Symbol: <span className="text-white">{symbol}</span></p>
         </div>
       </div>

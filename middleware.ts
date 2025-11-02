@@ -28,8 +28,8 @@ async function verifyJWT(token: string) {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // skip public paths
-  if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
+  // skip public paths (including favicon which is handled by Next.js)
+  if (PUBLIC_PATHS.some(p => pathname.startsWith(p)) || pathname === '/favicon.ico') {
     return NextResponse.next();
   }
 
@@ -53,6 +53,6 @@ export async function middleware(req: NextRequest) {
 
 // Make sure to not run on static assets, etc.
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon|favicon.ico).*)'],
 };
 

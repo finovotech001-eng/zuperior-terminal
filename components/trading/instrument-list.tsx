@@ -49,7 +49,7 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
   const [items] = useAtom(instrumentsAtom)
   const [, toggleFavorite] = useAtom(toggleFavoriteAtom)
   const [, reorderInstruments] = useAtom(reorderInstrumentsAtom)
-  const [columns] = useAtom(instrumentColumnsAtom)
+  const [columns, setColumns] = useAtom(instrumentColumnsAtom)
   const [, toggleColumn] = useAtom(toggleInstrumentColumnAtom)
   const [, updateColumnWidth] = useAtom(updateInstrumentColumnWidthAtom)
 
@@ -99,6 +99,23 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
   }
+
+  // Ensure signal and pnl columns are unchecked by default
+  React.useEffect(() => {
+    const needsUpdate = columns.some(col => 
+      (col.key === "signal" || col.key === "pnl") && col.visible === true
+    )
+    
+    if (needsUpdate) {
+      const updated = columns.map(col => {
+        if (col.key === "signal" || col.key === "pnl") {
+          return { ...col, visible: false }
+        }
+        return col
+      })
+      setColumns(updated)
+    }
+  }, [columns, setColumns])
 
   // Get visible columns (kept the same)
   const visibleColumns = React.useMemo(() => columns.filter(col => col.visible), [columns])

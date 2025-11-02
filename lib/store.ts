@@ -34,14 +34,64 @@ export interface InstrumentColumnConfig {
   width: number
 }
 
-export const instrumentColumnsAtom = atomWithStorage<InstrumentColumnConfig[]>('zuperior-instrument-columns', [
+// Default column configuration
+const defaultInstrumentColumns: InstrumentColumnConfig[] = [
   { key: "symbol", label: "Symbol", visible: true, width: 176 },
-  { key: "signal", label: "Signal", visible: true, width: 30 },
+  { key: "signal", label: "Signal", visible: false, width: 30 },
   { key: "bid", label: "Bid", visible: true, width: 90 },
   { key: "ask", label: "Ask", visible: true, width: 90 },
   { key: "change", label: "1D", visible: true, width: 80 },
-  { key: "pnl", label: "P/L", visible: true, width: 80 },
-])
+  { key: "pnl", label: "P/L", visible: false, width: 80 },
+]
+
+// Helper function to migrate existing columns and ensure signal/pnl are unchecked
+const migrateInstrumentColumns = (stored: InstrumentColumnConfig[] | null): InstrumentColumnConfig[] => {
+  if (!stored || stored.length === 0) {
+    return defaultInstrumentColumns
+  }
+
+  // Create a map for quick lookup of default columns
+  const defaultMap = new Map(defaultInstrumentColumns.map(col => [col.key, col]))
+  
+  // Migrate stored columns, ensuring signal and pnl are set to visible: false
+  return stored.map(col => {
+    const defaultCol = defaultMap.get(col.key)
+    if (col.key === "signal" || col.key === "pnl") {
+      // Force signal and pnl to be unchecked
+      return { ...col, visible: false }
+    }
+    // For other columns, use stored value or default
+    return defaultCol ? { ...defaultCol, ...col } : col
+  }).concat(
+    // Add any missing default columns
+    defaultInstrumentColumns.filter(defaultCol => 
+      !stored.some(storedCol => storedCol.key === defaultCol.key)
+    )
+  )
+}
+
+export const instrumentColumnsAtom = atomWithStorage<InstrumentColumnConfig[]>(
+  'zuperior-instrument-columns',
+  defaultInstrumentColumns,
+  {
+    getItem: (key, initialValue) => {
+      try {
+        const stored = localStorage.getItem(key)
+        if (stored === null) return initialValue
+        const parsed = JSON.parse(stored)
+        return migrateInstrumentColumns(parsed)
+      } catch {
+        return initialValue
+      }
+    },
+    setItem: (key, value) => {
+      localStorage.setItem(key, JSON.stringify(value))
+    },
+    removeItem: (key) => {
+      localStorage.removeItem(key)
+    },
+  }
+)
 
 // Helper atom to toggle instrument column visibility
 export const toggleInstrumentColumnAtom = atom(

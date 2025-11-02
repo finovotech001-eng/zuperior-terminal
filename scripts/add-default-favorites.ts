@@ -3,6 +3,14 @@
  * Run this once after syncing instruments
  */
 
+import { config } from 'dotenv';
+import { resolve } from 'path';
+import { randomUUID } from 'crypto';
+
+// Load environment variables from .env.local first, then .env
+config({ path: resolve(process.cwd(), '.env.local') });
+config({ path: resolve(process.cwd(), '.env') });
+
 import { prisma } from '../lib/prisma'
 
 // Default favorite pairs that will be added to all users
@@ -10,7 +18,10 @@ const DEFAULT_FAVORITES = [
   'EURUSD',
   'XAUUSD',
   'BTCUSD',
-  'GBPJPY',
+  'ETHUSD',
+  'XAUUSDm',
+  'BTCUSDm'
+
 ]
 
 /**
@@ -58,6 +69,7 @@ async function addDefaultFavoritesToUser(userId: string) {
       // Add to favorites
       await prisma.userFavorite.create({
         data: {
+          id: randomUUID(), // Generate UUID for new favorite
           userId,
           instrumentId: instrument.id,
           sortOrder: i, // Use index as sort order

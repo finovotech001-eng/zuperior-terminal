@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const MT5_API_BASE = 'http://18.130.5.209:5003';
+const MT5_API_BASE = 'http://18.175.242.21:5003';
 
 /**
  * Proxy endpoint for MT5 chart data requests

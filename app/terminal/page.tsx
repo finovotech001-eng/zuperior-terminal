@@ -20,12 +20,22 @@ import {
   ChevronDown,
   Clock,
   Plus,
-  Info
+  Info,
+  TrendingUp,
+  Banknote,
+  Newspaper
 } from "lucide-react"
 import { Sidebar, SidebarItem } from "@/components/navigation/sidebar"
 import { InstrumentTabs, InstrumentTab } from "@/components/navigation/instrument-tabs"
 import { InstrumentList, Instrument } from "@/components/trading/instrument-list"
 import { EconomicCalendar, EventsByDate } from "@/components/trading/economic-calendar"
+import { EconomicIndicators } from "@/components/trading/economic-indicators"
+import { InterestRates } from "@/components/trading/interest-rates"
+import { EconomicNews } from "@/components/trading/economic-news"
+import { useEconomicIndicators } from "@/hooks/useEconomicIndicators"
+import { useInterestRates } from "@/hooks/useInterestRates"
+import { useEconomicNews } from "@/hooks/useEconomicNews"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ChartContainer } from "@/components/chart/chart-container"
 import { PositionsTable, Position } from "@/components/trading/positions-table"
 import { OrderPanel, OrderData } from "@/components/trading/order-panel"
@@ -42,6 +52,7 @@ import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useWebSocketConnection } from "@/hooks/useWebSocket"
 import { usePositionsSignalR } from "@/hooks/usePositionsSSE"
 import { useTradeHistory } from "@/hooks/useTradeHistory"
+import { useEconomicCalendar } from "@/hooks/useEconomicCalendar"
 import { 
   instrumentsAtom, 
   positionsIsCollapsedAtom,
@@ -145,7 +156,7 @@ function useMockBalancePolling(initialData: BalanceData): BalanceData {
 
 
 // Hook for multiple account balance polling
-function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record<string, BalanceData>, isLoading: Record<string, boolean>, errors: Record<string, string | null> } {
+function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record<string, BalanceData>, isLoading: Record<string, boolean>, errors: Record<string, string | null>, refreshBalance: (accountId: string) => void } {
   const [balances, setBalances] = React.useState<Record<string, BalanceData>>({});
   const [isLoading, setIsLoading] = React.useState<Record<string, boolean>>({});
   const [errors, setErrors] = React.useState<Record<string, string | null>>({});
@@ -230,6 +241,7 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
           Margin?: number;
           MarginUsed?: number;
           marginUsed?: number;
+          margin?: number;
           FreeMargin?: number;
           freeMargin?: number;
           MarginLevel?: number;
@@ -382,32 +394,65 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
   // Set up polling for all accounts - separate effect to avoid dependency issues
   const intervalRef = React.useRef<NodeJS.Timeout | null>(null);
   const accountIdsRef = React.useRef<string[]>([]);
+  const pendingRequestsRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     accountIdsRef.current = accountIds;
   }, [accountIds]);
 
+  // Throttled fetch to prevent simultaneous requests for the same account
+  const throttledFetchAccountBalance = React.useCallback(async (accountId: string, isInitial: boolean) => {
+    // Prevent duplicate requests for the same account
+    if (pendingRequestsRef.current.has(accountId)) {
+      return;
+    }
+
+    pendingRequestsRef.current.add(accountId);
+    try {
+      await fetchAccountBalance(accountId, isInitial);
+    } finally {
+      // Remove from pending set after a short delay to prevent rapid re-requests
+      setTimeout(() => {
+        pendingRequestsRef.current.delete(accountId);
+      }, 500);
+    }
+  }, [fetchAccountBalance]);
+
   React.useEffect(() => {
-    if (accountIds.length === 0) return;
+    if (accountIds.length === 0) {
+      // Clear interval if no accounts
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
+    // Clear any existing interval before setting up new one
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
 
     // Initial fetch for all accounts
     const initialFetchPromises = accountIds.map(accountId =>
-      fetchAccountBalance(accountId, true)
+      throttledFetchAccountBalance(accountId, true)
     );
 
     // Wait for initial fetches to complete before starting polling
     Promise.all(initialFetchPromises).then(() => {
-      // Clear any existing interval
+      // Clear any existing interval (in case cleanup ran during initial fetch)
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
 
-      // Set up polling interval for all accounts (every 300ms for real-time updates)
+      // Set up polling interval for all accounts (every 3 seconds to avoid resource exhaustion)
+      // This is still frequent enough for real-time updates without overwhelming the browser
       intervalRef.current = setInterval(() => {
         accountIdsRef.current.forEach(accountId => {
-          fetchAccountBalance(accountId, false);
+          throttledFetchAccountBalance(accountId, false);
         });
-      }, 300);
+      }, 3000); // Changed from 300ms to 3000ms (3 seconds)
     });
 
     return () => {
@@ -415,15 +460,16 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+      // Don't clear pending requests on cleanup - let them finish naturally
     };
-  }, [accountIds, fetchAccountBalance]); // Include missing dependencies
+  }, [accountIds, throttledFetchAccountBalance]);
 
   // Expose refresh function to manually trigger balance updates
   const refreshBalance = React.useCallback((accountId: string) => {
     if (accountId && accountIdsRef.current.includes(accountId)) {
-      fetchAccountBalance(accountId, false);
+      throttledFetchAccountBalance(accountId, false);
     }
-  }, [fetchAccountBalance]);
+  }, [throttledFetchAccountBalance]);
 
   return { balances, isLoading, errors, refreshBalance };
 }
@@ -444,294 +490,20 @@ function formatPositionTime(isoString: string): string {
     return isoString;
   }
 }
-// Mock data for economic calendar
-const mockCalendarEvents: EventsByDate[] = [
-  {
-    date: "2025-10-14",
-    displayDate: "October 14",
-    events: [
-      {
-        id: "1",
-        time: "9:10 AM",
-        country: "Italy",
-        countryCode: "IT",
-        title: "3-Year BTP Auction",
-        impact: "low",
-        actual: "2.4%",
-        forecast: undefined,
-        previous: "2.4%",
-      },
-      {
-        id: "2",
-        time: "9:10 AM",
-        country: "Italy",
-        countryCode: "IT",
-        title: "7-Year BTP Auction",
-        impact: "low",
-        actual: "3.1%",
-        forecast: undefined,
-        previous: "2.8%",
-      },
-      {
-        id: "3",
-        time: "9:10 AM",
-        country: "Italy",
-        countryCode: "IT",
-        title: "10-Year BTP Auction",
-        impact: "medium",
-        actual: "2.2%",
-        forecast: undefined,
-        previous: "3.6%",
-      },
-      {
-        id: "4",
-        time: "9:10 AM",
-        country: "Italy",
-        countryCode: "IT",
-        title: "15-Year BTP Auction",
-        impact: "low",
-        actual: "3.9%",
-        forecast: undefined,
-        previous: "4%",
-      },
-      {
-        id: "5",
-        time: "9:30 AM",
-        country: "Germany",
-        countryCode: "DE",
-        title: "Industrial Production MoM",
-        impact: "medium",
-        actual: undefined,
-        forecast: "0.3%",
-        previous: "1.1%",
-      },
-      {
-        id: "6",
-        time: "9:30 AM",
-        country: "Germany",
-        countryCode: "DE",
-        title: "Industrial Production YoY",
-        impact: "medium",
-        actual: undefined,
-        forecast: "-0.9%",
-        previous: "-0.1%",
-      },
-      {
-        id: "7",
-        time: "9:30 AM",
-        country: "Germany",
-        countryCode: "DE",
-        title: "2-Year Schatz Auction",
-        impact: "low",
-        actual: "1.9%",
-        forecast: undefined,
-        previous: "2%",
-      },
-      {
-        id: "8",
-        time: "9:30 AM",
-        country: "Germany",
-        countryCode: "DE",
-        title: "Mining Production MoM",
-        impact: "low",
-        actual: "-1.2%",
-        forecast: "0.6%",
-        previous: "1.2%",
-      },
-      {
-        id: "9",
-        time: "9:30 AM",
-        country: "Germany",
-        countryCode: "DE",
-        title: "Mining Production YoY",
-        impact: "low",
-        actual: "-0.2%",
-        forecast: "1.8%",
-        previous: "5.1%",
-      },
-    ],
-  },
-  {
-    date: "2025-10-17",
-    displayDate: "October 17",
-    events: [
-      {
-        id: "10",
-        time: "9:35 AM",
-        country: "United Kingdom",
-        countryCode: "GB",
-        title: "BoE Pill Speech",
-        impact: "medium",
-        actual: undefined,
-        forecast: undefined,
-        previous: undefined,
-      },
-      {
-        id: "11",
-        time: "10:00 AM",
-        country: "United States",
-        countryCode: "US",
-        title: "PPI YoY",
-        impact: "high",
-        actual: undefined,
-        forecast: "-3.7%",
-        previous: "-4.3%",
-      },
-      {
-        id: "12",
-        time: "10:00 AM",
-        country: "United States",
-        countryCode: "US",
-        title: "PPI MoM",
-        impact: "high",
-        actual: undefined,
-        forecast: "-0.4%",
-        previous: "-0.6%",
-      },
-      {
-        id: "13",
-        time: "10:30 AM",
-        country: "United States",
-        countryCode: "US",
-        title: "Construction Output YoY",
-        impact: "medium",
-        actual: undefined,
-        forecast: "1.9%",
-        previous: "1.3%",
-      },
-      {
-        id: "14",
-        time: "11:00 AM",
-        country: "European Union",
-        countryCode: "EU",
-        title: "ECB Donnery Speech",
-        impact: "medium",
-        actual: undefined,
-        forecast: undefined,
-        previous: undefined,
-      },
-      {
-        id: "15",
-        time: "2:00 PM",
-        country: "Canada",
-        countryCode: "CA",
-        title: "Manufacturing Sales MoM",
-        impact: "medium",
-        actual: undefined,
-        forecast: "0.8%",
-        previous: "1.2%",
-      },
-      {
-        id: "16",
-        time: "3:30 PM",
-        country: "United States",
-        countryCode: "US",
-        title: "Crude Oil Inventories",
-        impact: "high",
-        actual: undefined,
-        forecast: "-2.5M",
-        previous: "-1.5M",
-      },
-    ],
-  },
-  {
-    date: "2025-10-18",
-    displayDate: "October 18",
-    events: [
-      {
-        id: "17",
-        time: "1:30 AM",
-        country: "Australia",
-        countryCode: "AU",
-        title: "Employment Change",
-        impact: "high",
-        actual: undefined,
-        forecast: "25.0K",
-        previous: "47.5K",
-      },
-      {
-        id: "18",
-        time: "1:30 AM",
-        country: "Australia",
-        countryCode: "AU",
-        title: "Unemployment Rate",
-        impact: "high",
-        actual: undefined,
-        forecast: "4.2%",
-        previous: "4.1%",
-      },
-      {
-        id: "19",
-        time: "5:00 AM",
-        country: "France",
-        countryCode: "FR",
-        title: "CPI MoM",
-        impact: "medium",
-        actual: undefined,
-        forecast: "0.2%",
-        previous: "0.5%",
-      },
-      {
-        id: "20",
-        time: "5:00 AM",
-        country: "France",
-        countryCode: "FR",
-        title: "CPI YoY",
-        impact: "high",
-        actual: undefined,
-        forecast: "2.1%",
-        previous: "1.8%",
-      },
-      {
-        id: "21",
-        time: "10:00 AM",
-        country: "United States",
-        countryCode: "US",
-        title: "Retail Sales MoM",
-        impact: "high",
-        actual: undefined,
-        forecast: "0.3%",
-        previous: "0.1%",
-      },
-      {
-        id: "22",
-        time: "10:00 AM",
-        country: "United States",
-        countryCode: "US",
-        title: "Core Retail Sales MoM",
-        impact: "high",
-        actual: undefined,
-        forecast: "0.2%",
-        previous: "0.1%",
-      },
-      {
-        id: "23",
-        time: "11:15 AM",
-        country: "United States",
-        countryCode: "US",
-        title: "Industrial Production MoM",
-        impact: "medium",
-        actual: undefined,
-        forecast: "0.3%",
-        previous: "0.0%",
-      },
-      {
-        id: "24",
-        time: "5:00 PM",
-        country: "Japan",
-        countryCode: "JP",
-        title: "BOJ Policy Rate",
-        impact: "high",
-        actual: undefined,
-        forecast: "-0.10%",
-        previous: "-0.10%",
-      },
-    ],
-  },
-]
+// Helper function to get default date range (today to 30 days ahead)
+function getDefaultDateRange() {
+  const today = new Date()
+  const futureDate = new Date()
+  futureDate.setDate(today.getDate() + 30)
+  
+  return {
+    fromDate: today.toISOString().split('T')[0],
+    toDate: futureDate.toISOString().split('T')[0],
+  }
+}
 
 // Add helper above component:
-function detectAccountType(account) {
+function detectAccountType(account: { accountGroup?: string; group?: string; accountType?: string; AccountType?: string } | null | undefined): 'Demo' | 'Live' {
   if (!account) return 'Live';
   const group = (account.accountGroup || account.group || '').toLowerCase();
   if (group.includes('demo')) return 'Demo';
@@ -838,6 +610,41 @@ function TerminalContent() {
   // Hook for multiple account balances
   const accountIds = useMemo(() => mt5Accounts.map(account => account.accountId), [mt5Accounts]);
   const { balances, refreshBalance } = useMultiAccountBalancePolling(accountIds);
+
+  // Economic Calendar hook with default date range (today to 30 days ahead)
+  const dateRange = useMemo(() => getDefaultDateRange(), [])
+  const { events: economicCalendarEvents, isLoading: calendarLoading, error: calendarError } = useEconomicCalendar({
+    fromDate: dateRange.fromDate,
+    toDate: dateRange.toDate,
+    limit: 100,
+    enabled: true,
+  });
+
+  // Economic Indicators hook
+  const [indicatorsCountry, setIndicatorsCountry] = React.useState<string | undefined>(undefined)
+  const [indicatorsCategory, setIndicatorsCategory] = React.useState<string | undefined>(undefined)
+  const { indicators: economicIndicators, isLoading: indicatorsLoading, error: indicatorsError } = useEconomicIndicators({
+    country: indicatorsCountry,
+    category: indicatorsCategory,
+    limit: 50,
+    enabled: true,
+  });
+
+  // Interest Rates hook
+  const [ratesCountry, setRatesCountry] = React.useState<string | undefined>(undefined)
+  const [ratesBank, setRatesBank] = React.useState<string | undefined>(undefined)
+  const { interestRates, isLoading: ratesLoading, error: ratesError } = useInterestRates({
+    country: ratesCountry,
+    bank: ratesBank,
+    limit: 30,
+    enabled: true,
+  });
+
+  // Economic News hook
+  const { news: economicNews, isLoading: newsLoading, error: newsError } = useEconomicNews({
+    limit: 30,
+    enabled: true,
+  });
 
   // Track position changes more reliably - use both length and a position IDs hash
   const positionsHash = React.useMemo(() => {
@@ -2067,19 +1874,120 @@ function TerminalContent() {
                 )}
 
                 {leftPanelView === "calendar" && (
-                  <>
-                    <div className="px-4 py-3 border-b border-white/10 shrink-0">
-                      <h2 className="text-sm font-semibold text-white">Economic Calendar</h2>
+                  <div className="flex flex-col h-full">
+                    {/* All Content Sections in One Scrollable View */}
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent hover:scrollbar-thumb-white/20">
+                      {/* Economic Calendar Section */}
+                      <div className="border-b border-white/10">
+                        <div className="px-4 py-3 border-b border-white/10 shrink-0 bg-[#01040D] sticky top-0 z-10">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4 text-white" />
+                            <h2 className="text-sm font-semibold text-white">Economic Calendar</h2>
+                          </div>
+                        </div>
+                        <div>
+                          {calendarLoading ? (
+                            <div className="flex items-center justify-center py-12">
+                              <p className="text-sm text-white/40">Loading economic calendar...</p>
+                            </div>
+                          ) : calendarError ? (
+                            <div className="flex items-center justify-center py-12 px-4">
+                              <p className="text-sm text-red-400">Error loading calendar: {calendarError}</p>
+                            </div>
+                          ) : (
+                            <EconomicCalendar 
+                              eventsByDate={economicCalendarEvents || []} 
+                              showHeaders={false} 
+                              showFilters={true}
+                              maxHeight="600px" 
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Economic Indicators Section */}
+                      <div className="border-b border-white/10">
+                        <div className="px-4 py-3 border-b border-white/10 shrink-0 bg-[#01040D] sticky top-0 z-10">
+                          <div className="flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-white" />
+                            <h2 className="text-sm font-semibold text-white">Economic Indicators</h2>
+                          </div>
+                        </div>
+                        <div>
+                          {indicatorsLoading ? (
+                            <div className="flex items-center justify-center py-12">
+                              <p className="text-sm text-white/40">Loading economic indicators...</p>
+                            </div>
+                          ) : indicatorsError ? (
+                            <div className="flex items-center justify-center py-12 px-4">
+                              <p className="text-sm text-red-400">Error loading indicators: {indicatorsError}</p>
+                            </div>
+                          ) : (
+                            <EconomicIndicators 
+                              indicators={economicIndicators || []} 
+                              showHeaders={false}
+                              groupByCategory={true}
+                              maxHeight="500px" 
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Interest Rates Section */}
+                      <div className="border-b border-white/10">
+                        <div className="px-4 py-3 border-b border-white/10 shrink-0 bg-[#01040D] sticky top-0 z-10">
+                          <div className="flex items-center gap-2">
+                            <Banknote className="h-4 w-4 text-white" />
+                            <h2 className="text-sm font-semibold text-white">Interest Rates</h2>
+                          </div>
+                        </div>
+                        <div>
+                          {ratesLoading ? (
+                            <div className="flex items-center justify-center py-12">
+                              <p className="text-sm text-white/40">Loading interest rates...</p>
+                            </div>
+                          ) : ratesError ? (
+                            <div className="flex items-center justify-center py-12 px-4">
+                              <p className="text-sm text-red-400">Error loading rates: {ratesError}</p>
+                            </div>
+                          ) : (
+                            <InterestRates 
+                              interestRates={interestRates || []} 
+                              showHeaders={false}
+                              maxHeight="500px" 
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Economic News Section */}
+                      <div>
+                        <div className="px-4 py-3 border-b border-white/10 shrink-0 bg-[#01040D] sticky top-0 z-10">
+                          <div className="flex items-center gap-2">
+                            <Newspaper className="h-4 w-4 text-white" />
+                            <h2 className="text-sm font-semibold text-white">Economic News</h2>
+                          </div>
+                        </div>
+                        <div>
+                          {newsLoading ? (
+                            <div className="flex items-center justify-center py-12">
+                              <p className="text-sm text-white/40">Loading economic news...</p>
+                            </div>
+                          ) : newsError ? (
+                            <div className="flex items-center justify-center py-12 px-4">
+                              <p className="text-sm text-red-400">Error loading news: {newsError}</p>
+                            </div>
+                          ) : (
+                            <EconomicNews 
+                              news={economicNews || []} 
+                              showHeaders={false}
+                              maxHeight="500px" 
+                            />
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex-1 overflow-hidden">
-                      <EconomicCalendar 
-                        eventsByDate={mockCalendarEvents} 
-                        showHeaders={false} 
-                        showFilters={true}
-                        maxHeight="100%" 
-                      />
-                    </div>
-                  </>
+                  </div>
                 )}
 
                 {leftPanelView === "settings" && (
