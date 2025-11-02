@@ -75,7 +75,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const [stopLossMode, setStopLossMode] = React.useState<"pips" | "price">("price")
   const [volumePercentage] = React.useState(21)
   const [openPrice, setOpenPrice] = React.useState("")
-  const [showMoreInfo, setShowMoreInfo] = React.useState(false)
 
   // Update dropdown modes when form type changes
   React.useEffect(() => {
@@ -297,71 +296,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     </div>
   )
 
-  // Render additional info section
-  const renderAdditionalInfo = () => (
-    <div className="space-y-1 text-xs text-white/60">
-      <div className="flex items-center justify-between">
-        <span>Fees:</span>
-        <span className="flex items-center gap-1">
-          ≈ 16.00 USD
-          <Tooltip delayDuration={300}>
-            <TooltipTrigger asChild>
-              <button className="cursor-pointer">
-                <HelpCircle className="h-3 w-3 text-white/40" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Trading fees</p>
-            </TooltipContent>
-          </Tooltip>
-        </span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span>Leverage:</span>
-        <span className="flex items-center gap-1">
-          1:200
-          <Tooltip delayDuration={300}>
-            <TooltipTrigger asChild>
-              <button className="cursor-pointer">
-                <HelpCircle className="h-3 w-3 text-white/40" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Account leverage</p>
-            </TooltipContent>
-          </Tooltip>
-        </span>
-      </div>
-      <div className="flex items-center justify-between">
-        <span>Margin:</span>
-        <span>2,174.77 USD</span>
-      </div>
-
-      {showMoreInfo && (
-        <>
-          <div className="flex items-center justify-between">
-            <span>Pip Value:</span>
-            <span>1.00 USD</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Volume in units:</span>
-            <span>100.00 USD</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span>Volume in USD:</span>
-            <span>434,475.00 USD</span>
-          </div>
-        </>
-      )}
-
-      <button
-        onClick={() => setShowMoreInfo(!showMoreInfo)}
-        className="text-left text-white/60 hover:text-white/80 transition-colors cursor-pointer"
-      >
-        {showMoreInfo ? "Less" : "More"}
-      </button>
-    </div>
-  )
 
   return (
     <TooltipProvider>
@@ -485,9 +419,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
 
               {/* Percentage Slider */}
               {renderPercentageSlider()}
-
-              {/* Additional Info */}
-              {renderAdditionalInfo()}
             </>
           )}
 
@@ -611,9 +542,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                 ],
                 true
               )}
-
-              {/* Additional Info */}
-              {renderAdditionalInfo()}
             </>
           )}
 
@@ -744,9 +672,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   </button>
                 </div>
               )}
-
-              {/* Additional Info */}
-              {renderAdditionalInfo()}
             </>
           )}
         </div>
