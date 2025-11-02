@@ -36,33 +36,117 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
   onModify,
   onPartialClose,
 }) => {
+  // Instrument metadata cache - check localStorage first for instant load
+  const getCachedMetadata = React.useCallback((symbol: string) => {
+    try {
+      const cached = localStorage.getItem(`instrument_meta_${symbol}`)
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        // Cache valid for 5 minutes
+        if (parsed.timestamp && Date.now() - parsed.timestamp < 5 * 60 * 1000) {
+          return parsed.data
+        }
+      }
+    } catch {}
+    return null
+  }, [])
+
+  const setCachedMetadata = React.useCallback((symbol: string, data: { digits: number; contractSize: number }) => {
+    try {
+      localStorage.setItem(`instrument_meta_${symbol}`, JSON.stringify({
+        timestamp: Date.now(),
+        data
+      }))
+    } catch {}
+  }, [])
+
+  // Get initial values from cache or use smarter defaults
+  const getInitialMetadata = React.useCallback(() => {
+    const cached = getCachedMetadata(position.symbol)
+    if (cached) {
+      return { digits: cached.digits, contractSize: cached.contractSize }
+    }
+    // Smarter defaults based on symbol type
+    const symbol = position.symbol.toUpperCase()
+    if (symbol.includes('USD') || symbol.includes('EUR') || symbol.includes('GBP') || symbol.includes('JPY')) {
+      // Forex pairs - typically 5 digits, 100000 contract size
+      return { digits: 5, contractSize: 100000 }
+    } else if (symbol.includes('USDm') || symbol.includes('ETH') || symbol.includes('BTC')) {
+      // Crypto/metals - typically 2-3 digits, 100000 contract size
+      return { digits: 2, contractSize: 100000 }
+    }
+    // Default fallback
+    return { digits: 3, contractSize: 100000 }
+  }, [position.symbol, getCachedMetadata])
+
+  const initialMeta = getInitialMetadata()
+  
   // Instrument metadata for correct pip/PnL calculations
-  const [digits, setDigits] = React.useState<number>(3)
-  const [contractSize, setContractSize] = React.useState<number>(100000)
+  const [digits, setDigits] = React.useState<number>(initialMeta.digits)
+  const [contractSize, setContractSize] = React.useState<number>(initialMeta.contractSize)
+  const [isMetadataLoading, setIsMetadataLoading] = React.useState(false)
 
   // --- Instrument Meta Error State ---
   const [instrumentMetaError, setInstrumentMetaError] = React.useState(false)
 
+  // Load instrument metadata immediately on mount - use cache for instant calculation
   React.useEffect(() => {
     let cancelled = false
+    
+    // Check cache first
+    const cached = getCachedMetadata(position.symbol)
+    if (cached) {
+      setDigits(cached.digits)
+      setContractSize(cached.contractSize)
+      setIsMetadataLoading(false)
+      // Still fetch fresh data in background to update cache
+    } else {
+      // No cache, start with smarter defaults but still fetch
+      setIsMetadataLoading(true)
+    }
+    
     const loadMeta = async () => {
       try {
         const params = new URLSearchParams({ search: position.symbol, limit: '1' })
         const res = await fetch(`/apis/instruments?${params.toString()}`, { cache: 'no-store' })
-        if (!res.ok) { setInstrumentMetaError(true); return }
+        if (!res.ok) { 
+          if (!cached) {
+            setInstrumentMetaError(true)
+            setIsMetadataLoading(false)
+          }
+          return 
+        }
         const json = await res.json().catch(() => null as any)
         const item = Array.isArray(json?.data) ? json.data[0] : null
-        if (!item) { setInstrumentMetaError(true); return }
-        if (!cancelled) {
-          setDigits(typeof item.digits === 'number' ? item.digits : 3)
-          setContractSize(typeof item.contractSize === 'number' ? item.contractSize : 100000)
-          setInstrumentMetaError(false)
+        if (!item) { 
+          if (!cached) {
+            setInstrumentMetaError(true)
+            setIsMetadataLoading(false)
+          }
+          return 
         }
-      } catch { setInstrumentMetaError(true) }
+        if (!cancelled) {
+          const newDigits = typeof item.digits === 'number' ? item.digits : initialMeta.digits
+          const newContractSize = typeof item.contractSize === 'number' ? item.contractSize : initialMeta.contractSize
+          
+          setDigits(newDigits)
+          setContractSize(newContractSize)
+          setCachedMetadata(position.symbol, { digits: newDigits, contractSize: newContractSize })
+          setInstrumentMetaError(false)
+          setIsMetadataLoading(false)
+        }
+      } catch { 
+        if (!cached) {
+          setInstrumentMetaError(true)
+          setIsMetadataLoading(false)
+        }
+      }
     }
+    
+    // Load immediately
     loadMeta()
     return () => { cancelled = true }
-  }, [position.symbol])
+  }, [position.symbol, getCachedMetadata, setCachedMetadata, initialMeta])
   const [activeTab, setActiveTab] = React.useState("modify")
   const [takeProfitMode, setTakeProfitMode] = React.useState<"price" | "pips" | "money" | "equity">("price")
   const [stopLossMode, setStopLossMode] = React.useState<"price" | "pips" | "money" | "equity">("price")
@@ -322,7 +406,9 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                 {(takeProfit || takeProfit === "0") && (
                   <div className="flex items-center justify-between text-xs pt-1">
                     <span className="text-white/60">{calculatePips(safeParseInput(takeProfit, position.openPrice))} pips</span>
-                    <span className="text-[#16A34A] price-font font-medium">{(calculateProfitUSD(safeParseInput(takeProfit, position.openPrice)) * 100000).toFixed(2)} USD</span>
+                    <span className="text-[#16A34A] price-font font-medium">
+                      {(calculateProfitUSD(safeParseInput(takeProfit, position.openPrice)) * 100000).toFixed(2)} USD
+                    </span>
                   </div>
                 )}
               </div>
@@ -390,7 +476,9 @@ const PositionManagementPanel: React.FC<PositionManagementPanelProps> = ({
                 {(stopLoss || stopLoss === "0") && (
                   <div className="flex items-center justify-between text-xs pt-1">
                     <span className="text-white/60">{calculatePips(safeParseInput(stopLoss, position.openPrice))} pips</span>
-                    <span className="text-[#EF4444] price-font font-medium">{(calculateProfitUSD(safeParseInput(stopLoss, position.openPrice)) * 100000).toFixed(2)} USD</span>
+                    <span className="text-[#EF4444] price-font font-medium">
+                      {(calculateProfitUSD(safeParseInput(stopLoss, position.openPrice)) * 100000).toFixed(2)} USD
+                    </span>
                   </div>
                 )}
               </div>

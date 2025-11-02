@@ -191,6 +191,87 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     return result
   }
 
+  // Fetch TP/SL from /api/Client/Positions and merge with positions
+  const fetchPositionsWithTP_SL = useCallback(async (
+    positions: SignalRPosition[], 
+    accountId: string, 
+    accessToken: string
+  ): Promise<SignalRPosition[]> => {
+    try {
+      const res = await fetch(
+        `/apis/positions/list?accountId=${encodeURIComponent(accountId)}`,
+        { cache: 'no-store' }
+      )
+
+      if (!res.ok) {
+        return positions // Return positions as-is if fetch fails
+      }
+
+      const json = await res.json().catch(() => null)
+      if (!json?.success) {
+        return positions
+      }
+
+      // Extract positions array from response - try multiple paths
+      let apiPositions: any[] = []
+      if (Array.isArray(json.data)) {
+        apiPositions = json.data
+      } else if (Array.isArray(json.positions)) {
+        apiPositions = json.positions
+      } else if (Array.isArray(json.data?.positions)) {
+        apiPositions = json.data.positions
+      } else if (Array.isArray(json.data?.Positions)) {
+        apiPositions = json.data.Positions
+      } else if (Array.isArray(json.data?.data)) {
+        apiPositions = json.data.data
+      }
+
+      // Create a map of ticket/positionId -> TP/SL from API response
+      const tpSlMap = new Map<number, { takeProfit?: number; stopLoss?: number }>()
+      
+      apiPositions.forEach((apiPos: any) => {
+        const ticket = apiPos.Ticket ?? apiPos.ticket ?? apiPos.PositionId ?? apiPos.positionId ?? apiPos.OrderId ?? apiPos.orderId
+        if (ticket && Number(ticket) > 0) {
+          const ticketNum = Number(ticket)
+          // Extract PriceTp and PriceSL (primary field names from /api/Client/Positions)
+          const priceTp = apiPos.PriceTp ?? apiPos.priceTp ?? apiPos.PriceTP ?? apiPos.priceTP ?? 
+                         apiPos.TakeProfit ?? apiPos.takeProfit ?? apiPos.TP ?? apiPos.tp
+          const priceSL = apiPos.PriceSL ?? apiPos.priceSL ?? apiPos.PriceSl ?? apiPos.priceSl ?? 
+                         apiPos.StopLoss ?? apiPos.stopLoss ?? apiPos.SL ?? apiPos.sl
+
+          if (priceTp !== undefined && priceTp !== null && Number(priceTp) > 0) {
+            tpSlMap.set(ticketNum, { 
+              takeProfit: Number(priceTp),
+              stopLoss: priceSL !== undefined && priceSL !== null && Number(priceSL) > 0 ? Number(priceSL) : undefined
+            })
+          } else if (priceSL !== undefined && priceSL !== null && Number(priceSL) > 0) {
+            tpSlMap.set(ticketNum, { 
+              takeProfit: undefined,
+              stopLoss: Number(priceSL)
+            })
+          }
+        }
+      })
+
+      // Merge TP/SL values into positions by matching ticket/positionId
+      return positions.map((position): SignalRPosition => {
+        const positionId = position.ticket || position.positionId
+        if (positionId && positionId > 0 && tpSlMap.has(positionId)) {
+          const tpSl = tpSlMap.get(positionId)!
+          return {
+            ...position,
+            // Prioritize fetched TP/SL values over existing ones
+            takeProfit: tpSl.takeProfit !== undefined ? tpSl.takeProfit : position.takeProfit,
+            stopLoss: tpSl.stopLoss !== undefined ? tpSl.stopLoss : position.stopLoss,
+          }
+        }
+        return position
+      })
+    } catch {
+      return positions // Return positions as-is if fetch fails
+    }
+  }, [])
+
   // Authenticate and get access token
   const authenticate = useCallback(async (accId: string) => {
     try {
@@ -450,9 +531,20 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
           
           // Replace with the latest snapshot exactly as provided (no dedupe)
           const mapped = arr.map((item, i) => toPosition(item, i))
-          setPositions(mapped)
-          // eslint-disable-next-line no-console
-          console.log('[Positions] Snapshot count:', mapped.length, 'tickets:', mapped.map(p => p.ticket))
+          
+          // Fetch TP/SL from /api/Client/Positions and merge with positions
+          if (token && mapped.length > 0) {
+            fetchPositionsWithTP_SL(mapped, accId, token).then(updatedPositions => {
+              if (mounted.current && seq === connectSeq.current) {
+                setPositions(updatedPositions)
+              }
+            }).catch(() => {
+              // If TP/SL fetch fails, still use the mapped positions without TP/SL
+              setPositions(mapped)
+            })
+          } else {
+            setPositions(mapped)
+          }
           
           // Removed intrusive debug alert for first position received
           if (snapshotTimeout.current) { clearTimeout(snapshotTimeout.current); snapshotTimeout.current = null }
@@ -462,21 +554,41 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
         console.log('[Positions][SSE] Could not extract array, raw data:', data)
 
         if (data && typeof data === 'object') {
-          console.log('[Positions][SSE] Processing single position update')
           const p = toPosition(data)
-          console.log('[Positions][SSE] Mapped position:', p)
-          setPositions(prev => {
-            const byTicket = new Map<number, SignalRPosition>()
-            for (const x of prev) if (x.ticket) byTicket.set(x.ticket, x)
-            if (p.ticket) byTicket.set(p.ticket, p)
-            return Array.from(byTicket.values())
-          })
+          // Fetch TP/SL for single position update and merge
+          if (token && p.ticket) {
+            fetchPositionsWithTP_SL([p], accId, token).then(([updatedPosition]) => {
+              if (mounted.current && seq === connectSeq.current) {
+                setPositions(prev => {
+                  const byTicket = new Map<number, SignalRPosition>()
+                  for (const x of prev) if (x.ticket) byTicket.set(x.ticket, x)
+                  if (updatedPosition.ticket) byTicket.set(updatedPosition.ticket, updatedPosition)
+                  return Array.from(byTicket.values())
+                })
+              }
+            }).catch(() => {
+              // If TP/SL fetch fails, still update with position without TP/SL
+              setPositions(prev => {
+                const byTicket = new Map<number, SignalRPosition>()
+                for (const x of prev) if (x.ticket) byTicket.set(x.ticket, x)
+                if (p.ticket) byTicket.set(p.ticket, p)
+                return Array.from(byTicket.values())
+              })
+            })
+          } else {
+            setPositions(prev => {
+              const byTicket = new Map<number, SignalRPosition>()
+              for (const x of prev) if (x.ticket) byTicket.set(x.ticket, x)
+              if (p.ticket) byTicket.set(p.ticket, p)
+              return Array.from(byTicket.values())
+            })
+          }
         }
       } catch (err) {
         console.error('[Positions][SSE] Error processing message:', err)
       }
     }
-  }, [accountId, authenticate])
+  }, [accountId, authenticate, fetchPositionsWithTP_SL])
 
   const reconnect = useCallback(() => {
     if (!accountId) return

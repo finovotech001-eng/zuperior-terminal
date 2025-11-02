@@ -181,6 +181,24 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <button
                   className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted"
                   title={`Take Profit: ${formatPrice(position.takeProfit)}`}
+                  onMouseEnter={() => {
+                    // Prefetch instrument metadata on hover for instant calculation when panel opens
+                    const cached = localStorage.getItem(`instrument_meta_${position.symbol}`)
+                    if (!cached || (JSON.parse(cached)?.timestamp && Date.now() - JSON.parse(cached).timestamp > 5 * 60 * 1000)) {
+                      fetch(`/apis/instruments?${new URLSearchParams({ search: position.symbol, limit: '1' }).toString()}`, { cache: 'no-store' })
+                        .then(res => res.json())
+                        .then(json => {
+                          const item = Array.isArray(json?.data) ? json.data[0] : null
+                          if (item) {
+                            localStorage.setItem(`instrument_meta_${position.symbol}`, JSON.stringify({
+                              timestamp: Date.now(),
+                              data: { digits: item.digits || 3, contractSize: item.contractSize || 100000 }
+                            }))
+                          }
+                        })
+                        .catch(() => {})
+                    }
+                  }}
                 >
                   {formatPrice(position.takeProfit)}
                 </button>
@@ -188,6 +206,24 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <button
                   className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted"
                   title="Click to set Take Profit"
+                  onMouseEnter={() => {
+                    // Prefetch instrument metadata on hover for instant calculation when panel opens
+                    const cached = localStorage.getItem(`instrument_meta_${position.symbol}`)
+                    if (!cached || (JSON.parse(cached)?.timestamp && Date.now() - JSON.parse(cached).timestamp > 5 * 60 * 1000)) {
+                      fetch(`/apis/instruments?${new URLSearchParams({ search: position.symbol, limit: '1' }).toString()}`, { cache: 'no-store' })
+                        .then(res => res.json())
+                        .then(json => {
+                          const item = Array.isArray(json?.data) ? json.data[0] : null
+                          if (item) {
+                            localStorage.setItem(`instrument_meta_${position.symbol}`, JSON.stringify({
+                              timestamp: Date.now(),
+                              data: { digits: item.digits || 3, contractSize: item.contractSize || 100000 }
+                            }))
+                          }
+                        })
+                        .catch(() => {})
+                    }
+                  }}
                 >
                   Modify
                 </button>
@@ -305,6 +341,24 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <button
                   className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted"
                   title={`Stop Loss: ${formatPrice(position.stopLoss)}`}
+                  onMouseEnter={() => {
+                    // Prefetch instrument metadata on hover for instant calculation when panel opens
+                    const cached = localStorage.getItem(`instrument_meta_${position.symbol}`)
+                    if (!cached || (JSON.parse(cached)?.timestamp && Date.now() - JSON.parse(cached).timestamp > 5 * 60 * 1000)) {
+                      fetch(`/apis/instruments?${new URLSearchParams({ search: position.symbol, limit: '1' }).toString()}`, { cache: 'no-store' })
+                        .then(res => res.json())
+                        .then(json => {
+                          const item = Array.isArray(json?.data) ? json.data[0] : null
+                          if (item) {
+                            localStorage.setItem(`instrument_meta_${position.symbol}`, JSON.stringify({
+                              timestamp: Date.now(),
+                              data: { digits: item.digits || 3, contractSize: item.contractSize || 100000 }
+                            }))
+                          }
+                        })
+                        .catch(() => {})
+                    }
+                  }}
                 >
                   {formatPrice(position.stopLoss)}
                 </button>
@@ -312,6 +366,24 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <button
                   className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted"
                   title="Click to set Stop Loss"
+                  onMouseEnter={() => {
+                    // Prefetch instrument metadata on hover for instant calculation when panel opens
+                    const cached = localStorage.getItem(`instrument_meta_${position.symbol}`)
+                    if (!cached || (JSON.parse(cached)?.timestamp && Date.now() - JSON.parse(cached).timestamp > 5 * 60 * 1000)) {
+                      fetch(`/apis/instruments?${new URLSearchParams({ search: position.symbol, limit: '1' }).toString()}`, { cache: 'no-store' })
+                        .then(res => res.json())
+                        .then(json => {
+                          const item = Array.isArray(json?.data) ? json.data[0] : null
+                          if (item) {
+                            localStorage.setItem(`instrument_meta_${position.symbol}`, JSON.stringify({
+                              timestamp: Date.now(),
+                              data: { digits: item.digits || 3, contractSize: item.contractSize || 100000 }
+                            }))
+                          }
+                        })
+                        .catch(() => {})
+                    }
+                  }}
                 >
                   Modify
                 </button>
