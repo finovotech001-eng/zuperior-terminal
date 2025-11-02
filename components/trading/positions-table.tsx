@@ -863,7 +863,9 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 {columns.find(c => c.key === "symbol")?.visible && <div>Symbol</div>}
                 {columns.find(c => c.key === "type")?.visible && <div>Type</div>}
                 {columns.find(c => c.key === "volume")?.visible && <div>Volume, lot</div>}
-                {columns.find(c => c.key === "openPrice")?.visible && <div>Open price</div>}
+                {columns.find(c => c.key === "openPrice")?.visible && (
+                  <div>{activeTab === "pending" ? "Price Order" : "Open price"}</div>
+                )}
                 {columns.find(c => c.key === "currentPrice")?.visible && <div>Current price</div>}
                 {columns.find(c => c.key === "tp")?.visible && activeTab !== "closed" && <div>T/P</div>}
                 {columns.find(c => c.key === "sl")?.visible && activeTab !== "closed" && <div>S/L</div>}

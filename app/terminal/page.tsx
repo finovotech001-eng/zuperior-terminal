@@ -51,6 +51,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ResizeHandle } from "@/components/ui/resize-handle"
 import { useWebSocketConnection } from "@/hooks/useWebSocket"
 import { usePositionsSignalR } from "@/hooks/usePositionsSSE"
+import { usePendingOrders } from "@/hooks/usePendingOrders"
 import { useTradeHistory } from "@/hooks/useTradeHistory"
 import { useEconomicCalendar } from "@/hooks/useEconomicCalendar"
 import { 
@@ -542,6 +543,18 @@ function TerminalContent() {
     accountId: currentAccountId,
     enabled: true
   });
+
+  // Fetch pending orders using the hook
+  const { 
+    pendingOrders: rawPendingOrders, 
+    isLoading: pendingOrdersLoading,
+    error: pendingOrdersError,
+    refresh: refreshPendingOrders 
+  } = usePendingOrders({
+    accountId: currentAccountId,
+    enabled: true,
+    pollInterval: 3000 // Poll every 3 seconds
+  });
   
   const [leftPanelView, setLeftPanelView] = React.useState<LeftPanelView>("instruments")
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = React.useState(false)
@@ -870,7 +883,6 @@ function TerminalContent() {
   const [leftPanelWidth, setLeftPanelWidth] = React.useState(320)
   const [rightPanelWidth, setRightPanelWidth] = React.useState(300)
   const [positionsHeight, setPositionsHeight] = React.useState(300)
-  const [pendingOrders, setPendingOrders] = React.useState<Position[]>([])
 
   const [openTabs] = useAtom(openTabsAtom)
   const [activeTabId, setActiveTabId] = useAtom(activeTabIdAtom)
@@ -1147,6 +1159,33 @@ function TerminalContent() {
     
     return result
   }, [signalRPositions]);
+
+  // Convert pending orders from hook to Position format for the table
+  const pendingOrders = React.useMemo((): Position[] => {
+    console.log('[PendingOrders] Converting', rawPendingOrders.length, 'pending orders to Position format')
+    
+    return rawPendingOrders.map((order) => {
+      const posId = `pending-${order.ticket}`
+      
+      return {
+        id: posId,
+        ticket: order.ticket,
+        symbol: order.symbol,
+        countryCode: undefined,
+        icon: undefined,
+        type: order.type,
+        volume: order.volume,
+        openPrice: order.price, // This is PriceOrder from API
+        currentPrice: order.priceCurrent ?? order.price, // Use PriceCurrent if available
+        takeProfit: order.takeProfit, // This is PriceTP from API
+        stopLoss: order.stopLoss, // This is PriceSL from API
+        position: order.ticket.toString(),
+        openTime: order.openTime,
+        swap: 0, // Pending orders don't have swap
+        pnl: 0, // Pending orders don't have P/L yet
+      }
+    })
+  }, [rawPendingOrders]);
 
   // Map from row id to numeric ticket for reliable close calls
   const idToTicket = React.useMemo(() => {
@@ -1481,27 +1520,10 @@ function TerminalContent() {
       if (refreshBalance && currentAccountId) {
         setTimeout(() => refreshBalance(currentAccountId), 200);
       }
-      // Add to pending table immediately if pending
+      // Refresh pending orders if order was pending
       if (order.orderType === 'pending') {
-        const orderId = Number((response?.OrderId ?? response?.orderId ?? response?.Id ?? response?.id) || 0)
-        setPendingOrders(prev => [
-          {
-            id: `pending-${orderId || Date.now()}`,
-            ticket: orderId || 0,
-            symbol: order.symbol.replace('/', ''),
-            type: 'Buy',
-            volume: Number(order.volume),
-            openPrice: Number(order.price) || 0,
-            currentPrice: 0,
-            takeProfit: order.takeProfit,
-            stopLoss: order.stopLoss,
-            position: (orderId || '').toString(),
-            openTime: new Date().toISOString(),
-            swap: 0,
-            pnl: 0,
-          },
-          ...prev,
-        ])
+        // Refresh will fetch latest from API, which includes the newly placed order
+        setTimeout(() => refreshPendingOrders(), 500)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Buy order failed'
@@ -1535,25 +1557,8 @@ function TerminalContent() {
         setTimeout(() => refreshBalance(currentAccountId), 200);
       }
       if (order.orderType === 'pending') {
-        const orderId = Number((response?.OrderId ?? response?.orderId ?? response?.Id ?? response?.id) || 0)
-        setPendingOrders(prev => [
-          {
-            id: `pending-${orderId || Date.now()}`,
-            ticket: orderId || 0,
-            symbol: order.symbol.replace('/', ''),
-            type: 'Sell',
-            volume: Number(order.volume),
-            openPrice: Number(order.price) || 0,
-            currentPrice: 0,
-            takeProfit: order.takeProfit,
-            stopLoss: order.stopLoss,
-            position: (orderId || '').toString(),
-            openTime: new Date().toISOString(),
-            swap: 0,
-            pnl: 0,
-          },
-          ...prev,
-        ])
+        // Refresh pending orders will fetch latest from API
+        setTimeout(() => refreshPendingOrders(), 500)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sell order failed'
@@ -2187,7 +2192,8 @@ function TerminalContent() {
                         console.log('[Pending] Cancel order:', positionId)
                         const res = await cancelPendingOrder({ accountId: currentAccountId, orderId: Number(positionId), comment: 'Cancel via web terminal' })
                         console.log('[Pending] Cancel response:', res)
-                        setPendingOrders(prev => prev.filter(p => p.id !== id))
+                        // Refresh pending orders to remove cancelled order
+                        setTimeout(() => refreshPendingOrders(), 500)
                         setTradeNotice({ type: 'success', message: 'Order cancelled' });
                         return
                       }
@@ -2320,13 +2326,199 @@ function TerminalContent() {
                 </PopoverTrigger>
                 <PopoverContent className="w-48 p-2" align="end">
                   <div className="space-y-1">
-                    <button className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white">
+                    <button 
+                      onClick={async () => {
+                        if (!formattedPositions.length) {
+                          setTradeNotice({ type: 'error', message: 'No positions to close' })
+                          return
+                        }
+                        if (!currentAccountId) {
+                          setTradeNotice({ type: 'error', message: 'No account selected' })
+                          return
+                        }
+                        try {
+                          let closedCount = 0
+                          let failedCount = 0
+                          for (const position of formattedPositions) {
+                            try {
+                              let positionId: number | null = null
+                              if (position.ticket && position.ticket > 0) {
+                                positionId = position.ticket
+                              } else if (position.position) {
+                                const match = position.position.match(/\d+/)
+                                if (match) positionId = parseInt(match[0], 10)
+                              }
+                              if (!positionId || positionId === 0) {
+                                console.error('[Close All] Invalid position ID:', position)
+                                failedCount++
+                                continue
+                              }
+                              const res = await fetch('/apis/trading/close', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 })
+                              })
+                              const json = await res.json().catch(() => ({} as any))
+                              if (res.ok && (json.success || json.Success)) {
+                                closedCount++
+                              } else {
+                                failedCount++
+                              }
+                              // Small delay between closes to avoid overwhelming the API
+                              await new Promise(resolve => setTimeout(resolve, 100))
+                            } catch (e) {
+                              console.error('[Close All] Error closing position:', e)
+                              failedCount++
+                            }
+                          }
+                          if (closedCount > 0) {
+                            setTradeNotice({ 
+                              type: 'success', 
+                              message: `Closed ${closedCount} position${closedCount !== 1 ? 's' : ''}${failedCount > 0 ? ` (${failedCount} failed)` : ''}` 
+                            })
+                            // Refresh balance after closing positions
+                            if (refreshBalance && currentAccountId) {
+                              setTimeout(() => refreshBalance(currentAccountId), 300)
+                            }
+                          } else if (failedCount > 0) {
+                            setTradeNotice({ type: 'error', message: `Failed to close ${failedCount} position${failedCount !== 1 ? 's' : ''}` })
+                          }
+                        } catch (e) {
+                          setTradeNotice({ type: 'error', message: 'Error closing positions' })
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white"
+                    >
                       Close all positions
                     </button>
-                    <button className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white">
+                    <button 
+                      onClick={async () => {
+                        const profitablePositions = formattedPositions.filter(p => p.pnl > 0)
+                        if (!profitablePositions.length) {
+                          setTradeNotice({ type: 'error', message: 'No profitable positions to close' })
+                          return
+                        }
+                        if (!currentAccountId) {
+                          setTradeNotice({ type: 'error', message: 'No account selected' })
+                          return
+                        }
+                        try {
+                          let closedCount = 0
+                          let failedCount = 0
+                          for (const position of profitablePositions) {
+                            try {
+                              let positionId: number | null = null
+                              if (position.ticket && position.ticket > 0) {
+                                positionId = position.ticket
+                              } else if (position.position) {
+                                const match = position.position.match(/\d+/)
+                                if (match) positionId = parseInt(match[0], 10)
+                              }
+                              if (!positionId || positionId === 0) {
+                                failedCount++
+                                continue
+                              }
+                              const res = await fetch('/apis/trading/close', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 })
+                              })
+                              const json = await res.json().catch(() => ({} as any))
+                              if (res.ok && (json.success || json.Success)) {
+                                closedCount++
+                              } else {
+                                failedCount++
+                              }
+                              // Small delay between closes to avoid overwhelming the API
+                              await new Promise(resolve => setTimeout(resolve, 100))
+                            } catch (e) {
+                              console.error('[Close Profitable] Error closing position:', e)
+                              failedCount++
+                            }
+                          }
+                          if (closedCount > 0) {
+                            setTradeNotice({ 
+                              type: 'success', 
+                              message: `Closed ${closedCount} profitable position${closedCount !== 1 ? 's' : ''}${failedCount > 0 ? ` (${failedCount} failed)` : ''}` 
+                            })
+                            // Refresh balance after closing positions
+                            if (refreshBalance && currentAccountId) {
+                              setTimeout(() => refreshBalance(currentAccountId), 300)
+                            }
+                          } else if (failedCount > 0) {
+                            setTradeNotice({ type: 'error', message: `Failed to close ${failedCount} position${failedCount !== 1 ? 's' : ''}` })
+                          }
+                        } catch (e) {
+                          setTradeNotice({ type: 'error', message: 'Error closing profitable positions' })
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white"
+                    >
                       Close all profitable
                     </button>
-                    <button className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white">
+                    <button 
+                      onClick={async () => {
+                        const losingPositions = formattedPositions.filter(p => p.pnl < 0)
+                        if (!losingPositions.length) {
+                          setTradeNotice({ type: 'error', message: 'No losing positions to close' })
+                          return
+                        }
+                        if (!currentAccountId) {
+                          setTradeNotice({ type: 'error', message: 'No account selected' })
+                          return
+                        }
+                        try {
+                          let closedCount = 0
+                          let failedCount = 0
+                          for (const position of losingPositions) {
+                            try {
+                              let positionId: number | null = null
+                              if (position.ticket && position.ticket > 0) {
+                                positionId = position.ticket
+                              } else if (position.position) {
+                                const match = position.position.match(/\d+/)
+                                if (match) positionId = parseInt(match[0], 10)
+                              }
+                              if (!positionId || positionId === 0) {
+                                failedCount++
+                                continue
+                              }
+                              const res = await fetch('/apis/trading/close', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 })
+                              })
+                              const json = await res.json().catch(() => ({} as any))
+                              if (res.ok && (json.success || json.Success)) {
+                                closedCount++
+                              } else {
+                                failedCount++
+                              }
+                              // Small delay between closes to avoid overwhelming the API
+                              await new Promise(resolve => setTimeout(resolve, 100))
+                            } catch (e) {
+                              console.error('[Close Losing] Error closing position:', e)
+                              failedCount++
+                            }
+                          }
+                          if (closedCount > 0) {
+                            setTradeNotice({ 
+                              type: 'success', 
+                              message: `Closed ${closedCount} losing position${closedCount !== 1 ? 's' : ''}${failedCount > 0 ? ` (${failedCount} failed)` : ''}` 
+                            })
+                            // Refresh balance after closing positions
+                            if (refreshBalance && currentAccountId) {
+                              setTimeout(() => refreshBalance(currentAccountId), 300)
+                            }
+                          } else if (failedCount > 0) {
+                            setTradeNotice({ type: 'error', message: `Failed to close ${failedCount} position${failedCount !== 1 ? 's' : ''}` })
+                          }
+                        } catch (e) {
+                          setTradeNotice({ type: 'error', message: 'Error closing losing positions' })
+                        }
+                      }}
+                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white"
+                    >
                       Close all losing
                     </button>
                   </div>
