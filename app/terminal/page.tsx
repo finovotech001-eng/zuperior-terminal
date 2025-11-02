@@ -614,6 +614,7 @@ function TerminalContent() {
   // Economic Calendar hook with default date range (today to 30 days ahead)
   const dateRange = useMemo(() => getDefaultDateRange(), [])
   const { events: economicCalendarEvents, isLoading: calendarLoading, error: calendarError } = useEconomicCalendar({
+    accountId: currentAccountId,
     fromDate: dateRange.fromDate,
     toDate: dateRange.toDate,
     limit: 100,
@@ -624,6 +625,7 @@ function TerminalContent() {
   const [indicatorsCountry, setIndicatorsCountry] = React.useState<string | undefined>(undefined)
   const [indicatorsCategory, setIndicatorsCategory] = React.useState<string | undefined>(undefined)
   const { indicators: economicIndicators, isLoading: indicatorsLoading, error: indicatorsError } = useEconomicIndicators({
+    accountId: currentAccountId,
     country: indicatorsCountry,
     category: indicatorsCategory,
     limit: 50,
@@ -634,6 +636,7 @@ function TerminalContent() {
   const [ratesCountry, setRatesCountry] = React.useState<string | undefined>(undefined)
   const [ratesBank, setRatesBank] = React.useState<string | undefined>(undefined)
   const { interestRates, isLoading: ratesLoading, error: ratesError } = useInterestRates({
+    accountId: currentAccountId,
     country: ratesCountry,
     bank: ratesBank,
     limit: 30,
@@ -642,6 +645,7 @@ function TerminalContent() {
 
   // Economic News hook
   const { news: economicNews, isLoading: newsLoading, error: newsError } = useEconomicNews({
+    accountId: currentAccountId,
     limit: 30,
     enabled: true,
   });

@@ -46,6 +46,7 @@ export interface EconomicIndicator {
 }
 
 interface UseEconomicIndicatorsOptions {
+  accountId?: string | null
   country?: string
   category?: string
   limit?: number
@@ -107,6 +108,7 @@ function transformIndicator(apiIndicator: ApiEconomicIndicator): EconomicIndicat
 }
 
 export function useEconomicIndicators({
+  accountId,
   country,
   category,
   limit = 20,
@@ -128,15 +130,15 @@ export function useEconomicIndicators({
     abortRef.current = controller
 
     try {
-      // Get AccountId from localStorage or context
-      const accountId = typeof window !== 'undefined' ? localStorage.getItem('accountId') : null
-      if (!accountId) {
+      // Use accountId from props, fallback to localStorage
+      const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
+      if (!effectiveAccountId) {
         console.warn('[Economic Indicators] No AccountId found, indicators may not work')
       }
 
       // Build query parameters (include accountId)
       const params = new URLSearchParams()
-      if (accountId) params.append('accountId', accountId)
+      if (effectiveAccountId) params.append('accountId', effectiveAccountId)
       if (country) params.append('country', country)
       if (category) params.append('category', category)
       if (limit) params.append('limit', limit.toString())
@@ -232,7 +234,7 @@ export function useEconomicIndicators({
     } finally {
       setIsLoading(false)
     }
-  }, [country, category, limit, enabled])
+  }, [accountId, country, category, limit, enabled])
 
   useEffect(() => {
     fetchIndicators()

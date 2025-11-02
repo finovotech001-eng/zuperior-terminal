@@ -43,6 +43,7 @@ interface ApiEconomicEvent {
 }
 
 interface UseEconomicCalendarOptions {
+  accountId?: string | null
   country?: string
   category?: string
   importance?: string
@@ -211,6 +212,7 @@ function transformEvent(apiEvent: ApiEconomicEvent): TransformedEvent | null {
 }
 
 export function useEconomicCalendar({
+  accountId,
   country,
   category,
   importance,
@@ -239,15 +241,15 @@ export function useEconomicCalendar({
     abortRef.current = controller
 
     try {
-      // Get AccountId from localStorage or context
-      const accountId = typeof window !== 'undefined' ? localStorage.getItem('accountId') : null
-      if (!accountId) {
+      // Use accountId from props, fallback to localStorage
+      const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
+      if (!effectiveAccountId) {
         console.warn('[Economic Calendar] No AccountId found, calendar may not work')
       }
 
       // Build query parameters (include accountId)
       const params = new URLSearchParams()
-      if (accountId) params.append('accountId', accountId)
+      if (effectiveAccountId) params.append('accountId', effectiveAccountId)
       if (country) params.append('country', country)
       if (category) params.append('category', category)
       if (importance) params.append('importance', importance)
@@ -382,7 +384,7 @@ export function useEconomicCalendar({
     } finally {
       setIsLoading(false)
     }
-  }, [country, category, importance, fromDate, toDate, limit, enabled])
+  }, [accountId, country, category, importance, fromDate, toDate, limit, enabled])
 
   // Connect to SignalR for real-time updates
   const connectSignalR = useCallback(async () => {

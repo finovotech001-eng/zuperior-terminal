@@ -52,6 +52,7 @@ export interface InterestRate {
 }
 
 interface UseInterestRatesOptions {
+  accountId?: string | null
   country?: string
   bank?: string
   limit?: number
@@ -117,6 +118,7 @@ function transformInterestRate(apiRate: ApiInterestRate): InterestRate | null {
 }
 
 export function useInterestRates({
+  accountId,
   country,
   bank,
   limit = 20,
@@ -138,15 +140,15 @@ export function useInterestRates({
     abortRef.current = controller
 
     try {
-      // Get AccountId from localStorage or context
-      const accountId = typeof window !== 'undefined' ? localStorage.getItem('accountId') : null
-      if (!accountId) {
+      // Use accountId from props, fallback to localStorage
+      const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
+      if (!effectiveAccountId) {
         console.warn('[Interest Rates] No AccountId found, rates may not work')
       }
 
       // Build query parameters (include accountId)
       const params = new URLSearchParams()
-      if (accountId) params.append('accountId', accountId)
+      if (effectiveAccountId) params.append('accountId', effectiveAccountId)
       if (country) params.append('country', country)
       if (bank) params.append('bank', bank)
       if (limit) params.append('limit', limit.toString())
@@ -242,7 +244,7 @@ export function useInterestRates({
     } finally {
       setIsLoading(false)
     }
-  }, [country, bank, limit, enabled])
+  }, [accountId, country, bank, limit, enabled])
 
   useEffect(() => {
     fetchInterestRates()

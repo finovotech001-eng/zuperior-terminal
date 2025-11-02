@@ -52,6 +52,7 @@ export interface EconomicNews {
 }
 
 interface UseEconomicNewsOptions {
+  accountId?: string | null
   country?: string
   category?: string
   limit?: number
@@ -118,6 +119,7 @@ function transformNews(apiNews: ApiEconomicNews): EconomicNews | null {
 }
 
 export function useEconomicNews({
+  accountId,
   country,
   category,
   limit = 20,
@@ -141,15 +143,15 @@ export function useEconomicNews({
     abortRef.current = controller
 
     try {
-      // Get AccountId from localStorage or context
-      const accountId = typeof window !== 'undefined' ? localStorage.getItem('accountId') : null
-      if (!accountId) {
+      // Use accountId from props, fallback to localStorage
+      const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
+      if (!effectiveAccountId) {
         console.warn('[Economic News] No AccountId found, news may not work')
       }
 
       // Build query parameters (include accountId)
       const params = new URLSearchParams()
-      if (accountId) params.append('accountId', accountId)
+      if (effectiveAccountId) params.append('accountId', effectiveAccountId)
       if (country) params.append('country', country)
       if (category) params.append('category', category)
       if (limit) params.append('limit', limit.toString())
@@ -247,7 +249,7 @@ export function useEconomicNews({
     } finally {
       setIsLoading(false)
     }
-  }, [country, category, limit, fromDate, toDate, enabled])
+  }, [accountId, country, category, limit, fromDate, toDate, enabled])
 
   useEffect(() => {
     fetchNews()
