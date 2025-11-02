@@ -302,7 +302,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     
                     if (isSuccess) {
                       // Show success alert
-                      alert(`Position modified successfully for ${position.symbol}`);
+                    
                       // Keep popover open for a moment so user can see the updated values
                       // Close after a short delay to allow user to see the changes
                       setTimeout(() => {
@@ -462,7 +462,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     
                     if (isSuccess) {
                       // Show success alert
-                      alert(`Position modified successfully for ${position.symbol}`);
+                      
                       // Keep popover open for a moment so user can see the updated values
                       // Close after a short delay to allow user to see the changes
                       setTimeout(() => {
@@ -609,7 +609,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   
                   if (isSuccess) {
                     // Show success alert
-                    alert(`Position modified successfully for ${position.symbol}`);
+                    
                     // Keep popover open for a moment so user can see the updated values
                     // Close after a short delay to allow user to see the changes
                     setTimeout(() => {
