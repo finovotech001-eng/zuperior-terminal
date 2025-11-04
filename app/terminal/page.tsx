@@ -1099,6 +1099,9 @@ function TerminalContent() {
   }, [instruments, activeInstrumentTab]);
   // --- END DERIVED SELECTED INSTRUMENT DATA ---
 
+  // Keep last good values per position to prevent flicker on partial updates
+  const prevPositionsRef = React.useRef<Map<string, Position>>(new Map())
+
   // Convert SignalR positions to Position format for the table
   const formattedPositions = React.useMemo((): Position[] => {
     // Map incoming live positions to table rows - USE TICKET AS ID!
@@ -1135,9 +1138,27 @@ function TerminalContent() {
     const byId = new Map<string, Position>()
     rows.forEach(r => byId.set(r.id, r))
     const result = Array.from(byId.values())
-    
-    return result
+
+    // Merge with previous stable values to prevent temporary zeros or type flips
+    const merged = result.map((r) => {
+      const prev = prevPositionsRef.current.get(r.id)
+      if (!prev) return r
+      const out: Position = { ...prev, ...r }
+      if ((r.volume === 0 || Number.isNaN(r.volume)) && prev.volume > 0) out.volume = prev.volume
+      if ((r.openPrice === 0 || !Number.isFinite(r.openPrice)) && prev.openPrice > 0) out.openPrice = prev.openPrice
+      if (r.type !== prev.type && (r.volume === 0 || r.openPrice === 0)) out.type = prev.type
+      return out
+    })
+
+    return merged
   }, [signalRPositions]);
+
+  // Store merged results as the last good snapshot
+  React.useEffect(() => {
+    const m = new Map<string, Position>()
+    for (const p of formattedPositions) m.set(p.id, p)
+    prevPositionsRef.current = m
+  }, [formattedPositions])
 
   // Convert pending orders from hook to Position format for the table
   const pendingOrders = React.useMemo((): Position[] => {
@@ -1225,6 +1246,19 @@ function TerminalContent() {
     const bal = Number(balanceData.balance) || 0;
     return bal + liveTotalPL;
   }, [balanceData.balance, liveTotalPL]);
+
+  // Live Free Margin = Equity - Margin, recalculated every 600ms
+  const [liveFreeMargin, setLiveFreeMargin] = React.useState<number>(0);
+  React.useEffect(() => {
+    const compute = () => {
+      const eq = Number(liveEquity) || 0;
+      const mg = Number(balanceData.margin) || 0;
+      setLiveFreeMargin(parseFloat((eq - mg).toFixed(2)));
+    };
+    compute();
+    const id = setInterval(compute, 600);
+    return () => clearInterval(id);
+  }, [liveEquity, balanceData.margin]);
 
   // Closed trades (history)
   const { closedPositions, isLoading: closedLoading, error: closedError } = useTradeHistory({ accountId: currentAccountId, enabled: true })
@@ -1677,7 +1711,7 @@ function TerminalContent() {
                       <span className="text-sm text-white/60">Free margin</span>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white price-font">
-                          {hideBalance ? "......" : formatCurrency(balanceData.freeMargin, 2)} USD
+                          {hideBalance ? "......" : formatCurrency(liveFreeMargin, 2)} USD
                         </span>
                         <Tooltip>
                           <TooltipTrigger>
@@ -2251,6 +2285,13 @@ function TerminalContent() {
           <div className="h-[40px] shrink-0 flex items-center justify-between px-4 glass-card rounded-lg">
             {/* Left: Account Metrics */}
             <div className="flex items-center gap-6">
+              {/* Balance first (before Equity) */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-white/60">Balance:</span>
+                <span className="text-xs font-semibold text-white price-font">
+                  {hideBalance ? "......" : formatCurrency(balanceData.balance, 2)} USD
+                </span>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Equity:</span>
                 <span className="text-xs font-semibold text-white price-font">
@@ -2260,17 +2301,11 @@ function TerminalContent() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-white/60">Free Margin:</span>
                 <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "......" : formatCurrency(balanceData.freeMargin, 2)} USD
+                  {hideBalance ? "......" : formatCurrency(liveFreeMargin, 2)} USD
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-white/60">Balance:</span>
-                <span className="text-xs font-semibold text-white price-font">
-                  {hideBalance ? "......" : formatCurrency(balanceData.balance, 2)} USD
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-white/60"> </span>
+                <span className="text-xs text-white/60">Margin:</span>
                 <span className="text-xs font-semibold text-white price-font">
                   {hideBalance ? "......" : formatCurrency(balanceData.margin, 2)} USD
                 </span>

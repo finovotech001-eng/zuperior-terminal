@@ -39,6 +39,15 @@ const nextConfig = {
     }
     return config;
   },
+  async redirects() {
+    return [
+      {
+        source: '/favicon.ico',
+        destination: '/favicon-32x32.png',
+        permanent: false,
+      },
+    ]
+  },
 };
 
 export default nextConfig;

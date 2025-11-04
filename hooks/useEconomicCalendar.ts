@@ -238,7 +238,11 @@ export function useEconomicCalendar({
     try {
       // Use accountId from props, fallback to localStorage
       const effectiveAccountId = accountId || (typeof window !== 'undefined' ? localStorage.getItem('accountId') : null)
+      // If we still don't have an account id, return gracefully with empty data
       if (!effectiveAccountId) {
+        setEvents([])
+        setIsLoading(false)
+        return
       }
 
       // Build query parameters (include accountId)
@@ -546,4 +550,3 @@ export function useEconomicCalendar({
     refetch: fetchCalendar 
   }
 }
-

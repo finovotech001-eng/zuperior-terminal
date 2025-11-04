@@ -87,12 +87,9 @@ export async function GET(request: NextRequest) {
     const toDate = searchParams.get('toDate')
     const limit = searchParams.get('limit')
 
-    // Validate AccountId
+    // Gentle behavior: if no accountId, return an empty list with 200
     if (!accountId) {
-      return NextResponse.json(
-        { success: false, message: 'AccountId is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: true, data: [] }, { status: 200 })
     }
 
     // Build query string (excluding accountId as it will be sent as header)
@@ -104,8 +101,9 @@ export async function GET(request: NextRequest) {
     if (toDate) queryParams.append('toDate', toDate)
     if (limit) queryParams.append('limit', limit)
 
+    const base = (API_BASE_URL && API_BASE_URL.replace(/\/$/, '')) || LIVE_API_URL.replace(/\/$/, '')
     const queryString = queryParams.toString()
-    const economyApiUrl = `${API_BASE_URL}/api/economy/calendar${queryString ? '?' + queryString : ''}`
+    const economyApiUrl = `${base}/api/economy/calendar${queryString ? '?' + queryString : ''}`
 
     // Get client access token using AccountId
     const { token: accessToken, accountId: verifiedAccountId, error: tokenError } = await getClientToken(accountId)
@@ -245,3 +243,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// HEAD handler used by the client to warm up/auth-check without params
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 })
+}

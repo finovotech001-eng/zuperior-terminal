@@ -130,10 +130,11 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
         const s = String(rawT).toLowerCase()
         if (s.includes('buy')) type = 'Buy'
         else if (s.includes('sell')) type = 'Sell'
-        else type = 'Sell'
+        else type = 'Buy'
       }
     } else {
-      type = 'Sell'
+      // Default to 'Buy' to avoid flashing red on partial updates
+      type = 'Buy'
     }
 
     // Build a stable, unique id per row - always prefer ticket number if it exists
@@ -320,6 +321,35 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     // Increment sequence to invalidate stale listeners
     connectSeq.current += 1
     const seq = connectSeq.current
+
+    // Merge helper to prevent flicker due to partial updates
+    const mergeStableFields = (prev: SignalRPosition | undefined, incoming: SignalRPosition): SignalRPosition => {
+      if (!prev) return incoming
+      const merged: SignalRPosition = { ...prev, ...incoming }
+      // Preserve stable fields when incoming looks incomplete
+      if ((incoming.volume === 0 || Number.isNaN(incoming.volume)) && prev.volume > 0) {
+        merged.volume = prev.volume
+      }
+      if ((incoming.openPrice === 0 || !Number.isFinite(incoming.openPrice)) && prev.openPrice > 0) {
+        merged.openPrice = prev.openPrice
+      }
+      if (incoming.ticket === 0 && prev.ticket > 0) {
+        merged.ticket = prev.ticket
+      }
+      if ((!incoming.symbol || incoming.symbol.length === 0) && prev.symbol) {
+        merged.symbol = prev.symbol
+      }
+      if (incoming.type !== prev.type && (incoming.volume === 0 || incoming.openPrice === 0)) {
+        merged.type = prev.type
+      }
+      if (incoming.takeProfit === undefined && prev.takeProfit !== undefined) {
+        merged.takeProfit = prev.takeProfit
+      }
+      if (incoming.stopLoss === undefined && prev.stopLoss !== undefined) {
+        merged.stopLoss = prev.stopLoss
+      }
+      return merged
+    }
 
     const fetchSnapshot = async () => {
       try {
@@ -529,21 +559,34 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
             console.log('[Positions][SSE] Sample raw position:', arr[0])
           }
           
-          // Replace with the latest snapshot exactly as provided (no dedupe)
+          // Map snapshot and merge with any existing items to avoid zero/flip flicker
           const mapped = arr.map((item, i) => toPosition(item, i))
           
           // Fetch TP/SL from /api/Client/Positions and merge with positions
           if (token && mapped.length > 0) {
             fetchPositionsWithTP_SL(mapped, accId, token).then(updatedPositions => {
               if (mounted.current && seq === connectSeq.current) {
-                setPositions(updatedPositions)
+                setPositions(prev => {
+                  const prevByTicket = new Map<number, SignalRPosition>()
+                  for (const x of prev) if (x.ticket) prevByTicket.set(x.ticket, x)
+                  const merged = updatedPositions.map(p => mergeStableFields(prevByTicket.get(p.ticket), p))
+                  return merged
+                })
               }
             }).catch(() => {
-              // If TP/SL fetch fails, still use the mapped positions without TP/SL
-              setPositions(mapped)
+              // If TP/SL fetch fails, still merge with previous to prevent flicker
+              setPositions(prev => {
+                const prevByTicket = new Map<number, SignalRPosition>()
+                for (const x of prev) if (x.ticket) prevByTicket.set(x.ticket, x)
+                return mapped.map(p => mergeStableFields(prevByTicket.get(p.ticket), p))
+              })
             })
           } else {
-            setPositions(mapped)
+            setPositions(prev => {
+              const prevByTicket = new Map<number, SignalRPosition>()
+              for (const x of prev) if (x.ticket) prevByTicket.set(x.ticket, x)
+              return mapped.map(p => mergeStableFields(prevByTicket.get(p.ticket), p))
+            })
           }
           
           // Removed intrusive debug alert for first position received
@@ -562,7 +605,10 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
                 setPositions(prev => {
                   const byTicket = new Map<number, SignalRPosition>()
                   for (const x of prev) if (x.ticket) byTicket.set(x.ticket, x)
-                  if (updatedPosition.ticket) byTicket.set(updatedPosition.ticket, updatedPosition)
+                  if (updatedPosition.ticket) {
+                    const merged = mergeStableFields(byTicket.get(updatedPosition.ticket), updatedPosition)
+                    byTicket.set(updatedPosition.ticket, merged)
+                  }
                   return Array.from(byTicket.values())
                 })
               }
@@ -571,7 +617,10 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
               setPositions(prev => {
                 const byTicket = new Map<number, SignalRPosition>()
                 for (const x of prev) if (x.ticket) byTicket.set(x.ticket, x)
-                if (p.ticket) byTicket.set(p.ticket, p)
+                if (p.ticket) {
+                  const merged = mergeStableFields(byTicket.get(p.ticket), p)
+                  byTicket.set(p.ticket, merged)
+                }
                 return Array.from(byTicket.values())
               })
             })
@@ -579,7 +628,10 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
             setPositions(prev => {
               const byTicket = new Map<number, SignalRPosition>()
               for (const x of prev) if (x.ticket) byTicket.set(x.ticket, x)
-              if (p.ticket) byTicket.set(p.ticket, p)
+              if (p.ticket) {
+                const merged = mergeStableFields(byTicket.get(p.ticket), p)
+                byTicket.set(p.ticket, merged)
+              }
               return Array.from(byTicket.values())
             })
           }
