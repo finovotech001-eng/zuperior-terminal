@@ -90,11 +90,18 @@ if (json?.success === true && json?.data) {
   items = Array.isArray(json.data) ? json.data : []
 }
 
-// 5. Filter and map to Position format
+// 5. Filter and map to Position format - ONLY closed positions with profit/loss
 const validTrades = items.filter(item => {
   const orderId = item.OrderId ?? item.orderId ?? 0
   const symbol = item.Symbol || item.symbol || ''
-  return orderId > 0 || symbol.length > 0
+  const closePrice = item.ClosePrice ?? item.closePrice ?? 0
+  const openPrice = item.OpenPrice ?? item.openPrice ?? 0
+  const profit = item.Profit ?? item.profit ?? 0
+  
+  // Only show CLOSED positions with non-zero profit/loss
+  return orderId > 0 && symbol.length > 0 && 
+         Number(closePrice) > 0 && Number(openPrice) > 0 &&
+         Number(profit) !== 0
 })
 
 const mapped = validTrades.map(item => ({
@@ -148,7 +155,10 @@ UI Component (PositionsTable)
 ### 3. **Data Transformation**
 - **Postman**: Raw API response
 - **Our Code**: 
-  - Filters invalid trades (OrderId === 0 with empty Symbol)
+  - Filters to show ONLY closed positions (ClosePrice > 0 AND OpenPrice > 0)
+  - Filters out trades with zero profit (Profit !== 0) - only shows wins or losses
+  - Filters out invalid trades (OrderId === 0 with empty Symbol)
+  - Filters out open positions and pending orders
   - Maps API fields to Position interface
   - Handles different field name cases (OrderId vs orderId)
 
