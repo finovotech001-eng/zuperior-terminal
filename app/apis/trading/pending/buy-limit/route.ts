@@ -29,11 +29,31 @@ export async function POST(req: NextRequest) {
       if (!token) return NextResponse.json({ success: false, message: 'No access token received' }, { status: 502 })
     }
 
-    const url = `${API_BASE}/client/buy-limit`
-    const upstreamBody = { symbol: String(symbol), price: Number(price), volume: Number(volume), stopLoss: Number(stopLoss || 0), takeProfit: Number(takeProfit || 0), comment: comment ?? 'Buy Limit via web' }
+    // Convert volume to contract units (multiply by 100)
+    const scaledVolume = Math.round(Number(volume) * 100)
+
+    // Use unified /client/orders endpoint for all pending order types
+    // OrderType: 2 = Buy Limit, 3 = Sell Limit, 4 = Buy Stop, 5 = Sell Stop
+    const url = `${API_BASE}/client/orders`
+    const upstreamBody = { 
+      Login: parseInt(String(accountId), 10),
+      Symbol: String(symbol),
+      OrderType: 2, // 2 = Buy Limit
+      Price: Number(price), 
+      Volume: scaledVolume,
+      StopLoss: Number(stopLoss || 0), 
+      TakeProfit: Number(takeProfit || 0), 
+      Comment: comment ?? 'Buy Limit via web' 
+    }
+    
+    try { console.log('[buy-limit] request', { url, body: upstreamBody }) } catch {}
+    
     const upstream = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(upstreamBody) })
     const text = await upstream.text().catch(() => '')
     let data: any = null; try { data = text ? JSON.parse(text) : null } catch { data = text }
+    
+    try { console.log('[buy-limit] response', { status: upstream.status, data }) } catch {}
+    
     const payload = (data && typeof data === 'object') ? { ...data, debug: { url, req: upstreamBody, status: upstream.status } } : { success: upstream.ok, data, debug: { url, req: upstreamBody, status: upstream.status } }
     return NextResponse.json(payload, { status: upstream.status })
   } catch (e) {
