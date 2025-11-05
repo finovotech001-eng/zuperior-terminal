@@ -2118,7 +2118,7 @@ function TerminalContent() {
                 <ChartContainer 
                   symbol={activeTab?.symbol || "XAU/USD"}
                   className="h-full"
-                  chartType="tradingview" // Use "lightweight" for simpler chart
+                  chartType="tradingview-mt5" // switched to MT5-backed TradingView
                 />
               </div>
 

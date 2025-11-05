@@ -62,6 +62,7 @@ export { InstrumentTabs } from "./navigation/instrument-tabs"
 export { ChartContainer } from "./chart/chart-container"
 export { AdvancedChart } from "./chart/advanced-chart"
 export { LightweightChart } from "./chart/lightweight-chart"
+export { MT5TradingViewChart } from "./chart/mt5-tradingview-chart"
 export { DrawingToolbar } from "./chart/drawing-toolbar"
 export { ChartToolbar } from "./chart/chart-toolbar"
 export { TimeframeSelector } from "./chart/timeframe-selector"
@@ -76,4 +77,3 @@ export { ThemeProvider, useTheme } from "./theme-provider"
 
 // State Management
 export { Provider } from "jotai"
-

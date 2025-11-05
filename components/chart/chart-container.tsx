@@ -2,13 +2,14 @@
 
 import { AdvancedChart } from "./advanced-chart"
 import { LightweightChart } from "./lightweight-chart"
+import { MT5TradingViewChart } from "./mt5-tradingview-chart"
 
 export interface ChartContainerProps {
   symbol?: string
   interval?: string
   height?: number
   className?: string
-  chartType?: "tradingview" | "lightweight"
+  chartType?: "tradingview" | "lightweight" | "tradingview-mt5"
 }
 
 // Helper function to get descriptive name from symbol
@@ -44,6 +45,15 @@ export function ChartContainer({
   // Normalize symbol by removing slashes
   const normalizedSymbol = symbol.replace(/\//g, '')
 
+  if (chartType === "tradingview-mt5") {
+    return (
+      <MT5TradingViewChart
+        symbol={normalizedSymbol}
+        className={className}
+      />
+    )
+  }
+
   if (chartType === "lightweight") {
     return (
       <LightweightChart
@@ -61,4 +71,3 @@ export function ChartContainer({
     />
   )
 }
-
