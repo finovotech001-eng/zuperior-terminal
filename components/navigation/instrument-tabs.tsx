@@ -30,17 +30,12 @@ export interface InstrumentTabsProps extends React.HTMLAttributes<HTMLDivElement
 
 const categories = [
   { value: "favorites", label: "Favorites" },
-  { value: "most-traded", label: "Most traded" },
-  { value: "top-movers", label: "Top movers" },
-  { value: "majors", label: "Majors" },
-  { value: "metals", label: "Metals" },
-  { value: "crypto", label: "Crypto" },
-  { value: "indices", label: "Indices" },
+  { value: "all", label: "All instruments" },
+  { value: "forex", label: "Forex" },
   { value: "stocks", label: "Stocks" },
-  { value: "energy", label: "Energy" },
-  { value: "exotic", label: "Exotic" },
-  { value: "minors", label: "Minors" },
-  { value: "all", label: "All" },
+  { value: "crypto", label: "Crypto" },
+  { value: "commodities", label: "Commodities" },
+  { value: "indices", label: "Indices" },
 ]
 
 // Simplified Instrument List for Popover
@@ -80,24 +75,33 @@ const SimplifiedInstrumentList: React.FC<SimplifiedInstrumentListProps> = ({
 
   // Filter items based on search query and category
   const filteredItems = React.useMemo(() => {
-    let filtered = items
+    const normalizedQuery = searchQuery.toLowerCase().trim()
+    const isSearching = normalizedQuery !== ""
 
-    // Filter by category
-    if (category === "favorites") {
-      filtered = filtered.filter(item => item.isFavorite)
-    }
-    // Add more category filters as needed
+    return items.filter(item => {
+      const matchesSearch =
+        !isSearching ||
+        item.symbol.toLowerCase().includes(normalizedQuery) ||
+        item.description?.toLowerCase().includes(normalizedQuery) ||
+        getDescription(item.symbol).toLowerCase().includes(normalizedQuery)
 
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      filtered = filtered.filter(item => 
-        item.symbol.toLowerCase().includes(query) ||
-        getDescription(item.symbol).toLowerCase().includes(query)
-      )
-    }
+      // If searching and found a match, return immediately regardless of category filter
+      if (isSearching && matchesSearch) {
+        return true
+      }
 
-    return filtered
+      // If not searching, apply category filter
+      if (!isSearching) {
+        const matchesCategory =
+          category === "all" ||
+          (category === "favorites" && item.isFavorite) ||
+          (category !== "favorites" && item.category === category)
+
+        return matchesCategory
+      }
+
+      return false
+    })
   }, [items, category, searchQuery, getDescription])
 
   return (
