@@ -51,6 +51,8 @@ export class MT5SignalRDatafeed {
   private connected = false
   private subscriptions = new Map<string, { symbol: string; resolution: string }>()
   private lastBars = new Map<string, Bar>()
+  private clientToken: string | null = null
+  private accountId: string | null = null
 
   private tfMap(res: string): number {
     if (/^\d+$/.test(res)) return parseInt(res, 10)
@@ -63,8 +65,72 @@ export class MT5SignalRDatafeed {
   private async ensureConnection() {
     if (this.connected && this.connection) return
     const signalR = await import('@microsoft/signalr')
-    const { HubConnectionBuilder, LogLevel } = signalR
-    this.connection = new HubConnectionBuilder().withUrl(this.hubUrl).withAutomaticReconnect().configureLogging(LogLevel.Error).build()
+    const { HubConnectionBuilder, LogLevel, HttpClient, HttpResponse, HttpRequest } = signalR as any
+
+    // Try to fetch MT5 client token if missing
+    if (typeof window !== 'undefined') {
+      this.accountId = this.accountId || localStorage.getItem('accountId')
+      if (this.accountId && !this.clientToken) {
+        try {
+          const resp = await fetch('/apis/auth/mt5-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accountId: this.accountId }),
+          })
+          if (resp.ok) {
+            const data = await resp.json()
+            this.clientToken = data?.data?.accessToken || null
+          }
+        } catch {}
+      }
+    }
+
+    // Inject headers via proxy client during negotiate
+    class ProxyHttpClient extends (HttpClient as any) {
+      get(url: string, options?: typeof HttpRequest): Promise<typeof HttpResponse> {
+        if (url.includes('/negotiate')) {
+          const urlObj = new URL(url)
+          const proxyUrl = `/apis/signalr/negotiate?hub=chart&${urlObj.searchParams.toString()}`
+          const hdrs: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(thisOuter.clientToken ? { 'X-Client-Token': thisOuter.clientToken } : {}),
+            ...(thisOuter.accountId ? { 'X-Account-ID': thisOuter.accountId } : {}),
+            ...(options?.headers || {}),
+          }
+          return fetch(proxyUrl, { method: 'GET', headers: hdrs }).then(async (response) => {
+            const data = await response.json()
+            return new HttpResponse(response.status, response.statusText, JSON.stringify(data))
+          })
+        }
+        return fetch(url, { method: options?.method || 'GET', headers: options?.headers, body: options?.content }).then(async (response) => {
+          const content = await response.text()
+          return new HttpResponse(response.status, response.statusText, content)
+        })
+      }
+      post(url: string, options?: typeof HttpRequest): Promise<typeof HttpResponse> {
+        return fetch(url, { method: 'POST', headers: options?.headers, body: options?.content }).then(async (response) => {
+          const content = await response.text()
+          return new HttpResponse(response.status, response.statusText, content)
+        })
+      }
+      delete(url: string, options?: typeof HttpRequest): Promise<typeof HttpResponse> {
+        return fetch(url, { method: 'DELETE', headers: options?.headers, body: options?.content }).then(async (response) => {
+          const content = await response.text()
+          return new HttpResponse(response.status, response.statusText, content)
+        })
+      }
+      constructor(private thisOuter: MT5SignalRDatafeed) { super() }
+    }
+
+    this.connection = new HubConnectionBuilder()
+      .withUrl(this.hubUrl, {
+        httpClient: new (ProxyHttpClient as any)(this),
+        transport: (signalR as any).HttpTransportType.LongPolling,
+        withCredentials: false,
+      })
+      .withAutomaticReconnect()
+      .configureLogging(LogLevel.Error)
+      .build()
     await this.connection.start()
     this.connected = true
   }
@@ -238,4 +304,3 @@ export class MT5SignalRDatafeed {
     this.lastBars.delete(listenerGuid)
   }
 }
-

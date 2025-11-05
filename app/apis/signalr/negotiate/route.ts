@@ -27,15 +27,23 @@ export async function GET(request: NextRequest) {
     console.log('[SignalR Negotiate Proxy] Proxying to:', negotiateUrl);
 
     // Forward the negotiate request
+    // Collect optional auth headers from the incoming request or query params
+    const incomingHeaders = request.headers;
+    const clientToken = incomingHeaders.get('x-client-token') || searchParams.get('clientToken') || undefined;
+    const accountId = incomingHeaders.get('x-account-id') || searchParams.get('accountId') || undefined;
+    const managerToken = incomingHeaders.get('x-manager-token') || process.env.MANAGER_AUTH_TOKEN || undefined;
+
+    const forwardHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(incomingHeaders.get('authorization') ? { 'Authorization': incomingHeaders.get('authorization')! } : {}),
+      ...(clientToken ? { 'X-Client-Token': clientToken } : {}),
+      ...(accountId ? { 'X-Account-ID': accountId } : {}),
+      ...(managerToken ? { 'X-Manager-Token': managerToken } : {}),
+    };
+
     const response = await fetch(negotiateUrl, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        // Forward any authorization headers if present
-        ...(request.headers.get('authorization') && {
-          'Authorization': request.headers.get('authorization')!
-        }),
-      },
+      headers: forwardHeaders,
       cache: 'no-store',
     });
 
@@ -81,4 +89,3 @@ export async function OPTIONS() {
     },
   });
 }
-

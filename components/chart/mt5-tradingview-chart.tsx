@@ -148,7 +148,8 @@ export function MT5TradingViewChart({ symbol = "BTCUSD", interval = "1", classNa
         library_path: '/charting_library/',
         locale: 'en',
         disabled_features: ['use_localstorage_for_settings'],
-        enabled_features: ['study_templates'],
+        // Disable study_templates unless charts storage is configured
+        enabled_features: [],
         theme: 'dark',
         overrides: {
           'paneProperties.background': '#131722',
@@ -168,9 +169,73 @@ export function MT5TradingViewChart({ symbol = "BTCUSD", interval = "1", classNa
         try {
           if (!hubConnectedRef.current) {
             const signalR = await import('@microsoft/signalr')
-            const { HubConnectionBuilder, LogLevel } = signalR
+            const { HubConnectionBuilder, LogLevel, HttpClient, HttpResponse, HttpRequest } = signalR as any
+
+            // Try to get MT5 accountId from localStorage
+            const accountId = typeof window !== 'undefined' ? localStorage.getItem('accountId') : null
+
+            // Obtain MT5 client token via our auth API if possible
+            let clientToken: string | null = null
+            if (accountId) {
+              try {
+                const resp = await fetch('/apis/auth/mt5-login', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ accountId }),
+                })
+                if (resp.ok) {
+                  const data = await resp.json()
+                  clientToken = data?.data?.accessToken || null
+                }
+              } catch {}
+            }
+
+            // Proxy HTTP client to inject headers into negotiate
+            class ProxyHttpClient extends (HttpClient as any) {
+              get(url: string, options?: typeof HttpRequest): Promise<typeof HttpResponse> {
+                if (url.includes('/negotiate')) {
+                  const urlObj = new URL(url)
+                  const proxyUrl = `/apis/signalr/negotiate?hub=chart&${urlObj.searchParams.toString()}`
+                  const headers: Record<string, string> = {
+                    'Content-Type': 'application/json',
+                    ...(clientToken ? { 'X-Client-Token': clientToken } : {}),
+                    ...(accountId ? { 'X-Account-ID': accountId } : {}),
+                    ...(options?.headers || {}),
+                  }
+                  return fetch(proxyUrl, { method: 'GET', headers }).then(async (response) => {
+                    const data = await response.json()
+                    return new HttpResponse(response.status, response.statusText, JSON.stringify(data))
+                  })
+                }
+                return fetch(url, {
+                  method: options?.method || 'GET',
+                  headers: options?.headers,
+                  body: options?.content,
+                }).then(async (response) => {
+                  const content = await response.text()
+                  return new HttpResponse(response.status, response.statusText, content)
+                })
+              }
+              post(url: string, options?: typeof HttpRequest): Promise<typeof HttpResponse> {
+                return fetch(url, { method: 'POST', headers: options?.headers, body: options?.content }).then(async (response) => {
+                  const content = await response.text()
+                  return new HttpResponse(response.status, response.statusText, content)
+                })
+              }
+              delete(url: string, options?: typeof HttpRequest): Promise<typeof HttpResponse> {
+                return fetch(url, { method: 'DELETE', headers: options?.headers, body: options?.content }).then(async (response) => {
+                  const content = await response.text()
+                  return new HttpResponse(response.status, response.statusText, content)
+                })
+              }
+            }
+
             hubRef.current = new HubConnectionBuilder()
-              .withUrl(process.env.NEXT_PUBLIC_CHART_HUB_URL || 'http://localhost:5003/hubs/chart')
+              .withUrl(process.env.NEXT_PUBLIC_CHART_HUB_URL || 'http://localhost:5003/hubs/chart', {
+                httpClient: new ProxyHttpClient(),
+                transport: (signalR as any).HttpTransportType.LongPolling,
+                withCredentials: false,
+              })
               .withAutomaticReconnect()
               .configureLogging(LogLevel.Error)
               .build()
