@@ -156,7 +156,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
 
       {/* Volume */}
       {columns.find(c => c.key === "volume")?.visible && (
-        <div className="flex items-center price-font text-white/80">{position.volume}</div>
+        <div className="flex items-center price-font text-white/80">{position.volume.toFixed(2)}</div>
       )}
 
       {/* Open Price */}
