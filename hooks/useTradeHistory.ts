@@ -203,37 +203,25 @@ export function useTradeHistory({ accountId, enabled = true }: UseTradeHistoryOp
         items = json.data.data
       }
 
-      // Filter out invalid trades and show ONLY closed positions with non-zero profit
+      // Filter out invalid trades - server already filters for non-zero profit
       // A closed position must have:
       // 1. Valid OrderId > 0
       // 2. Non-empty Symbol
       // 3. Valid ClosePrice (not 0 or undefined) - this indicates the position is actually closed
-      // 4. Profit is NOT 0 (must be either profit > 0 or loss < 0)
       
       const validTrades = items.filter((item: any, index: number) => {
         const orderId = item.OrderId ?? item.orderId ?? item.DealId ?? item.dealId ?? 0
         const symbol = (item.Symbol || item.symbol || '').trim()
         const closePrice = item.ClosePrice ?? item.closePrice ?? item.PriceClose ?? item.priceClose ?? 0
         const openPrice = item.OpenPrice ?? item.openPrice ?? item.PriceOpen ?? item.priceOpen ?? 0
-        const profit = item.Profit ?? item.profit ?? item.PnL ?? item.pnl ?? 0
         
-        // STRICT FILTER: Only keep CLOSED positions with non-zero profit
+        // Basic validation for closed positions
         const hasValidOrderId = Number(orderId) > 0 && !isNaN(Number(orderId))
         const hasValidSymbol = symbol && symbol.length > 0
         const hasValidClosePrice = Number(closePrice) > 0 && !isNaN(Number(closePrice))
         const hasValidOpenPrice = Number(openPrice) > 0 && !isNaN(Number(openPrice))
-        const hasNonZeroProfit = Number(profit) !== 0 && !isNaN(Number(profit))
         
-        // Must have ALL requirements to be a valid CLOSED position with profit/loss
-        // This filters out:
-        // - Invalid entries with OrderId: 0
-        // - Empty symbols
-        // - Open positions (ClosePrice === 0 or undefined)
-        // - Pending orders
-        // - Trades with 0 profit (break-even trades)
-        const isClosedPosition = hasValidOrderId && hasValidSymbol && hasValidClosePrice && hasValidOpenPrice && hasNonZeroProfit
-        
-        return isClosedPosition
+        return hasValidOrderId && hasValidSymbol && hasValidClosePrice && hasValidOpenPrice
       })
       
       // Map to Position format with error handling

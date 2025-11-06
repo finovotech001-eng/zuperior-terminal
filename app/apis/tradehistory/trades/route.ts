@@ -89,8 +89,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Build query string with only accountId
-    const tradesApiUrl = `http://18.175.242.21:5003/api/client/tradehistory/trades?accountId=${accountId}`
+    // Get page parameter for pagination
+    const page = searchParams.get('page') || '1'
+    
+    // Build query string with accountId and page
+    const tradesApiUrl = `http://18.175.242.21:5003/api/client/tradehistory/trades?accountId=${accountId}&page=${page}`
 
     // Get client access token using AccountId
     const { token: accessToken, accountId: verifiedAccountId, error: tokenError } = await getClientToken(accountId)
@@ -101,136 +104,120 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Fetch trade history from external API with AccountId header and bearer token
-    // NOTE: In Postman, you might send AccountId as a query param AND/OR header
-    // This implementation sends it as both query param and header for compatibility
-    logger.info('Fetching trade history from external API', { 
-      url: tradesApiUrl, 
-      accountId: verifiedAccountId,
-      headers: {
-        Authorization: 'Bearer ***',
-        AccountId: verifiedAccountId,
+    // Fetch all pages of trade history
+    let allTrades: any[] = []
+    let currentPage = 1
+    let hasNextPage = true
+    let totalCount = 0
+    let totalPages = 0
+    
+    while (hasNextPage) {
+      const pageUrl = `http://18.175.242.21:5003/api/client/tradehistory/trades?accountId=${accountId}&page=${currentPage}`
+      
+      logger.info('Fetching trade history page from external API', { 
+        url: pageUrl, 
+        page: currentPage,
+        accountId: verifiedAccountId,
+        headers: {
+          Authorization: 'Bearer ***',
+          AccountId: verifiedAccountId,
+        }
+      })
+      
+      const tradesResponse = await fetch(pageUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'AccountId': verifiedAccountId,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+      })
+      
+      if (!tradesResponse.ok) {
+        const errorText = await tradesResponse.text().catch(() => 'No response body')
+        logger.error('Failed to fetch trade history page', { 
+          status: tradesResponse.status,
+          error: errorText.substring(0, 500),
+          url: pageUrl,
+          page: currentPage
+        })
+        break
       }
+      
+      const responseText = await tradesResponse.text()
+      let pageData: any
+      
+      try {
+        pageData = JSON.parse(responseText)
+      } catch (parseError) {
+        logger.error('Failed to parse JSON response for page', { 
+          error: parseError,
+          page: currentPage,
+          responsePreview: responseText.substring(0, 500)
+        })
+        break
+      }
+      
+      // Extract trades from this page
+      let pageTrades = []
+      if (Array.isArray(pageData)) {
+        pageTrades = pageData
+      } else if (pageData && typeof pageData === 'object') {
+        pageTrades = pageData.Items || pageData.Data || pageData.data || pageData.trades || pageData.items || pageData.results || pageData.Results || []
+      }
+      
+      // Add trades from this page to the collection
+      allTrades = allTrades.concat(pageTrades)
+      
+      // Update pagination info
+      totalCount = pageData.TotalCount || pageData.totalCount || pageData.total || pageData.Total || 0
+      totalPages = pageData.TotalPages || pageData.totalPages || Math.ceil(totalCount / (pageData.PageSize || 50))
+      hasNextPage = pageData.HasNextPage !== undefined ? pageData.HasNextPage : false
+      
+      logger.info(`Fetched page ${currentPage}: ${pageTrades.length} trades, hasNextPage: ${hasNextPage}`)
+      
+      // Move to next page
+      currentPage++
+      
+      // Safety check to prevent infinite loops
+      if (currentPage > 100) {
+        logger.warn('Reached maximum page limit (100), stopping pagination')
+        break
+      }
+    }
+    
+    logger.info(`Fetched total ${allTrades.length} trades from ${currentPage - 1} pages`)
+
+    // Filter trades to only include those with non-zero profit
+    const tradesWithProfit = allTrades.filter((trade: any) => {
+      const profit = trade.Profit ?? trade.profit ?? trade.PnL ?? trade.pnl ?? 0
+      return Number(profit) !== 0 && !isNaN(Number(profit))
     })
     
-    const tradesResponse = await fetch(tradesApiUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'AccountId': verifiedAccountId,
-        'Content-Type': 'application/json',
-      },
-      cache: 'no-store',
-    })
-
-    // Log response status and headers for debugging
-    logger.info('Trade history API response', {
-      status: tradesResponse.status,
-      statusText: tradesResponse.statusText,
-      headers: Object.fromEntries(tradesResponse.headers.entries()),
-    })
-
-    if (!tradesResponse.ok) {
-      const errorText = await tradesResponse.text().catch(() => 'No response body')
-      logger.error('Failed to fetch trade history', { 
-        status: tradesResponse.status,
-        error: errorText.substring(0, 500),
-        url: tradesApiUrl
-      })
-      return NextResponse.json(
-        { 
-          success: false, 
-          message: 'Failed to fetch trade history from external API',
-          error: errorText.substring(0, 200),
-          status: tradesResponse.status
-        },
-        { status: tradesResponse.status }
-      )
-    }
-
-    // Get raw response text first for debugging
-    const responseText = await tradesResponse.text()
-    logger.info('Trade history API raw response', {
-      length: responseText.length,
-      preview: responseText.substring(0, 500),
-    })
-
-    let data: any
-    try {
-      data = JSON.parse(responseText)
-    } catch (parseError) {
-      logger.error('Failed to parse JSON response', { 
-        error: parseError,
-        responsePreview: responseText.substring(0, 500)
-      })
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Invalid JSON response from API',
-          rawResponse: responseText.substring(0, 200)
-        },
-        { status: 500 }
-      )
-    }
-
-    // Log parsed data structure
-    logger.info('Trade history API parsed response', {
-      type: typeof data,
-      isArray: Array.isArray(data),
-      keys: data && typeof data === 'object' ? Object.keys(data) : null,
-      dataLength: Array.isArray(data) ? data.length : 'N/A',
-      sample: Array.isArray(data) && data.length > 0 ? data[0] : data
-    })
-
-    // Handle different response formats from the external API
-    // Based on the API response, it returns { Items: [...], Page: 1, PageSize: 50, TotalCount: 50, etc. }
-    let trades = []
-    if (Array.isArray(data)) {
-      trades = data
-      logger.info(`Found direct array with ${trades.length} trades`)
-    } else if (data && typeof data === 'object') {
-      // Try various common response formats - API returns Items array (PascalCase)
-      trades = data.Items || data.Data || data.data || data.trades || data.items || data.results || data.Results || []
-      logger.info(`Extracted trades from object: ${trades.length}`, {
-        source: data.Items ? 'Items' :
-                data.Data ? 'Data' : 
-                data.data ? 'data' : 
-                data.trades ? 'trades' : 
-                data.items ? 'items' : 
-                data.results ? 'results' : 
-                data.Results ? 'Results' : 'none',
-        allKeys: Object.keys(data)
-      })
-      // If still not an array, wrap it
-      if (!Array.isArray(trades)) {
-        logger.warn('Trades is not an array', { trades, type: typeof trades, allKeys: Object.keys(data || {}) })
-        trades = []
-      }
-    } else {
-      logger.warn('Unexpected response format', { data, type: typeof data })
-      trades = []
-    }
-
-    logger.info(`Fetched ${trades.length} trades from external API`)
+    logger.info(`Filtered ${tradesWithProfit.length} trades with non-zero profit from ${allTrades.length} total trades`)
     
-    if (trades.length > 0) {
-      logger.info('Sample trade structure', { 
-        sample: trades[0],
-        keys: Object.keys(trades[0])
+    if (tradesWithProfit.length > 0) {
+      logger.info('Sample filtered trade structure', { 
+        sample: tradesWithProfit[0],
+        keys: Object.keys(tradesWithProfit[0])
       })
     }
 
-    // Return in a consistent format with pagination info
+    // Return filtered trades with aggregated pagination info
     return NextResponse.json({
       success: true,
-      data: trades,
+      data: tradesWithProfit,
       pagination: {
-        page: data.Page || data.page || 1,
-        pageSize: data.PageSize || data.pageSize || 50,
-        totalCount: data.TotalCount || data.totalCount || data.total || data.Total || trades.length,
-        totalPages: data.TotalPages || data.totalPages || Math.ceil((data.TotalCount || trades.length) / (data.PageSize || 50)),
-        hasNextPage: data.HasNextPage !== undefined ? data.HasNextPage : (data.hasNextPage !== undefined ? data.hasNextPage : false),
-        hasPreviousPage: data.HasPreviousPage !== undefined ? data.HasPreviousPage : (data.hasPreviousPage !== undefined ? data.hasPreviousPage : false),
+        page: 1, // All data is now on one page
+        pageSize: tradesWithProfit.length,
+        totalCount: tradesWithProfit.length,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false,
+        originalTotalCount: totalCount,
+        originalTotalPages: totalPages,
+        pagesFetched: currentPage - 1
       },
     }, {
       headers: {
