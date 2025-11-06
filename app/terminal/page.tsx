@@ -595,10 +595,12 @@ function TerminalContent() {
           if (data.success && data.data.accounts) {
             setMt5Accounts(data.data.accounts);
 
-            // If no account is selected, use server default if present, else first
-            if (!currentAccountId && data.data.accounts.length > 0) {
-              const serverDefault = data.data.defaultAccountId as string | undefined;
-              setCurrentAccountId(serverDefault || data.data.accounts[0].accountId);
+            // Always honor server default on load/refresh. If absent, fallback to first account
+            const serverDefault = data.data.defaultAccountId as string | undefined;
+            if (serverDefault) {
+              setCurrentAccountId(serverDefault);
+            } else if (!currentAccountId && data.data.accounts.length > 0) {
+              setCurrentAccountId(data.data.accounts[0].accountId);
             }
           }
         }
