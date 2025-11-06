@@ -9,6 +9,10 @@ const PUBLIC_PATHS = [
   '/apis/auth/login', // allow login
   '/apis/auth/sso-login', // allow SSO auto-login from CRM
   '/apis/auth/register', // allow registration
+  '/apis/chart', // allow chart data
+  '/apis/time', // allow time endpoint
+  '/charting_library', // allow TradingView library
+  '/datafeeds', // allow datafeeds
   '/_next', '/favicon.ico'
 ];
 

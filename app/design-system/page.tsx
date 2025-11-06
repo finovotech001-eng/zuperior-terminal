@@ -57,11 +57,7 @@ import { Header } from "@/components/navigation/header"
 import { Sidebar } from "@/components/navigation/sidebar"
 import { InstrumentTabs } from "@/components/navigation/instrument-tabs"
 
-// Chart Components
-import { ChartContainer } from "@/components/chart/chart-container"
-import { DrawingToolbar } from "@/components/chart/drawing-toolbar"
-import { ChartToolbar } from "@/components/chart/chart-toolbar"
-import { TimeframeSelector } from "@/components/chart/timeframe-selector"
+
 
 import { useSetAtom } from "jotai"
 import { instrumentsAtom } from "@/lib/store"
@@ -967,65 +963,7 @@ export default function DesignSystemPage() {
 
         <Separator />
 
-        {/* Chart Components */}
-        <ComponentSection
-          title="Enterprise Trading Chart"
-          description="Professional Lightweight Charts with full drawing tools and controls, styled perfectly with Zuperior branding"
-        >
-          <Card>
-            <CardHeader>
-              <CardTitle>Professional Trading Chart - Exness Style</CardTitle>
-              <CardDescription>
-                TradingView Lightweight Charts with exact Exness layout. Features: Compact top bar with symbol/price info and zoom controls, Left vertical toolbar with drawing tools (trendlines, horizontal lines, shapes, text), Clean candlestick chart (no volume), Bottom timeframe selector (1D to All) with smooth animations. Perfectly integrated with Zuperior design system: Dark background (#01040D), Success Green (#16A34A), Danger Red (#EF4444), Purple crosshair (#8B5CF6), sans-serif typography.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <ChartContainer symbol="EURUSD" height={700} className="w-full" />
-            </CardContent>
-          </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Bitcoin Chart</CardTitle>
-                <CardDescription>Cryptocurrency example</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ChartContainer symbol="BTCUSD" interval="60" height={400} className="w-full" />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Gold Chart</CardTitle>
-                <CardDescription>Commodities example</CardDescription>
-              </CardHeader>
-              <CardContent className="p-0">
-                <ChartContainer symbol="OANDA:XAUUSD" interval="240" height={400} className="w-full" />
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Legacy Toolbars for reference */}
-          <div className="mt-8 space-y-4">
-            <ShowcaseCard title="Chart Toolbars" description="Legacy toolbar components">
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Drawing Toolbar</p>
-                  <DrawingToolbar />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Chart Controls</p>
-                  <ChartToolbar />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Timeframe Selector</p>
-                  <TimeframeSelector />
-                </div>
-              </div>
-            </ShowcaseCard>
-          </div>
-        </ComponentSection>
 
         {/* Footer */}
         <div className="pt-8 pb-4 text-center text-sm text-muted-foreground">

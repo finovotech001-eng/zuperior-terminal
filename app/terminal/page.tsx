@@ -37,6 +37,7 @@ import { useInterestRates } from "@/hooks/useInterestRates"
 import { useEconomicNews } from "@/hooks/useEconomicNews"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ChartContainer } from "@/components/chart/chart-container"
+
 import { PositionsTable, Position } from "@/components/trading/positions-table"
 import { OrderPanel, OrderData } from "@/components/trading/order-panel"
 import { SettingsPanel } from "@/components/trading/settings-panel"
@@ -2118,9 +2119,8 @@ function TerminalContent() {
               {/* Chart Area */}
               <div className="flex-1 overflow-hidden min-h-0">
                 <ChartContainer 
-                  symbol={activeTab?.symbol || "XAU/USD"}
+                  symbol={activeTab?.symbol || "BTCUSD"}
                   className="h-full"
-                  chartType="tradingview-mt5" // switched to MT5-backed TradingView
                 />
               </div>
 
