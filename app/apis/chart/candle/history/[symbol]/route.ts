@@ -21,7 +21,7 @@ export async function GET(
     const { symbol } = await context.params
     const { searchParams } = new URL(request.url)
     const timeframe = searchParams.get('timeframe') || '1'
-    const count = searchParams.get('count') || '100'
+    const count = searchParams.get('count') || '500'
     const accountId = searchParams.get('accountId')
 
     // Obtain access token for upstream if possible

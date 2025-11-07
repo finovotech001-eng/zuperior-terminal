@@ -17,6 +17,16 @@
     }
 
     _bindHandlers() {
+      const toMs = (t) => {
+        if (t == null) return NaN;
+        const n = typeof t === 'string' && /^\d+$/.test(t) ? Number(t) : t;
+        if (typeof n === 'number') {
+          // if seconds (10 digits), convert to ms
+          return n < 1e12 ? n * 1000 : n;
+        }
+        const d = new Date(t);
+        return d.getTime();
+      };
       this._onHistoricalCandles = (msg) => {
         try {
           const payload = Array.isArray(msg) ? { candles: msg } : msg || {};
@@ -33,7 +43,7 @@
 
           const candles = Array.isArray(payload.candles) ? payload.candles : (Array.isArray(payload.Candles) ? payload.Candles : []);
           const bars = candles.map(c => ({
-            time: new Date(c.time).getTime(),
+            time: toMs(c.time),
             open: +c.open,
             high: +c.high,
             low: +c.low,
@@ -58,7 +68,7 @@
           if (guidEntries.length === 0) return;
 
           const bar = {
-            time: new Date(payload.time).getTime(),
+            time: toMs(payload.time),
             open: +payload.open,
             high: +payload.high,
             low: +payload.low,
@@ -141,7 +151,7 @@
         }
       }
       this._connection = new global.signalR.HubConnectionBuilder()
-        .withUrl(this.hubUrl, { httpClient: new ProxyHttpClient() })
+        .withUrl(this.hubUrl, { httpClient: new ProxyHttpClient(), withCredentials: false, transport: global.signalR.HttpTransportType.LongPolling })
         .withAutomaticReconnect()
         .build();
 
@@ -204,10 +214,27 @@
     }
 
     async getBars(symbolInfo, resolution, periodParams, onResult, onError) {
+      // Prioritize HTTP fallback for fastest initial render
+      if (this._fallback && typeof this._fallback.getBars === 'function') {
+        try {
+          return this._fallback.getBars(symbolInfo, resolution, periodParams, onResult, onError);
+        } catch (e) {
+          console.warn('[SignalRDatafeed] HTTP fallback getBars failed, attempting SignalR', e);
+        }
+      }
+
       try {
         await this._ensureConnection();
         const tf = this._tf(resolution);
-        const count = 500;
+        // Dynamic count: default 500, scale to viewport
+        const DEFAULT_COUNT = 500;
+        const tfMin = parseInt(tf) || 1;
+        const rangeSec = (periodParams.to && periodParams.from) ? Math.max(0, (periodParams.to - periodParams.from)) : 0;
+        let count = DEFAULT_COUNT;
+        if (rangeSec > 0) {
+          const est = Math.ceil(rangeSec / (tfMin * 60));
+          count = Math.max(DEFAULT_COUNT, Math.min(est + 50, 5000));
+        }
 
         const key = `${symbolInfo.name}|${tf}`;
         const barsPromise = new Promise((resolve, reject) => {
@@ -217,7 +244,7 @@
               this._pendingHistoryResolvers.delete(key);
               reject(new Error('HistoricalCandles timeout'));
             }
-          }, 15000);
+          }, 8000);
         });
 
         await this._connection.invoke('GetHistoricalCandles', symbolInfo.name, parseInt(tf, 10), count);
@@ -254,8 +281,13 @@
       const sub = this._subscribers.get(listenerGuid);
       this._subscribers.delete(listenerGuid);
       this._lastBars.delete(listenerGuid);
-      // Optional: if hub supports it, invoke an Unsubscribe
-      // await this._connection.invoke('UnsubscribeFromCandles', sub.symbol, sub.tf)
+      try {
+        if (this._connection && this._connected && sub && typeof this._connection.invoke === 'function') {
+          await this._connection.invoke('UnsubscribeFromCandles', sub.symbol, sub.tf);
+        }
+      } catch (e) {
+        // ignore if hub doesn't support explicit unsubscribe
+      }
     }
 
     getServerTime(cb){ cb(Math.floor(Date.now()/1000)); }

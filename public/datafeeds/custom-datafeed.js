@@ -104,8 +104,22 @@ class CustomDatafeed {
     async getBars(symbolInfo, resolution, periodParams, onResult, onError) {
         const { from, to, firstDataRequest } = periodParams;
         const timeframe = this.getTimeframe(resolution);
-        const count = firstDataRequest ? 100 : 500;
+        // Dynamic count: default 500, scale to viewport if available
+        const DEFAULT_COUNT = 500;
+        const tfMin = parseInt(timeframe) || 1; // minutes
+        const rangeSec = (to && from) ? Math.max(0, (to - from)) : 0; // seconds
+        let count = DEFAULT_COUNT;
+        if (rangeSec > 0) {
+            const est = Math.ceil(rangeSec / (tfMin * 60));
+            count = Math.max(DEFAULT_COUNT, Math.min(est + 50, 5000));
+        }
         try {
+            const toMs = (t) => {
+                if (t == null) return NaN;
+                const n = typeof t === 'string' && /^\d+$/.test(t) ? Number(t) : t;
+                if (typeof n === 'number') { return n < 1e12 ? n * 1000 : n; }
+                const d = new Date(t); return d.getTime();
+            };
             // Try multiple symbol variants and URL shapes to match backend
             const baseSymbol = symbolInfo.name;
             const candidatesSymbols = /m$/.test(baseSymbol) ? [baseSymbol, baseSymbol.replace(/m$/, '')] : [baseSymbol, baseSymbol + 'm'];
@@ -127,7 +141,7 @@ class CustomDatafeed {
             if (!Array.isArray(data) || data.length === 0) return onResult([], { noData: true });
             const tfMs = parseInt(timeframe) * 60 * 1000;
             let bars = data.map(c => ({
-                time: Math.floor(new Date(c.time).getTime() / tfMs) * tfMs,
+                time: Math.floor(toMs(c.time) / tfMs) * tfMs,
                 open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +(c.volume || 0)
             })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close)).sort((a,b)=>a.time-b.time);
 
@@ -159,7 +173,7 @@ class CustomDatafeed {
                     }
                     if (!one) throw new Error('1m fetch failed');
                     const oneBars = one.map(c=>({
-                        time: Math.floor(new Date(c.time).getTime() / (60*1000)) * 60*1000,
+                        time: Math.floor(toMs(c.time) / (60*1000)) * 60*1000,
                         open:+c.open, high:+c.high, low:+c.low, close:+c.close, volume:+(c.volume||0)
                     })).filter(b=>Number.isFinite(b.time)&&Number.isFinite(b.close)).sort((a,b)=>a.time-b.time);
                     const bucketMs = tfInt*60*1000; const map=new Map();
