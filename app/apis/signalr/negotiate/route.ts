@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getSession } from '@/lib/session';
+import { prisma } from '@/lib/db';
 
 /**
  * Proxy endpoint for SignalR negotiate requests to avoid CORS issues
@@ -29,9 +31,40 @@ export async function GET(request: NextRequest) {
     // Forward the negotiate request
     // Collect optional auth headers from the incoming request or query params
     const incomingHeaders = request.headers;
-    const clientToken = incomingHeaders.get('x-client-token') || searchParams.get('clientToken') || undefined;
-    const accountId = incomingHeaders.get('x-account-id') || searchParams.get('accountId') || undefined;
-    const managerToken = incomingHeaders.get('x-manager-token') || process.env.MANAGER_AUTH_TOKEN || undefined;
+    let clientToken = incomingHeaders.get('x-client-token') || searchParams.get('clientToken') || undefined;
+    let accountId = incomingHeaders.get('x-account-id') || searchParams.get('accountId') || undefined;
+    let managerToken = incomingHeaders.get('x-manager-token') || process.env.MANAGER_AUTH_TOKEN || undefined;
+
+    // If client token not provided, try to obtain a client access token using the logged-in user's MT5 account
+    if (!clientToken) {
+      try {
+        const session = await getSession();
+        if (session?.userId) {
+          let acct: { accountId: string; password: string | null } | null = null;
+          if (accountId) {
+            acct = await prisma.mT5Account.findFirst({ where: { userId: session.userId, accountId: String(accountId) }, select: { accountId: true, password: true } })
+              || await prisma.mT5Account.findFirst({ where: { accountId: String(accountId) }, select: { accountId: true, password: true } });
+          } else {
+            acct = await prisma.mT5Account.findFirst({ where: { userId: session.userId }, select: { accountId: true, password: true } });
+          }
+          if (acct?.password) {
+            const RAW_BASE = (process.env.MT5_API_BASE || process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
+            const API_BASE = RAW_BASE.endsWith('/api') ? RAW_BASE : `${RAW_BASE}/api`;
+            const loginRes = await fetch(`${API_BASE}/client/ClientAuth/login`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              cache: 'no-store',
+              body: JSON.stringify({ AccountId: parseInt(acct.accountId, 10), Password: acct.password, DeviceId: `web_sigr_${Date.now()}`, DeviceType: 'web' })
+            });
+            if (loginRes.ok) {
+              const loginJson = await loginRes.json().catch(() => ({} as any));
+              clientToken = loginJson?.accessToken || loginJson?.AccessToken || loginJson?.Token || undefined;
+              accountId = acct.accountId;
+            }
+          }
+        }
+      } catch {}
+    }
 
     const forwardHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -88,4 +121,15 @@ export async function OPTIONS() {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     },
   });
+}
+
+// Support POST negotiate (some SignalR clients POST negotiate)
+export async function POST(request: NextRequest) {
+  try {
+    // Reuse GET logic by converting POST to GET-style handling (no body needed for negotiate)
+    return GET(request)
+  } catch (error) {
+    console.error('[SignalR Negotiate Proxy][POST] Exception:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
 }

@@ -1,214 +1,266 @@
-// SignalR-based TradingView Datafeed with HTTP fallback
-class SignalRDatafeed {
-    constructor(wsBaseUrl = 'http://localhost:3000', httpFallback = null) {
-        this.wsUrl = wsBaseUrl;
-        this.httpFallback = httpFallback;
-        this.connection = null;
-        this.subscribers = {};
-        this.lastBars = {};
-        this.isConnected = false;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
-        
-        this.initSignalR();
+// SignalR Datafeed for TradingView Charting Library
+// Matches tradingview-chart project's implementation
+(function (global) {
+  class SignalRDatafeed {
+    constructor(baseUrl = 'http://localhost:3000', fallbackDatafeed = null, options = {}) {
+      this.baseUrl = baseUrl.replace(/\/$/, '');
+      this.hubUrl = `${this.baseUrl}/hubs/chart`;
+      this._connection = null;
+      this._connected = false;
+      this._connectPromise = null;
+      this._pendingHistoryResolvers = new Map(); // key: symbol|tf -> {resolve, reject}
+      this._subscribers = new Map(); // guid -> {symbol, tf, onTick}
+      this._lastBars = new Map();
+      this._fallback = fallbackDatafeed || null;
+      this._accountId = options?.accountId || null;
+      this._bindHandlers();
     }
 
-    async initSignalR() {
+    _bindHandlers() {
+      this._onHistoricalCandles = (msg) => {
         try {
-            this.connection = new signalR.HubConnectionBuilder()
-                .withUrl(`${this.wsUrl}/hubs/chart`)
-                .withAutomaticReconnect()
-                .build();
+          const payload = Array.isArray(msg) ? { candles: msg } : msg || {};
+          const symbol = payload.symbol || payload.Symbol || payload?.candles?.[0]?.symbol || '';
+          const tf = payload.timeframe || payload.Timeframe || payload.timeFrame || 1;
+          const key = `${symbol}|${tf}`;
+          let resolver = this._pendingHistoryResolvers.get(key);
+          if (!resolver) {
+            const entries = Array.from(this._pendingHistoryResolvers.entries());
+            if (entries.length === 1) resolver = entries[0][1];
+          }
+          if (!resolver) return;
+          for (const [k] of this._pendingHistoryResolvers) this._pendingHistoryResolvers.delete(k);
 
-            this.connection.on('CandleUpdate', (data) => {
-                this.handleCandleUpdate(data);
-            });
+          const candles = Array.isArray(payload.candles) ? payload.candles : (Array.isArray(payload.Candles) ? payload.Candles : []);
+          const bars = candles.map(c => ({
+            time: new Date(c.time).getTime(),
+            open: +c.open,
+            high: +c.high,
+            low: +c.low,
+            close: +c.close,
+            volume: +(c.volume ?? c.tickVolume ?? 0),
+          })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close))
+            .sort((a, b) => a.time - b.time);
 
-            this.connection.onreconnecting(() => {
-                console.log('[SignalR]: Reconnecting...');
-                this.isConnected = false;
-            });
-
-            this.connection.onreconnected(() => {
-                console.log('[SignalR]: Reconnected');
-                this.isConnected = true;
-                this.reconnectAttempts = 0;
-            });
-
-            this.connection.onclose(() => {
-                console.log('[SignalR]: Connection closed');
-                this.isConnected = false;
-            });
-
-            await this.connection.start();
-            this.isConnected = true;
-            console.log('[SignalR]: Connected successfully');
-        } catch (error) {
-            console.error('[SignalR]: Connection failed:', error);
-            this.isConnected = false;
+          resolver.resolve(bars);
+        } catch (e) {
+          console.error('[SignalRDatafeed] historical handler error', e);
         }
-    }
+      };
 
-    handleCandleUpdate(data) {
-        // Handle real-time candle updates from SignalR
-        Object.keys(this.subscribers).forEach(guid => {
-            const subscriber = this.subscribers[guid];
-            if (subscriber && subscriber.symbolInfo.name === data.symbol) {
-                const bar = {
-                    time: new Date(data.time).getTime(),
-                    open: parseFloat(data.open),
-                    high: parseFloat(data.high),
-                    low: parseFloat(data.low),
-                    close: parseFloat(data.close),
-                    volume: parseFloat(data.volume || 0)
-                };
-                
-                this.lastBars[guid] = bar;
-                subscriber.onTick(bar);
+      this._onCandleUpdate = (msg) => {
+        try {
+          const payload = msg.candle || msg.Candle || msg;
+          const symbol = msg.symbol || msg.Symbol || payload.symbol || '';
+          const tf = msg.timeframe || msg.Timeframe || msg.timeFrame || 1;
+          const guidEntries = Array.from(this._subscribers.entries())
+            .filter(([, s]) => s.symbol === symbol && String(s.tf) === String(tf));
+          if (guidEntries.length === 0) return;
+
+          const bar = {
+            time: new Date(payload.time).getTime(),
+            open: +payload.open,
+            high: +payload.high,
+            low: +payload.low,
+            close: +payload.close,
+            volume: +(payload.volume ?? payload.tickVolume ?? 0),
+          };
+          for (const [guid, sub] of guidEntries) {
+            const prev = this._lastBars.get(guid);
+            if (!prev || bar.time > prev.time) {
+              this._lastBars.set(guid, bar);
+              sub.onTick(bar);
+            } else {
+              const merged = { ...prev };
+              merged.high = Math.max(merged.high, bar.high, bar.close);
+              merged.low = Math.min(merged.low, bar.low, bar.close);
+              merged.close = bar.close;
+              merged.volume = Math.max(merged.volume || 0, bar.volume || 0);
+              this._lastBars.set(guid, merged);
+              sub.onTick(merged);
             }
-        });
+          }
+        } catch (e) {
+          console.error('[SignalRDatafeed] update handler error', e);
+        }
+      };
     }
 
-    // Delegate to HTTP fallback for configuration
-    onReady(callback) {
-        if (this.httpFallback) {
-            return this.httpFallback.onReady(callback);
+    async _ensureConnection() {
+      if (this._connected) return;
+      if (this._connectPromise) return this._connectPromise;
+      if (!global.signalR || !global.signalR.HubConnectionBuilder) {
+        throw new Error('SignalR client not loaded. Include @microsoft/signalr script.');
+      }
+      console.log('[SignalRDatafeed] connecting to', this.hubUrl);
+      // Proxy HttpClient to route negotiate through our Next.js API to avoid CORS
+      const HttpClient = global.signalR.HttpClient;
+      class ProxyHttpClient extends HttpClient {
+        async get(url, options) {
+          try {
+            if (url.includes('/negotiate')) {
+              const urlObj = new URL(url);
+              const qp = urlObj.searchParams.toString();
+              const extra = self._accountId ? `&accountId=${encodeURIComponent(self._accountId)}` : '';
+              const proxyUrl = `/apis/signalr/negotiate?hub=chart&${qp}${extra}`;
+              const res = await fetch(proxyUrl, { method: 'GET', headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) } });
+              const text = await res.text();
+              return new global.signalR.HttpResponse(res.status, res.statusText, text);
+            }
+          } catch (e) {
+            console.warn('[SignalRDatafeed] negotiate proxy failed, falling back direct', e);
+          }
+          const res = await fetch(url, { method: 'GET', headers: options?.headers });
+          const text = await res.text();
+          return new global.signalR.HttpResponse(res.status, res.statusText, text);
         }
-        
-        setTimeout(() => {
-            callback({
-                supported_resolutions: ['1', '3', '5', '15', '30', '60', '120', '240', '360', '480', 'D', 'W', 'M'],
-                supports_marks: false,
-                supports_timescale_marks: false,
-                supports_time: true,
-                supports_search: true,
-                supports_group_request: false,
-            });
-        }, 0);
+        async post(url, options) {
+          try {
+            if (url.includes('/negotiate')) {
+              const urlObj = new URL(url);
+              const qp = urlObj.searchParams.toString();
+              const extra = (typeof self._accountId !== 'undefined' && self._accountId !== null)
+                ? `&accountId=${encodeURIComponent(self._accountId)}`
+                : '';
+              const proxyUrl = `/apis/signalr/negotiate?hub=chart&${qp}${extra}`;
+              const res = await fetch(proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) }, body: options?.content });
+              const text = await res.text();
+              return new global.signalR.HttpResponse(res.status, res.statusText, text);
+            }
+          } catch (e) {
+            console.warn('[SignalRDatafeed] negotiate proxy failed (POST), falling back direct', e);
+          }
+          const res = await fetch(url, { method: 'POST', headers: options?.headers, body: options?.content });
+          const text = await res.text();
+          return new global.signalR.HttpResponse(res.status, res.statusText, text);
+        }
+        async send(request) {
+          const res = await fetch(request.url, { method: request.method || 'GET', headers: request.headers, body: request.content });
+          const text = await res.text();
+          return new global.signalR.HttpResponse(res.status, res.statusText, text);
+        }
+      }
+      this._connection = new global.signalR.HubConnectionBuilder()
+        .withUrl(this.hubUrl, { httpClient: new ProxyHttpClient() })
+        .withAutomaticReconnect()
+        .build();
+
+      this._connection.on('HistoricalCandles', this._onHistoricalCandles);
+      this._connection.on('CandleUpdate', this._onCandleUpdate);
+
+      this._connectPromise = this._connection.start()
+        .then(() => { this._connected = true; console.log('[SignalRDatafeed] connected'); })
+        .catch((e) => { console.error('[SignalRDatafeed] connect error', e); this._connectPromise = null; throw e; });
+      return this._connectPromise;
+    }
+
+    onReady(cb) {
+      setTimeout(() => cb({
+        supported_resolutions: ['1','3','5','15','30','60','120','240','360','480','D','W','M'],
+        supports_marks: false,
+        supports_timescale_marks: false,
+        supports_time: true,
+        supports_search: true,
+        supports_group_request: false,
+      }), 0);
     }
 
     searchSymbols(userInput, exchange, symbolType, onResult) {
-        if (this.httpFallback) {
-            return this.httpFallback.searchSymbols(userInput, exchange, symbolType, onResult);
-        }
-        
-        // Fallback symbol list
-        const symbols = [
-            { symbol: 'BTCUSD', full_name: 'BTCUSD', description: 'Bitcoin vs US Dollar', exchange: 'MT5', type: 'crypto' },
-            { symbol: 'ETHUSD', full_name: 'ETHUSD', description: 'Ethereum vs US Dollar', exchange: 'MT5', type: 'crypto' },
-            { symbol: 'XAUUSD', full_name: 'XAUUSD', description: 'Gold vs US Dollar', exchange: 'MT5', type: 'commodity' },
-            { symbol: 'EURUSD', full_name: 'EURUSD', description: 'Euro vs US Dollar', exchange: 'MT5', type: 'forex' },
-        ];
-        
-        const filtered = symbols.filter(s => 
-            s.symbol.toLowerCase().includes(userInput.toLowerCase()) ||
-            s.description.toLowerCase().includes(userInput.toLowerCase())
-        );
-        
-        onResult(filtered);
+      const base = [
+        { symbol: 'BTCUSD', full_name: 'BTCUSD', description: 'Bitcoin vs US Dollar', exchange: 'MT5', type: 'crypto' },
+        { symbol: 'BTCUSDm', full_name: 'BTCUSDm', description: 'BTCUSD (m)', exchange: 'MT5', type: 'crypto' },
+        { symbol: 'ETHUSD', full_name: 'ETHUSD', description: 'Ethereum vs US Dollar', exchange: 'MT5', type: 'crypto' },
+        { symbol: 'EURUSD', full_name: 'EURUSD', description: 'Euro vs US Dollar', exchange: 'MT5', type: 'forex' },
+      ];
+      const q = (userInput || '').toLowerCase();
+      onResult(base.filter(s => s.symbol.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)));
     }
 
-    resolveSymbol(symbolName, onResolve, onError) {
-        if (this.httpFallback) {
-            return this.httpFallback.resolveSymbol(symbolName, onResolve, onError);
-        }
-        
-        // Fallback symbol resolution
-        let symbolType = 'crypto';
-        let pricescale = 100;
-        
-        if (symbolName.includes('USD') || symbolName.includes('EUR') || symbolName.includes('GBP') || symbolName.includes('JPY')) {
-            symbolType = 'forex';
-            pricescale = 10000;
-        }
-        
-        const symbolInfo = {
-            ticker: symbolName,
-            name: symbolName,
-            description: symbolName,
-            type: symbolType,
-            session: '24x7',
-            timezone: 'Etc/UTC',
-            exchange: 'MT5',
-            minmov: 1,
-            pricescale: pricescale,
-            has_intraday: true,
-            has_daily: true,
-            has_weekly_and_monthly: true,
-            supported_resolutions: ['1', '3', '5', '15', '30', '60', '120', '240', '360', '480', 'D', 'W', 'M'],
-            volume_precision: 2,
-            data_status: 'streaming',
-        };
-        
-        setTimeout(() => onResolve(symbolInfo), 0);
+    resolveSymbol(symbolName, onResolve) {
+      let pricescale = /USD|EUR|GBP|JPY/.test(symbolName) ? 10000 : 100;
+      const info = {
+        ticker: symbolName,
+        name: symbolName,
+        description: symbolName,
+        type: 'crypto',
+        session: '24x7',
+        timezone: 'Etc/UTC',
+        exchange: 'MT5',
+        minmov: 1,
+        pricescale,
+        has_intraday: true,
+        has_daily: true,
+        has_weekly_and_monthly: true,
+        supported_resolutions: ['1','3','5','15','30','60','120','240','360','480','D','W','M'],
+        volume_precision: 2,
+        data_status: 'streaming',
+      };
+      setTimeout(() => onResolve(info), 0);
     }
 
-    getBars(symbolInfo, resolution, periodParams, onResult, onError) {
-        // Always use HTTP fallback for historical data
-        if (this.httpFallback) {
-            return this.httpFallback.getBars(symbolInfo, resolution, periodParams, onResult, onError);
-        }
-        
-        // If no fallback, return empty data
-        onResult([], { noData: true });
+    _tf(res) {
+      const m = { '1':'1','3':'3','5':'5','15':'15','30':'30','60':'60','120':'120','240':'240','360':'360','480':'480','D':'1440','W':'10080','M':'43200' };
+      return m[res] || '1';
     }
 
-    subscribeBars(symbolInfo, resolution, onTick, listenerGuid, onResetCacheNeededCallback) {
-        console.log('[SignalR]: subscribeBars', symbolInfo.name, resolution);
-        
-        this.subscribers[listenerGuid] = {
-            symbolInfo,
-            resolution,
-            onTick,
-            onResetCacheNeededCallback
-        };
+    async getBars(symbolInfo, resolution, periodParams, onResult, onError) {
+      try {
+        await this._ensureConnection();
+        const tf = this._tf(resolution);
+        const count = 500;
 
-        // If SignalR is connected, subscribe to real-time updates
-        if (this.isConnected && this.connection) {
-            this.connection.invoke('SubscribeToSymbol', symbolInfo.name, resolution)
-                .catch(err => console.error('[SignalR]: Subscribe error:', err));
-        }
+        const key = `${symbolInfo.name}|${tf}`;
+        const barsPromise = new Promise((resolve, reject) => {
+          this._pendingHistoryResolvers.set(key, { resolve, reject });
+          setTimeout(() => {
+            if (this._pendingHistoryResolvers.get(key)) {
+              this._pendingHistoryResolvers.delete(key);
+              reject(new Error('HistoricalCandles timeout'));
+            }
+          }, 15000);
+        });
 
-        // Also use HTTP fallback for real-time updates as backup
-        if (this.httpFallback) {
-            this.httpFallback.subscribeBars(symbolInfo, resolution, onTick, listenerGuid, onResetCacheNeededCallback);
+        await this._connection.invoke('GetHistoricalCandles', symbolInfo.name, parseInt(tf, 10), count);
+        const bars = await barsPromise;
+
+        const from = (periodParams.from || 0) * 1000;
+        const to = (periodParams.to || 0) * 1000;
+        const filtered = bars.filter(b => (!from || b.time >= from) && (!to || b.time <= to));
+        onResult(filtered.length ? filtered : bars, { noData: (filtered.length ? filtered : bars).length === 0 });
+      } catch (e) {
+        console.error('[SignalRDatafeed] getBars error', e);
+        if (this._fallback && typeof this._fallback.getBars === 'function') {
+          return this._fallback.getBars(symbolInfo, resolution, periodParams, onResult, onError);
         }
+        onError(e.message || String(e));
+      }
     }
 
-    unsubscribeBars(listenerGuid) {
-        console.log('[SignalR]: unsubscribeBars', listenerGuid);
-        
-        const subscriber = this.subscribers[listenerGuid];
-        if (subscriber && this.isConnected && this.connection) {
-            this.connection.invoke('UnsubscribeFromSymbol', subscriber.symbolInfo.name, subscriber.resolution)
-                .catch(err => console.error('[SignalR]: Unsubscribe error:', err));
+    async subscribeBars(symbolInfo, resolution, onTick, listenerGuid) {
+      try {
+        await this._ensureConnection();
+        const tf = parseInt(this._tf(resolution), 10);
+        this._subscribers.set(listenerGuid, { symbol: symbolInfo.name, tf, onTick });
+        await this._connection.invoke('SubscribeToCandles', symbolInfo.name, tf);
+      } catch (e) {
+        console.error('[SignalRDatafeed] subscribeBars error', e);
+        if (this._fallback && typeof this._fallback.subscribeBars === 'function') {
+          return this._fallback.subscribeBars(symbolInfo, resolution, onTick, listenerGuid);
         }
-        
-        delete this.subscribers[listenerGuid];
-        delete this.lastBars[listenerGuid];
-
-        // Also unsubscribe from HTTP fallback
-        if (this.httpFallback) {
-            this.httpFallback.unsubscribeBars(listenerGuid);
-        }
+      }
     }
 
-    getServerTime(callback) {
-        if (this.httpFallback) {
-            return this.httpFallback.getServerTime(callback);
-        }
-        
-        // Fallback to local time
-        callback(Math.floor(Date.now() / 1000));
+    async unsubscribeBars(listenerGuid) {
+      const sub = this._subscribers.get(listenerGuid);
+      this._subscribers.delete(listenerGuid);
+      this._lastBars.delete(listenerGuid);
+      // Optional: if hub supports it, invoke an Unsubscribe
+      // await this._connection.invoke('UnsubscribeFromCandles', sub.symbol, sub.tf)
     }
-}
 
-// Export for browser usage
-if (typeof window !== 'undefined') {
-    window.SignalRDatafeed = SignalRDatafeed;
-}
+    getServerTime(cb){ cb(Math.floor(Date.now()/1000)); }
+  }
 
-// Export for Node.js
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = SignalRDatafeed;
-}
+  if (typeof module !== 'undefined' && module.exports) module.exports = SignalRDatafeed;
+  global.SignalRDatafeed = SignalRDatafeed;
+})(typeof window !== 'undefined' ? window : globalThis);

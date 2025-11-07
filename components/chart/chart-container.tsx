@@ -5,7 +5,9 @@ import { cn } from '@/lib/utils'
 
 interface ChartContainerProps {
   symbol?: string
+  interval?: string // TradingView interval: '1','5','15','60','240','D','W','M'
   className?: string
+  accountId?: string | null
 }
 
 declare global {
@@ -17,10 +19,26 @@ declare global {
   }
 }
 
-export function ChartContainer({ symbol = "BTCUSD", className }: ChartContainerProps) {
+export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, accountId = null }: ChartContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetRef = useRef<any>(null)
   const [error, setError] = useState<string | null>(null)
+  const bidLineRef = useRef<any>(null)
+  const askLineRef = useRef<any>(null)
+  const [priceLinesDisabled, setPriceLinesDisabled] = useState(false)
+
+  // Normalize symbols while preserving trailing micro suffix 'm' in lowercase
+  // Examples:
+  //  - "XAU/USD" -> "XAUUSD"
+  //  - "xauusdm" -> "XAUUSDm"
+  //  - "XAUUSDM" -> "XAUUSDm"
+  //  - "BTCUSD"  -> "BTCUSD"
+  const normalizeSymbol = (s: string) => {
+    const raw = (s || '').replace(/[^A-Za-z0-9]/g, '')
+    const hasMicro = /m$/i.test(raw)
+    const core = hasMicro ? raw.slice(0, -1) : raw
+    return core.toUpperCase() + (hasMicro ? 'm' : '')
+  }
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -52,12 +70,30 @@ export function ChartContainer({ symbol = "BTCUSD", className }: ChartContainerP
           throw new Error('TradingView not loaded')
         }
 
-        const datafeed = new window.CustomDatafeed('/apis')
+        // Point datafeed directly at your backend (not the local proxy), with configurable templates
+        const extBase = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
+        const historyTemplate = process.env.NEXT_PUBLIC_CHART_HISTORY_TEMPLATE || '/chart/candle/history/{symbol}?timeframe={timeframe}&count={count}'
+        const currentTemplate = process.env.NEXT_PUBLIC_CHART_CURRENT_TEMPLATE || '/chart/candle/current/{symbol}?timeframe={timeframe}'
+        const httpFallback = new window.CustomDatafeed({
+          baseUrl: `${extBase}/api`,
+          historyTemplate,
+          currentTemplate,
+          trySymbolVariant: true,
+          accountId: accountId || undefined,
+        })
+        // Prefer SignalR datafeed if available, otherwise fall back to HTTP
+        let datafeed: any
+        if (window.SignalRDatafeed && typeof window.SignalRDatafeed === 'function') {
+          datafeed = new window.SignalRDatafeed(extBase, httpFallback, { accountId: accountId || undefined })
+        } else {
+          console.warn('[Chart] window.SignalRDatafeed missing, falling back to HTTP datafeed')
+          datafeed = httpFallback
+        }
 
         console.log('[Chart] Creating widget...')
         const widget = new window.TradingView.widget({
-          symbol: symbol,
-          interval: '1',
+          symbol: normalizeSymbol(symbol),
+          interval: interval,
           container: containerRef.current,
           datafeed: datafeed,
           library_path: '/charting_library/',
@@ -82,6 +118,7 @@ export function ChartContainer({ symbol = "BTCUSD", className }: ChartContainerP
         })
 
         widgetRef.current = widget
+        // Lines will be created lazily after first successful tick in the updater
         console.log('[Chart] Widget created')
 
       } catch (err) {
@@ -101,7 +138,113 @@ export function ChartContainer({ symbol = "BTCUSD", className }: ChartContainerP
         }
       }
     }
-  }, [symbol])
+  }, [symbol, interval])
+
+  // Update symbol/interval dynamically without recreating widget
+  useEffect(() => {
+    const w = widgetRef.current
+    if (!w) return
+    try {
+      const newSymbol = normalizeSymbol(symbol)
+      w.onChartReady(() => {
+        const chart = w.activeChart()
+        if (!chart) return
+        const current = chart.symbol?.() || ''
+        const currentInterval = chart.resolution?.() || ''
+        if (current !== newSymbol || currentInterval !== interval) {
+          chart.setSymbol(newSymbol, interval, () => {
+            console.log('[Chart] setSymbol ->', newSymbol, interval)
+          })
+        }
+      })
+    } catch (e) {
+      console.warn('[Chart] setSymbol failed', e)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, interval])
+
+  // Poll live tick and move bid/ask lines
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null
+    const run = async () => {
+      try {
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003'
+        const sym = normalizeSymbol(symbol)
+        // Try primary symbol, then fallback by toggling micro suffix
+        const candidates: string[] = [sym]
+        if (/m$/.test(sym)) candidates.push(sym.replace(/m$/, ''))
+        else candidates.push(sym + 'm')
+
+        let d: any = null
+        for (const candidate of candidates) {
+          const resp = await fetch(`${base}/api/livedata/tick/${candidate}`, { cache: 'no-store' })
+          if (resp.ok) {
+            d = await resp.json().catch(() => null)
+            if (d) break
+          } else if (resp.status !== 404) {
+            // Non-404 error: break and do not try further
+            break
+          }
+        }
+        if (!d) return
+        const bidRaw = (d.bid ?? d.Bid)
+        const askRaw = (d.ask ?? d.Ask)
+        const bid = Number(bidRaw), ask = Number(askRaw)
+        if (!Number.isFinite(bid) || !Number.isFinite(ask)) return
+        const w = widgetRef.current
+        if (!w || priceLinesDisabled) return
+        w.onChartReady(() => {
+          const chart = w.activeChart?.()
+          if (!chart) return
+
+          const ensureLine = (ref: any, price: number, isBid: boolean) => {
+            // If line exists with setPrice, use it
+            if (ref && typeof ref.setPrice === 'function') {
+              try { ref.setPrice(price); return ref } catch {}
+            }
+            // If line exists with setProperties, use it
+            if (ref && typeof ref.setProperties === 'function') {
+              try { ref.setProperties({ price }); return ref } catch {}
+            }
+            // Try order line API first (safer in some builds)
+            try {
+              if (typeof chart.createOrderLine === 'function') {
+                const ol = chart.createOrderLine()
+                if (typeof ol.setPrice === 'function') ol.setPrice(price)
+                if (typeof ol.setText === 'function') ol.setText(isBid ? 'Bid' : 'Ask')
+                if (typeof ol.setLineColor === 'function') ol.setLineColor(isBid ? '#60A5FA' : '#F59E0B')
+                if (typeof ol.setBodyBackgroundColor === 'function') ol.setBodyBackgroundColor('rgba(0,0,0,0)')
+                if (typeof ol.setQuantity === 'function') ol.setQuantity('')
+                return ol
+              }
+            } catch (e) { /* ignore */ }
+            // Fallback: attempt createShape horizontal_line; if this fails, disable feature
+            try {
+              if (typeof chart.createShape === 'function') {
+                const opts = isBid
+                  ? { shape: 'horizontal_line', lock: true, disableSelection: true, text: 'Bid', textColor: '#60A5FA', color: '#60A5FA', linewidth: 1 }
+                  : { shape: 'horizontal_line', lock: true, disableSelection: true, text: 'Ask', textColor: '#F59E0B', color: '#F59E0B', linewidth: 1 }
+                return chart.createShape({ price }, opts)
+              }
+            } catch (e) {
+              // Permanently disable to avoid noisy errors in this build
+              console.warn('[Chart] Price lines disabled (cannot create shape):', e)
+              setPriceLinesDisabled(true)
+            }
+            return null
+          }
+
+          const newBid = ensureLine(bidLineRef.current, bid, true)
+          if (newBid) bidLineRef.current = newBid
+          const newAsk = ensureLine(askLineRef.current, ask, false)
+          if (newAsk) askLineRef.current = newAsk
+        })
+      } catch {}
+    }
+    run()
+    timer = setInterval(run, 1000)
+    return () => { if (timer) clearInterval(timer) }
+  }, [symbol, priceLinesDisabled])
 
   if (error) {
     return (

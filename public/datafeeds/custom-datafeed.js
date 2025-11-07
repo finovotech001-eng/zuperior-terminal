@@ -1,10 +1,51 @@
 // Custom MT5-compatible Datafeed (uses the TradingView Library)
 class CustomDatafeed {
-    constructor(apiBaseUrl = '/apis') {
-        this.apiUrl = apiBaseUrl;
+    constructor(baseOrConfig = '/apis') {
+        const cfg = (baseOrConfig && typeof baseOrConfig === 'object') ? baseOrConfig : { baseUrl: baseOrConfig };
+        this.apiUrl = (cfg.baseUrl || '/apis').replace(/\/$/, ''); // Prefer external base like `${NEXT_PUBLIC_API_BASE_URL}/api`
+        this.historyTemplate = cfg.historyTemplate || '/chart/candle/history/{symbol}?timeframe={timeframe}&count={count}';
+        this.currentTemplate = cfg.currentTemplate || '/chart/candle/current/{symbol}?timeframe={timeframe}';
+        this.trySymbolVariant = Boolean(cfg.trySymbolVariant);
+        this.accountId = cfg.accountId || null;
+        this.fallbackBase = '/apis'; // Local proxy fallback if external fails (502/CORS)
         this.subscribers = {};
         this.lastBars = {};
         this.aggregators = {};
+    }
+
+    buildPath(tpl, { symbol, timeframe, count }) {
+        let path = tpl
+            .replace('{symbol}', encodeURIComponent(symbol))
+            .replace('{timeframe}', encodeURIComponent(timeframe))
+            .replace('{count}', encodeURIComponent(String(count ?? '')));
+        if (this.accountId) {
+            path += (path.includes('?') ? '&' : '?') + `accountId=${encodeURIComponent(this.accountId)}`;
+        }
+        return path;
+    }
+
+    async fetchJsonWithFallback(path) {
+        const headers = { 'Accept': 'application/json' };
+        // Try external base
+        try {
+            const res = await fetch(`${this.apiUrl}${path}`, { headers, cache:'no-cache' });
+            if (res.ok) return await res.json();
+            // If external explicitly fails (e.g., 502), try fallback proxy
+            if (this.apiUrl !== this.fallbackBase) {
+                const res2 = await fetch(`${this.fallbackBase}${path}`, { headers, cache:'no-cache' });
+                if (res2.ok) return await res2.json();
+            }
+            throw new Error(`HTTP ${res.status}`);
+        } catch (e) {
+            // Last resort: try fallback if not yet tried
+            if (this.apiUrl !== this.fallbackBase) {
+                try {
+                    const res3 = await fetch(`${this.fallbackBase}${path}`, { headers, cache:'no-cache' });
+                    if (res3.ok) return await res3.json();
+                } catch {}
+            }
+            throw e;
+        }
     }
 
     onReady(cb) {
@@ -65,9 +106,24 @@ class CustomDatafeed {
         const timeframe = this.getTimeframe(resolution);
         const count = firstDataRequest ? 100 : 500;
         try {
-            const resp = await fetch(`${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=${timeframe}&count=${count}`, { cache:'no-cache' });
-            if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
-            const data = await resp.json();
+            // Try multiple symbol variants and URL shapes to match backend
+            const baseSymbol = symbolInfo.name;
+            const candidatesSymbols = /m$/.test(baseSymbol) ? [baseSymbol, baseSymbol.replace(/m$/, '')] : [baseSymbol, baseSymbol + 'm'];
+            const pathsFor = (sym) => [
+                `/chart/candle/history/${sym}?timeframe=${timeframe}&count=${count}`,
+                `/chart/candle/history/${sym}?timeframe=${timeframe}&Count=${count}`,
+                `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=${timeframe}&count=${count}`,
+                `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=${timeframe}&Count=${count}`,
+            ];
+            let data = null;
+            for (const sym of candidatesSymbols) {
+                const paths = pathsFor(sym);
+                for (const p of paths) {
+                    try { data = await this.fetchJsonWithFallback(p); break; } catch(e) { /* try next */ }
+                }
+                if (data) break;
+            }
+            if (!data) throw new Error('history fetch failed');
             if (!Array.isArray(data) || data.length === 0) return onResult([], { noData: true });
             const tfMs = parseInt(timeframe) * 60 * 1000;
             let bars = data.map(c => ({
@@ -89,9 +145,19 @@ class CustomDatafeed {
             const needAgg = Number.isFinite(tfInt) && tfInt>1 && (Date.now()-newest > tfInt*60*1000*2);
             if (needAgg) {
                 const need1m = Math.min(tfInt*105, 6000);
-                const oneRes = await fetch(`${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=1&count=${need1m}`, { cache:'no-cache' });
-                if (oneRes.ok) {
-                    const one = await oneRes.json();
+                try {
+                    let one = null;
+                    for (const sym of candidatesSymbols) {
+                        const onePaths = [
+                            `/chart/candle/history/${sym}?timeframe=1&count=${need1m}`,
+                            `/chart/candle/history/${sym}?timeframe=1&Count=${need1m}`,
+                            `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=1&count=${need1m}`,
+                            `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=1&Count=${need1m}`,
+                        ];
+                        for (const p of onePaths) { try { one = await this.fetchJsonWithFallback(p); break; } catch {} }
+                        if (one) break;
+                    }
+                    if (!one) throw new Error('1m fetch failed');
                     const oneBars = one.map(c=>({
                         time: Math.floor(new Date(c.time).getTime() / (60*1000)) * 60*1000,
                         open:+c.open, high:+c.high, low:+c.low, close:+c.close, volume:+(c.volume||0)
@@ -101,7 +167,7 @@ class CustomDatafeed {
                         const t=Math.floor(b.time/bucketMs)*bucketMs; const a=map.get(t);
                         if(!a) map.set(t,{...b,time:t}); else {a.high=Math.max(a.high,b.high);a.low=Math.min(a.low,b.low);a.close=b.close;a.volume=(a.volume||0)+(b.volume||0);} }
                     finalBars = Array.from(map.values()).sort((a,b)=>a.time-b.time).slice(-Math.min(100, map.size));
-                }
+                } catch {}
             }
 
             return onResult(finalBars, { noData: finalBars.length===0 });
@@ -118,8 +184,7 @@ class CustomDatafeed {
         if (tfInt === 1) {
             const poll = async () => {
                 try {
-                    const r = await fetch(`${this.apiUrl}/chart/candle/current/${symbolInfo.name}?timeframe=1`,{cache:'no-cache'});
-                    if(!r.ok) return; const c=await r.json();
+                    const c = await this.fetchJsonWithFallback(`/chart/candle/current/${symbolInfo.name}?timeframe=1`);
                     const t = Math.floor(new Date(c.time).getTime()/(60*1000))*60*1000;
                     const bar={ time:t, open:+(c.open??c.close), high:+(c.high??c.close), low:+(c.low??c.close), close:+c.close, volume:+(c.volume||0) };
                     const last=this.lastBars[listenerGuid];
@@ -137,8 +202,7 @@ class CustomDatafeed {
         this.aggregators[listenerGuid]=this.aggregators[listenerGuid]||null;
         const pollAgg = async () => {
             try {
-                const r=await fetch(`${this.apiUrl}/chart/candle/current/${symbolInfo.name}?timeframe=1`,{cache:'no-cache'});
-                if(!r.ok) return; const c=await r.json();
+                const c = await this.fetchJsonWithFallback(`/chart/candle/current/${symbolInfo.name}?timeframe=1`);
                 const oneTime=Math.floor(new Date(c.time).getTime()/(60*1000))*60*1000;
                 const bucketTime=Math.floor(oneTime/bucketMs)*bucketMs;
                 const oneBar={ time:oneTime, open:+(c.open??c.close), high:+(c.high??c.close), low:+(c.low??c.close), close:+c.close, volume:+(c.volume||0) };
@@ -164,7 +228,8 @@ class CustomDatafeed {
     unsubscribeBars(id){ if(this.subscribers[id]){ clearInterval(this.subscribers[id]); delete this.subscribers[id]; } delete this.lastBars[id]; delete this.aggregators[id]; }
 
     getServerTime(cb){
-        fetch(`${this.apiUrl}/time`).then(r=>r.json()).then(d=>cb(Math.floor(new Date(d.serverTime).getTime()/1000))).catch(()=>cb(Math.floor(Date.now()/1000)));
+        // Use local time to avoid 404s if backend doesn't expose /time
+        try { cb(Math.floor(Date.now()/1000)); } catch { /* noop */ }
     }
 }
 
