@@ -6,6 +6,10 @@ import type { Position } from '@/components/trading/positions-table'
 interface UseTradeHistoryOptions {
   accountId: string | null
   enabled?: boolean
+  fromDate?: string
+  toDate?: string
+  pageSize?: number | string
+  page?: number | string
 }
 
 interface UseTradeHistoryReturn {
@@ -15,7 +19,7 @@ interface UseTradeHistoryReturn {
   refetch: () => void
 }
 
-export function useTradeHistory({ accountId, enabled = true }: UseTradeHistoryOptions): UseTradeHistoryReturn {
+export function useTradeHistory({ accountId, enabled = true, fromDate, toDate, pageSize, page }: UseTradeHistoryOptions): UseTradeHistoryReturn {
   const [closedPositions, setClosedPositions] = useState<Position[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -157,9 +161,13 @@ export function useTradeHistory({ accountId, enabled = true }: UseTradeHistoryOp
     abortRef.current = controller
 
     try {
-      // Build query parameters - only accountId is needed
+      // Build query parameters
       const params = new URLSearchParams()
       params.append('accountId', accountId)
+      if (pageSize !== undefined && pageSize !== null && String(pageSize).length > 0) params.append('pageSize', String(pageSize))
+      if (fromDate) params.append('fromDate', fromDate)
+      if (toDate) params.append('toDate', toDate)
+      if (page !== undefined && page !== null && String(page).length > 0) params.append('page', String(page))
 
       const res = await fetch(`/apis/tradehistory/trades?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
       
@@ -245,7 +253,7 @@ export function useTradeHistory({ accountId, enabled = true }: UseTradeHistoryOp
     } finally {
       setIsLoading(false)
     }
-  }, [accountId, enabled])
+  }, [accountId, enabled, fromDate, toDate, pageSize, page])
 
   useEffect(() => {
     fetchHistory()

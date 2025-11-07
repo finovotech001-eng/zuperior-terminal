@@ -1264,7 +1264,7 @@ function TerminalContent() {
   }, [liveEquity, balanceData.margin]);
 
   // Closed trades (history)
-  const { closedPositions, isLoading: closedLoading, error: closedError } = useTradeHistory({ accountId: currentAccountId, enabled: true })
+  const { closedPositions, isLoading: closedLoading, error: closedError, refetch: refetchClosed } = useTradeHistory({ accountId: currentAccountId, enabled: true })
   
   // DEEP DEBUG: Track closed positions state changes
   React.useEffect(() => {
@@ -2215,7 +2215,7 @@ function TerminalContent() {
                       const res = await fetch('/apis/trading/close', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 }),
+                        body: JSON.stringify({ accountId: currentAccountId, positionId }),
                       })
                       
                       if (!res.ok) {
@@ -2240,6 +2240,14 @@ function TerminalContent() {
                           setTimeout(() => refreshBalance(currentAccountId), 300);
                           console.log('[Balance] Triggered getClientProfile refresh after position close');
                         }
+                        // Refresh closed positions list so the closed item appears promptly
+                        try { 
+                          refetchClosed?.()
+                          // Also refetch after a short delay to catch backend processing latency
+                          setTimeout(() => { try { refetchClosed?.() } catch {} }, 500)
+                        } catch {}
+                        // Nudge positions stream to drop the closed item if event is delayed
+                        try { positionsReconnect?.() } catch {}
                       }
                       else { 
                         const errorMsg = json.message || json.Message || json.error || 'Unknown error';
@@ -2370,7 +2378,7 @@ function TerminalContent() {
                               const res = await fetch('/apis/trading/close', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 })
+                                body: JSON.stringify({ accountId: currentAccountId, positionId })
                               })
                               const json = await res.json().catch(() => ({} as any))
                               if (res.ok && (json.success || json.Success)) {
@@ -2394,6 +2402,12 @@ function TerminalContent() {
                             if (refreshBalance && currentAccountId) {
                               setTimeout(() => refreshBalance(currentAccountId), 300)
                             }
+                            // Refresh closed trades list (immediate + delayed) and nudge positions stream
+                            try { 
+                              refetchClosed?.();
+                              setTimeout(() => { try { refetchClosed?.() } catch {} }, 500);
+                            } catch {}
+                            try { positionsReconnect?.() } catch {}
                           } else if (failedCount > 0) {
                             setTradeNotice({ type: 'error', message: `Failed to close ${failedCount} position${failedCount !== 1 ? 's' : ''}` })
                           }
@@ -2435,7 +2449,7 @@ function TerminalContent() {
                               const res = await fetch('/apis/trading/close', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 })
+                                body: JSON.stringify({ accountId: currentAccountId, positionId })
                               })
                               const json = await res.json().catch(() => ({} as any))
                               if (res.ok && (json.success || json.Success)) {
@@ -2459,6 +2473,12 @@ function TerminalContent() {
                             if (refreshBalance && currentAccountId) {
                               setTimeout(() => refreshBalance(currentAccountId), 300)
                             }
+                            // Refresh closed trades list (immediate + delayed) and nudge positions stream
+                            try { 
+                              refetchClosed?.();
+                              setTimeout(() => { try { refetchClosed?.() } catch {} }, 500);
+                            } catch {}
+                            try { positionsReconnect?.() } catch {}
                           } else if (failedCount > 0) {
                             setTradeNotice({ type: 'error', message: `Failed to close ${failedCount} position${failedCount !== 1 ? 's' : ''}` })
                           }
@@ -2500,7 +2520,7 @@ function TerminalContent() {
                               const res = await fetch('/apis/trading/close', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ accountId: currentAccountId, positionId, volume: 0 })
+                                body: JSON.stringify({ accountId: currentAccountId, positionId })
                               })
                               const json = await res.json().catch(() => ({} as any))
                               if (res.ok && (json.success || json.Success)) {
@@ -2524,6 +2544,9 @@ function TerminalContent() {
                             if (refreshBalance && currentAccountId) {
                               setTimeout(() => refreshBalance(currentAccountId), 300)
                             }
+                            // Refresh closed trades list and nudge positions stream
+                            try { refetchClosed?.() } catch {}
+                            try { positionsReconnect?.() } catch {}
                           } else if (failedCount > 0) {
                             setTradeNotice({ type: 'error', message: `Failed to close ${failedCount} position${failedCount !== 1 ? 's' : ''}` })
                           }
