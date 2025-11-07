@@ -138,9 +138,9 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         }
       }
     }
-  }, [symbol, interval])
+  }, [])
 
-  // Update symbol/interval dynamically without recreating widget
+  // Update symbol dynamically without resetting user's chart resolution
   useEffect(() => {
     const w = widgetRef.current
     if (!w) return
@@ -149,11 +149,11 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
       w.onChartReady(() => {
         const chart = w.activeChart()
         if (!chart) return
-        const current = chart.symbol?.() || ''
-        const currentInterval = chart.resolution?.() || ''
-        if (current !== newSymbol || currentInterval !== interval) {
-          chart.setSymbol(newSymbol, interval, () => {
-            console.log('[Chart] setSymbol ->', newSymbol, interval)
+        const current = (typeof chart.symbol === 'function' ? chart.symbol() : '') || ''
+        const currentInterval = (typeof chart.resolution === 'function' ? chart.resolution() : '') || ''
+        if (current !== newSymbol) {
+          chart.setSymbol(newSymbol, currentInterval, () => {
+            console.log('[Chart] setSymbol (preserve interval) ->', newSymbol, currentInterval)
           })
         }
       })
@@ -161,7 +161,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
       console.warn('[Chart] setSymbol failed', e)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, interval])
+  }, [symbol])
 
   // Poll live tick and move bid/ask lines
   useEffect(() => {
@@ -194,50 +194,41 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         const w = widgetRef.current
         if (!w || priceLinesDisabled) return
         w.onChartReady(() => {
-          const chart = w.activeChart?.()
-          if (!chart) return
+          try {
+            const chart = w.activeChart?.()
+            if (!chart) return
 
-          const ensureLine = (ref: any, price: number, isBid: boolean) => {
-            // If line exists with setPrice, use it
-            if (ref && typeof ref.setPrice === 'function') {
-              try { ref.setPrice(price); return ref } catch {}
+            // Only support order lines; never attempt createShape
+            if (typeof chart.createOrderLine !== 'function') {
+              setPriceLinesDisabled(true)
+              return
             }
-            // If line exists with setProperties, use it
-            if (ref && typeof ref.setProperties === 'function') {
-              try { ref.setProperties({ price }); return ref } catch {}
-            }
-            // Try order line API first (safer in some builds)
-            try {
-              if (typeof chart.createOrderLine === 'function') {
-                const ol = chart.createOrderLine()
+
+            const updateOrderLine = (ref: any, price: number, isBid: boolean) => {
+              // Update existing
+              if (ref && typeof ref.setPrice === 'function') {
+                try { ref.setPrice(price); return ref } catch {}
+              }
+              // Create new
+              const ol = chart.createOrderLine()
+              try {
                 if (typeof ol.setPrice === 'function') ol.setPrice(price)
                 if (typeof ol.setText === 'function') ol.setText(isBid ? 'Bid' : 'Ask')
                 if (typeof ol.setLineColor === 'function') ol.setLineColor(isBid ? '#60A5FA' : '#F59E0B')
                 if (typeof ol.setBodyBackgroundColor === 'function') ol.setBodyBackgroundColor('rgba(0,0,0,0)')
                 if (typeof ol.setQuantity === 'function') ol.setQuantity('')
-                return ol
-              }
-            } catch (e) { /* ignore */ }
-            // Fallback: attempt createShape horizontal_line; if this fails, disable feature
-            try {
-              if (typeof chart.createShape === 'function') {
-                const opts = isBid
-                  ? { shape: 'horizontal_line', lock: true, disableSelection: true, text: 'Bid', textColor: '#60A5FA', color: '#60A5FA', linewidth: 1 }
-                  : { shape: 'horizontal_line', lock: true, disableSelection: true, text: 'Ask', textColor: '#F59E0B', color: '#F59E0B', linewidth: 1 }
-                return chart.createShape({ price }, opts)
-              }
-            } catch (e) {
-              // Permanently disable to avoid noisy errors in this build
-              console.warn('[Chart] Price lines disabled (cannot create shape):', e)
-              setPriceLinesDisabled(true)
+              } catch {}
+              return ol
             }
-            return null
-          }
 
-          const newBid = ensureLine(bidLineRef.current, bid, true)
-          if (newBid) bidLineRef.current = newBid
-          const newAsk = ensureLine(askLineRef.current, ask, false)
-          if (newAsk) askLineRef.current = newAsk
+            const newBid = updateOrderLine(bidLineRef.current, bid, true)
+            if (newBid) bidLineRef.current = newBid
+            const newAsk = updateOrderLine(askLineRef.current, ask, false)
+            if (newAsk) askLineRef.current = newAsk
+          } catch (e) {
+            // Disable on any unexpected library error
+            setPriceLinesDisabled(true)
+          }
         })
       } catch {}
     }
