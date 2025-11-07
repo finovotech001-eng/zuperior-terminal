@@ -177,10 +177,10 @@
 
     searchSymbols(userInput, exchange, symbolType, onResult) {
       const base = [
-        { symbol: 'BTCUSD', full_name: 'BTCUSD', description: 'Bitcoin vs US Dollar', exchange: 'MT5', type: 'crypto' },
-        { symbol: 'BTCUSDm', full_name: 'BTCUSDm', description: 'BTCUSD (m)', exchange: 'MT5', type: 'crypto' },
-        { symbol: 'ETHUSD', full_name: 'ETHUSD', description: 'Ethereum vs US Dollar', exchange: 'MT5', type: 'crypto' },
-        { symbol: 'EURUSD', full_name: 'EURUSD', description: 'Euro vs US Dollar', exchange: 'MT5', type: 'forex' },
+        { symbol: 'BTCUSD', full_name: 'BTCUSD', description: 'Bitcoin vs US Dollar', exchange: '', type: 'crypto' },
+        { symbol: 'BTCUSDm', full_name: 'BTCUSDm', description: 'BTCUSD (m)', exchange: '', type: 'crypto' },
+        { symbol: 'ETHUSD', full_name: 'ETHUSD', description: 'Ethereum vs US Dollar', exchange: '', type: 'crypto' },
+        { symbol: 'EURUSD', full_name: 'EURUSD', description: 'Euro vs US Dollar', exchange: '', type: 'forex' },
       ];
       const q = (userInput || '').toLowerCase();
       onResult(base.filter(s => s.symbol.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)));
@@ -195,7 +195,8 @@
         type: 'crypto',
         session: '24x7',
         timezone: 'Etc/UTC',
-        exchange: 'MT5',
+        exchange: '',
+        listed_exchange: '',
         minmov: 1,
         pricescale,
         has_intraday: true,

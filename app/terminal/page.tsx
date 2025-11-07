@@ -2121,26 +2121,10 @@ function TerminalContent() {
             <div className="flex-1 flex flex-col overflow-hidden min-w-0 gap-1 relative">
               {/* Chart Area */}
               <div className="flex-1 overflow-hidden min-h-0">
-                {/* Chart header: timeframe controls */}
-                <div className="flex items-center gap-2 px-2 py-1 border-b border-white/10 bg-white/5">
-                  {['1','5','15','60','240','D'].map((itv) => (
-                    <button
-                      key={itv}
-                      onClick={() => setChartInterval(itv)}
-                      className={cn(
-                        'px-2 py-1 text-xs rounded',
-                        chartInterval === itv ? 'bg-white/20 text-white' : 'text-white/60 hover:text-white hover:bg-white/10'
-                      )}
-                    >
-                      {itv === '1' ? '1m' : itv === '5' ? '5m' : itv === '15' ? '15m' : itv === '60' ? '1H' : itv === '240' ? '4H' : itv}
-                    </button>
-                  ))}
-                </div>
                 <ChartContainer 
                   symbol={activeTab?.symbol || "BTCUSD"}
-                  interval={chartInterval}
                   accountId={currentAccountId}
-                  className="h-[calc(100%-32px)]"
+                  className="h-full"
                 />
               </div>
 

@@ -5,6 +5,10 @@ import { prisma } from '@/lib/db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// In-memory client token cache to avoid repeated logins
+type TokenEntry = { token: string; accountId: string; exp: number }
+const __chartTokenCache = ((global as any).__chartTokenCache ||= new Map<string, TokenEntry>()) as Map<string, TokenEntry>
+
 // Build external API base from envs and ensure "/api" suffix
 const RAW_BASE = (process.env.MT5_API_BASE || process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
 const API_BASE = RAW_BASE.endsWith('/api') ? RAW_BASE : `${RAW_BASE}/api`
@@ -38,14 +42,26 @@ export async function GET(
           acct = await prisma.mT5Account.findFirst({ where: { userId: session.userId }, select: { accountId: true, password: true } })
         }
         if (acct?.password) {
-          const loginRes = await fetch(`${API_BASE}/client/ClientAuth/login`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-            body: JSON.stringify({ AccountId: parseInt(acct.accountId, 10), Password: acct.password, DeviceId: `web_chart_${Date.now()}`, DeviceType: 'web' })
-          })
-          if (loginRes.ok) {
-            const loginJson = await loginRes.json().catch(() => ({} as any))
-            token = loginJson?.accessToken || loginJson?.AccessToken || loginJson?.Token || null
-            verifiedAccountId = acct.accountId
+          // Check cache first
+          const cacheKey = acct.accountId
+          const now = Date.now()
+          const cached = __chartTokenCache.get(cacheKey)
+          if (cached && cached.exp > now) {
+            token = cached.token
+            verifiedAccountId = cached.accountId
+          } else {
+            const loginRes = await fetch(`${API_BASE}/client/ClientAuth/login`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
+              body: JSON.stringify({ AccountId: parseInt(acct.accountId, 10), Password: acct.password, DeviceId: `web_chart_${Date.now()}`, DeviceType: 'web' })
+            })
+            if (loginRes.ok) {
+              const loginJson = await loginRes.json().catch(() => ({} as any))
+              token = loginJson?.accessToken || loginJson?.AccessToken || loginJson?.Token || null
+              verifiedAccountId = acct.accountId
+              if (token) {
+                __chartTokenCache.set(cacheKey, { token, accountId: acct.accountId, exp: now + 50 * 60 * 1000 })
+              }
+            }
           }
         }
       }
