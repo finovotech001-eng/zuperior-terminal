@@ -48,6 +48,7 @@ export interface PositionsTableProps {
   onClose?: (id: string) => void
   onHide?: () => void
   accountId?: string | null
+  onNotify?: (n: { type: 'success' | 'error'; title?: string; message: string }) => void
 }
 
 const PositionsTable: React.FC<PositionsTableProps> = ({
@@ -57,6 +58,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   closedPositions = [],
   onClose,
   accountId,
+  onNotify,
 }) => {
   const [activeTab, setActiveTab] = useAtom(positionsActiveTabAtom)
   const [isGrouped, setIsGrouped] = useAtom(positionsIsGroupedAtom)
@@ -375,8 +377,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     )
                     
                     if (isSuccess) {
-                      // Show success alert
-                    
+                      try { onNotify?.({ type: 'success', title: 'Position modified', message: `Updated TP/SL for ${position.symbol}` }) } catch {}
                       // Keep popover open for a moment so user can see the updated values
                       // Close after a short delay to allow user to see the changes
                       setTimeout(() => {
@@ -386,13 +387,11 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                       // The positions will refresh automatically via SSE/polling
                     } else {
                       const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                      // Show error alert
-                      alert(`Failed to modify position: ${errorMsg}`);
+                      try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
                       // Keep modal open on error so user can see/retry
                     }
                   } catch (e) {
-                    // Show error alert
-                    alert(`Failed to modify position: ${e instanceof Error ? e.message : 'Unknown error'}`);
+                    try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
                     // Keep modal open on exception
                   }
                 }}
@@ -535,8 +534,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     )
                     
                     if (isSuccess) {
-                      // Show success alert
-                      
+                      try { onNotify?.({ type: 'success', title: 'Position modified', message: `Updated TP/SL for ${position.symbol}` }) } catch {}
                       // Keep popover open for a moment so user can see the updated values
                       // Close after a short delay to allow user to see the changes
                       setTimeout(() => {
@@ -546,13 +544,11 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                       // The positions will refresh automatically via SSE/polling
                     } else {
                       const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                      // Show error alert
-                      alert(`Failed to modify position: ${errorMsg}`);
+                      try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
                       // Keep modal open on error so user can see/retry
                     }
                   } catch (e) {
-                    // Show error alert
-                    alert(`Failed to modify position: ${e instanceof Error ? e.message : 'Unknown error'}`);
+                    try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
                     // Keep modal open on exception
                   }
                 }}
@@ -681,21 +677,20 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error'))
                   )
                   
-                  if (isSuccess) {
-                    // Show success alert
-                    
-                    // Keep popover open for a moment so user can see the updated values
-                    // Close after a short delay to allow user to see the changes
-                    setTimeout(() => {
-                      setOpenModifyPopover(null);
-                    }, 2000); // Close after 2 seconds
-                  } else {
-                    const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                    // Show error alert
-                    alert(`Failed to modify position: ${errorMsg}`);
-                    // Keep modal open on error so user can see/retry
-                  }
+                    if (isSuccess) {
+                      try { onNotify?.({ type: 'success', title: 'Position modified', message: `Updated SL for ${position.symbol}` }) } catch {}
+                      // Keep popover open for a moment so user can see the updated values
+                      // Close after a short delay to allow user to see the changes
+                      setTimeout(() => {
+                        setOpenModifyPopover(null);
+                      }, 2000); // Close after 2 seconds
+                    } else {
+                      const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                      try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
+                      // Keep modal open on error so user can see/retry
+                    }
                 } catch (e) {
+                  try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
                   // Keep modal open on exception
                 }
               }}
@@ -852,7 +847,10 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                       const key = group.key
                       setClosingGroups(prev => ({ ...prev, [key]: true }))
                       setConfirmGroup(null)
-                      await Promise.allSettled(group.positions.map(p => Promise.resolve(onClose(p.id))))
+                      const results = await Promise.allSettled(group.positions.map(p => Promise.resolve(onClose(p.id))))
+                      const ok = results.filter(r => r.status === 'fulfilled').length
+                      const failed = results.length - ok
+                      try { onNotify?.({ type: failed > 0 ? 'error' : 'success', title: failed > 0 ? 'Close all finished' : 'Positions closed', message: `${ok} of ${results.length} positions closed${failed>0?` (${failed} failed)`:''}` }) } catch {}
                       setClosingGroups(prev => ({ ...prev, [key]: false }))
                     }}
                   >

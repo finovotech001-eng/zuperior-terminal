@@ -563,11 +563,9 @@ function TerminalContent() {
   const [leftPanelView, setLeftPanelView] = React.useState<LeftPanelView>("instruments")
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = React.useState(false)
   const [activeInstrumentTab, setActiveInstrumentTab] = React.useState("eurusd")
-  // Lightweight toast notice for trade actions
-  const [tradeNotice, setTradeNotice] = React.useState<{
-    type: 'success' | 'error'
-    message: string
-  } | null>(null)
+  // Lightweight bottom-left toast for trade actions
+  type TradeNotice = { type: 'success' | 'error'; title?: string; message: string }
+  const [tradeNotice, setTradeNotice] = React.useState<TradeNotice | null>(null)
   React.useEffect(() => {
     if (!tradeNotice) return
     const t = setTimeout(() => setTradeNotice(null), 3000)
@@ -1532,7 +1530,11 @@ function TerminalContent() {
         ? await placeBuyLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Buy Limit via web' })
         : await placeMarketOrder(order)
       console.log('[Trade][BUY] success', response)
-      setTradeNotice({ type: 'success', message: `Buy ${order.symbol} @ ${order.price}` })
+      setTradeNotice({ 
+        type: 'success', 
+        title: 'Position opened', 
+        message: `Buy ${Number(order.volume).toFixed(2)} lot ${order.symbol} at ${Number(order.price).toLocaleString('en-US', { maximumFractionDigits: 5 })}` 
+      })
       // Immediately refresh balance after trade (SignalR PositionOpened will also trigger, but this ensures quick update)
       if (refreshBalance && currentAccountId) {
         setTimeout(() => refreshBalance(currentAccountId), 200);
@@ -1568,7 +1570,11 @@ function TerminalContent() {
         ? await placeSellLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Sell Limit via web' })
         : await placeMarketOrder(order)
       console.log('[Trade][SELL] success', response)
-      setTradeNotice({ type: 'success', message: `Sell ${order.symbol} @ ${order.price}` })
+      setTradeNotice({ 
+        type: 'success', 
+        title: 'Position opened', 
+        message: `Sell ${Number(order.volume).toFixed(2)} lot ${order.symbol} at ${Number(order.price).toLocaleString('en-US', { maximumFractionDigits: 5 })}` 
+      })
       // Immediately refresh balance after trade (SignalR PositionOpened will also trigger, but this ensures quick update)
       if (refreshBalance && currentAccountId) {
         setTimeout(() => refreshBalance(currentAccountId), 200);
@@ -1587,8 +1593,21 @@ function TerminalContent() {
   return (
     <div className="flex flex-col h-screen bg-background overflow-hidden">
       {tradeNotice && (
-        <div className={`fixed top-4 right-4 z-50 px-3 py-2 rounded shadow-md text-sm ${tradeNotice.type === 'success' ? 'bg-emerald-600/90 text-white' : 'bg-red-600/90 text-white'}`}>
-          {tradeNotice.message}
+        <div className="fixed left-4 bottom-16 z-50">
+          <div className={`glass-card border border-white/10 rounded-md shadow-xl px-4 py-3 min-w-[280px] max-w-sm text-sm ${tradeNotice.type === 'success' ? 'text-white' : 'text-white'}`}>
+            <div className="flex items-start gap-3">
+              <div className={`mt-0.5 h-5 w-5 rounded-full flex items-center justify-center ${tradeNotice.type === 'success' ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30' : 'bg-red-500/20 text-red-400 ring-1 ring-red-500/30'}`}>✓</div>
+              <div className="flex-1">
+                <div className="font-semibold">{tradeNotice.title || (tradeNotice.type === 'success' ? 'Action completed' : 'Action failed')}</div>
+                <div className="text-white/70 mt-0.5 leading-snug">{tradeNotice.message}</div>
+              </div>
+              <button
+                className="text-white/50 hover:text-white/80 text-xs"
+                onClick={() => setTradeNotice(null)}
+                aria-label="Dismiss"
+              >✕</button>
+            </div>
+          </div>
         </div>
       )}
       {/* Top Navbar */}
@@ -2153,6 +2172,7 @@ function TerminalContent() {
                   pendingPositions={pendingOrders}
                   closedPositions={closedPositions}
                   accountId={currentAccountId}
+                  onNotify={(n) => setTradeNotice(n)}
                   onClose={async (id) => {
                     try {
                       console.log('[Close] Closing position:', id);
@@ -2211,7 +2231,7 @@ function TerminalContent() {
                         console.log('[Pending] Cancel response:', res)
                         // Refresh pending orders to remove cancelled order
                         setTimeout(() => refreshPendingOrders(), 500)
-                        setTradeNotice({ type: 'success', message: 'Order cancelled' });
+                        setTradeNotice({ type: 'success', title: 'Order cancelled', message: `Ticket ${positionId}` });
                         return
                       }
 
@@ -2234,7 +2254,7 @@ function TerminalContent() {
                       
                       if (json.success || json.Success) { 
                         console.log('[Close] Position closed successfully'); 
-                        setTradeNotice({ type: 'success', message: 'Position closed successfully' });
+                        setTradeNotice({ type: 'success', title: 'Position closed', message: `Ticket ${positionId}` });
                         
                         // Immediately refresh balance using getClientProfile API after closing position
                         if (refreshBalance && currentAccountId) {
