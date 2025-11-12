@@ -563,6 +563,8 @@ function TerminalContent() {
   const [leftPanelView, setLeftPanelView] = React.useState<LeftPanelView>("instruments")
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = React.useState(false)
   const [activeInstrumentTab, setActiveInstrumentTab] = React.useState("eurusd")
+  // Optimistic removal of just-closed tickets to avoid full table blink
+  const [optimisticallyClosed, setOptimisticallyClosed] = React.useState<Set<string>>(new Set())
   // Lightweight bottom-left toast for trade actions
   type TradeNotice = { type: 'success' | 'error'; title?: string; message: string }
   const [tradeNotice, setTradeNotice] = React.useState<TradeNotice | null>(null)
@@ -1154,8 +1156,10 @@ function TerminalContent() {
       return out
     })
 
-    return merged
-  }, [signalRPositions]);
+    // Filter out tickets we optimistically closed (until stream catches up)
+    const filtered = merged.filter(r => !optimisticallyClosed.has(r.id))
+    return filtered
+  }, [signalRPositions, optimisticallyClosed]);
 
   // Store merged results as the last good snapshot
   React.useEffect(() => {
@@ -1163,6 +1167,21 @@ function TerminalContent() {
     for (const p of formattedPositions) m.set(p.id, p)
     prevPositionsRef.current = m
   }, [formattedPositions])
+
+  // Reconcile optimistic-closed set when live stream catches up
+  React.useEffect(() => {
+    const present = new Set<string>(
+      signalRPositions.map(p => (p.ticket && p.ticket > 0 ? `ticket-${p.ticket}` : p.id))
+    )
+    setOptimisticallyClosed(prev => {
+      if (prev.size === 0) return prev
+      const next = new Set(prev)
+      for (const id of prev) {
+        if (!present.has(id)) next.delete(id)
+      }
+      return next
+    })
+  }, [signalRPositions])
 
   // Convert pending orders from hook to Position format for the table
   const pendingOrders = React.useMemo((): Position[] => {
@@ -2255,6 +2274,8 @@ function TerminalContent() {
                       if (json.success || json.Success) { 
                         console.log('[Close] Position closed successfully'); 
                         setTradeNotice({ type: 'success', title: 'Position closed', message: `Ticket ${positionId}` });
+                        // Optimistically hide the just-closed row without reconnecting
+                        try { setOptimisticallyClosed(prev => { const n = new Set(prev); n.add(id); return n }) } catch {}
                         
                         // Immediately refresh balance using getClientProfile API after closing position
                         if (refreshBalance && currentAccountId) {
@@ -2270,8 +2291,7 @@ function TerminalContent() {
                           // Also refetch after a short delay to catch backend processing latency
                           setTimeout(() => { try { refetchClosed?.() } catch {} }, 500)
                         } catch {}
-                        // Nudge positions stream to drop the closed item if event is delayed
-                        try { positionsReconnect?.() } catch {}
+                        // Do not reconnect positions stream to avoid full-table reload
                       }
                       else { 
                         const errorMsg = json.message || json.Message || json.error || 'Unknown error';
@@ -2426,12 +2446,12 @@ function TerminalContent() {
                             if (refreshBalance && currentAccountId) {
                               setTimeout(() => refreshBalance(currentAccountId), 300)
                             }
-                            // Refresh closed trades list (immediate + delayed) and nudge positions stream
+                            // Refresh closed trades list (immediate + delayed)
                             try { 
                               refetchClosed?.();
                               setTimeout(() => { try { refetchClosed?.() } catch {} }, 500);
                             } catch {}
-                            try { positionsReconnect?.() } catch {}
+                            // Avoid reconnect to prevent table flicker
                           } else if (failedCount > 0) {
                             setTradeNotice({ type: 'error', message: `Failed to close ${failedCount} position${failedCount !== 1 ? 's' : ''}` })
                           }
@@ -2568,9 +2588,9 @@ function TerminalContent() {
                             if (refreshBalance && currentAccountId) {
                               setTimeout(() => refreshBalance(currentAccountId), 300)
                             }
-                            // Refresh closed trades list and nudge positions stream
+                            // Refresh closed trades list
                             try { refetchClosed?.() } catch {}
-                            try { positionsReconnect?.() } catch {}
+                            // Avoid reconnect to prevent table flicker
                           } else if (failedCount > 0) {
                             setTradeNotice({ type: 'error', message: `Failed to close ${failedCount} position${failedCount !== 1 ? 's' : ''}` })
                           }
