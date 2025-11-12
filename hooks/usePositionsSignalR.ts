@@ -56,6 +56,27 @@ export function usePositionsSignalR({
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
+  const cacheKeyRef = useRef<string>('');
+
+  // Helpers: cache last known positions to avoid UI flicker during server gaps
+  const saveCache = useCallback((accId: string, data: SignalRPosition[]) => {
+    try {
+      const payload = { ts: Date.now(), data }
+      localStorage.setItem(`zuperior-positions-cache:${accId}`, JSON.stringify(payload))
+    } catch {}
+  }, [])
+
+  const readCache = useCallback((accId: string): SignalRPosition[] | null => {
+    try {
+      const raw = localStorage.getItem(`zuperior-positions-cache:${accId}`)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed?.data)) return parsed.data as SignalRPosition[]
+      return null
+    } catch {
+      return null
+    }
+  }, [])
 
   // Authenticate and get access token
   const authenticate = useCallback(async (accId: string) => {
@@ -93,6 +114,7 @@ export function usePositionsSignalR({
   // Connect to SignalR
   const connect = useCallback(async (token: string, accId: string) => {
     try {
+      cacheKeyRef.current = `zuperior-positions-cache:${accId}`
       if (connectionRef.current) {
         await connectionRef.current.stop();
         connectionRef.current = null;
@@ -279,8 +301,11 @@ export function usePositionsSignalR({
         const formattedPositions = formatPositions(data);
         
         if (Array.isArray(data)) {
-          // Full list replacement
-          setPositions(formattedPositions);
+          // Full list replacement - ignore empty arrays to prevent flicker
+          if (formattedPositions.length > 0) {
+            setPositions(formattedPositions);
+            saveCache(accId, formattedPositions)
+          }
         } else {
           // Single position update
           const formattedPosition = formattedPositions[0];
@@ -290,9 +315,12 @@ export function usePositionsSignalR({
               if (index !== -1) {
                 const updated = [...prev];
                 updated[index] = formattedPosition;
+                saveCache(accId, updated)
                 return updated;
               }
-              return [...prev, formattedPosition];
+              const merged = [...prev, formattedPosition]
+              saveCache(accId, merged)
+              return merged;
             });
           }
         }
@@ -310,7 +338,11 @@ export function usePositionsSignalR({
         console.log('dY"S Position closed:', data);
         const ticketToRemove = Number(data.Ticket ?? data.ticket ?? data.PositionId ?? data.PositionID ?? data);
         if (!ticketToRemove) return;
-        setPositions(prev => prev.filter(p => p.ticket !== ticketToRemove));
+        setPositions(prev => {
+          const filtered = prev.filter(p => p.ticket !== ticketToRemove)
+          saveCache(accId, filtered)
+          return filtered
+        });
       });
 
       connection.on('PositionOpened', async (data: any) => {
@@ -531,6 +563,7 @@ export function usePositionsSignalR({
         if (formatted.length > 0) {
           console.log(`✅ Received ${formatted.length} initial positions`);
           setPositions(formatted);
+          saveCache(accId, formatted)
         }
       }
 
@@ -552,6 +585,7 @@ export function usePositionsSignalR({
               const formatted = formatPositions(positions);
               if (formatted.length > 0) {
                 setPositions(formatted);
+                saveCache(accId, formatted)
               }
             }
           } catch (err) {
@@ -611,6 +645,14 @@ export function usePositionsSignalR({
       return;
     }
 
+    // Seed from cache synchronously to prevent empty UI
+    try {
+      const cached = readCache(accountId)
+      if (cached && cached.length > 0) {
+        setPositions(cached)
+      }
+    } catch {}
+
     // Authenticate and connect
     authenticate(accountId)
       .then(token => {
@@ -643,8 +685,21 @@ export function usePositionsSignalR({
         });
         connectionRef.current = null;
       }
+      // On unmount, also clear cache key reference
+      cacheKeyRef.current = ''
     };
   }, [accountId, enabled, authenticate, connect]);
+
+  // Clear cache on browser tab close or reload
+  useEffect(() => {
+    const handleUnload = () => {
+      try {
+        if (accountId) localStorage.removeItem(`zuperior-positions-cache:${accountId}`)
+      } catch {}
+    }
+    window.addEventListener('beforeunload', handleUnload)
+    return () => window.removeEventListener('beforeunload', handleUnload)
+  }, [accountId])
 
   // Reset mounted flag on mount
   useEffect(() => {

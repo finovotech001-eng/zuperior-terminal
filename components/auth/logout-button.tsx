@@ -25,6 +25,16 @@ export function LogoutButton({
     setIsLoading(true)
 
     try {
+      // Clear local caches before logging out
+      try {
+        const keys: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i)
+          if (k && (k.startsWith('zuperior-positions-cache:'))) keys.push(k)
+        }
+        keys.forEach(k => localStorage.removeItem(k))
+      } catch {}
+
       const response = await fetch("/apis/auth/logout", {
         method: "POST",
       })
@@ -59,5 +69,4 @@ export function LogoutButton({
     </Button>
   )
 }
-
 
