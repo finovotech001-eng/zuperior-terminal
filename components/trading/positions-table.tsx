@@ -8,6 +8,7 @@ import { X, MoreVertical, ChevronUp, Edit2, LayersIcon, Layers2Icon } from "luci
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { IconButton } from "@/components/ui/icon-button"
+import { Button } from "@/components/ui/button"
 import { Toggle } from "@/components/ui/toggle"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -62,8 +63,10 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   const [isCollapsed, setIsCollapsed] = useAtom(positionsIsCollapsedAtom)
   const [columns] = useAtom(positionsColumnsAtom)
   const [, toggleColumn] = useAtom(togglePositionColumnAtom)
-  // Track expanded/collapsed state for grouped rows by group key
+  // Track expanded/collapsed and bulk-close state per group key
   const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>({})
+  const [closingGroups, setClosingGroups] = React.useState<Record<string, boolean>>({})
+  const [confirmGroup, setConfirmGroup] = React.useState<PositionGroup | null>(null)
   
   // Track which modify popover is open: positionId_columnKey (e.g., "123_tp", "123_sl", "123_actions")
   const [openModifyPopover, setOpenModifyPopover] = React.useState<string | null>(null)
@@ -808,27 +811,56 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
 
           {/* Actions column: Close all in group */}
           <div className="flex items-center justify-end">
-            <button
-              type="button"
-              title="Close all positions in this group"
-              onClick={async (e) => {
-                e.stopPropagation()
-                try {
-                  if (!onClose) return
-                  const ok = window.confirm(`Close all (${group.positions.length}) ${group.symbol} ${group.type} positions?`)
-                  if (!ok) return
-                  // Close sequentially to keep server happy
-                  for (const p of group.positions) {
-                    await Promise.resolve(onClose(p.id))
-                    // small spacing to avoid hammering API
-                    await new Promise(res => setTimeout(res, 120))
-                  }
-                } catch {}
+            <Popover
+              open={confirmGroup?.key === group.key}
+              onOpenChange={(open) => {
+                // Prevent row toggle; just manage confirmation popover state
+                setConfirmGroup(open ? group : null)
               }}
-              className="inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 h-7 w-7 hover:bg-white/5 text-danger hover:text-danger/80 cursor-pointer border-0 bg-transparent"
             >
-              <X className="h-3.5 w-3.5 pointer-events-none" />
-            </button>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  title="Close all positions in this group"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (!onClose) return
+                    setConfirmGroup(group)
+                  }}
+                  disabled={!!closingGroups[group.key]}
+                  className={cn(
+                    "inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 h-7 w-7 border-0 bg-transparent",
+                    closingGroups[group.key]
+                      ? "opacity-50 cursor-not-allowed text-danger"
+                      : "hover:bg-white/5 text-danger hover:text-danger/80 cursor-pointer"
+                  )}
+                >
+                  <X className={cn("h-3.5 w-3.5 pointer-events-none", closingGroups[group.key] ? "animate-pulse" : undefined)} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="bottom" align="end" alignOffset={4} className="w-[360px] p-4 bg-[#1b1f2a] border-white/10 shadow-xl">
+                <div className="text-white font-medium mb-3">
+                  Close all {group.symbol} positions at the market price?
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setConfirmGroup(null)}>Cancel</Button>
+                  <Button
+                    variant="default"
+                    className="bg-primary hover:bg-primary/90 text-white"
+                    onClick={async () => {
+                      if (!onClose) return
+                      const key = group.key
+                      setClosingGroups(prev => ({ ...prev, [key]: true }))
+                      setConfirmGroup(null)
+                      await Promise.allSettled(group.positions.map(p => Promise.resolve(onClose(p.id))))
+                      setClosingGroups(prev => ({ ...prev, [key]: false }))
+                    }}
+                  >
+                    Confirm
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
         </div>
 
