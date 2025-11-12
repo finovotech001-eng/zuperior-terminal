@@ -413,10 +413,8 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
     try {
       await fetchAccountBalance(accountId, isInitial);
     } finally {
-      // Remove from pending set after a short delay to prevent rapid re-requests
-      setTimeout(() => {
-        pendingRequestsRef.current.delete(accountId);
-      }, 500);
+      // Remove from pending set immediately so next cycle can run
+      pendingRequestsRef.current.delete(accountId);
     }
   }, [fetchAccountBalance]);
 
@@ -448,13 +446,12 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
         clearInterval(intervalRef.current);
       }
 
-      // Set up polling interval for all accounts (every 3 seconds to avoid resource exhaustion)
-      // This is still frequent enough for real-time updates without overwhelming the browser
+      // Set up polling interval for all accounts (every 200ms per your requirement)
       intervalRef.current = setInterval(() => {
         accountIdsRef.current.forEach(accountId => {
           throttledFetchAccountBalance(accountId, false);
         });
-      }, 3000); // Changed from 300ms to 3000ms (3 seconds)
+      }, 200);
     });
 
     return () => {
@@ -1264,24 +1261,17 @@ function TerminalContent() {
     }
   }, [signalRPositions]);
 
-  // Live Equity = Balance + Total P/L (floating)
-  const liveEquity = React.useMemo(() => {
-    const bal = Number(balanceData.balance) || 0;
-    return bal + liveTotalPL;
-  }, [balanceData.balance, liveTotalPL]);
+  // Live Equity from API (Equity already includes Balance + Credit + Bonus ± P/L)
+  const liveEquity = React.useMemo(() => Number(balanceData.equity) || 0, [balanceData.equity]);
 
-  // Live Free Margin = Equity - Margin, recalculated every 600ms
-  const [liveFreeMargin, setLiveFreeMargin] = React.useState<number>(0);
-  React.useEffect(() => {
-    const compute = () => {
-      const eq = Number(liveEquity) || 0;
-      const mg = Number(balanceData.margin) || 0;
-      setLiveFreeMargin(parseFloat((eq - mg).toFixed(2)));
-    };
-    compute();
-    const id = setInterval(compute, 600);
-    return () => clearInterval(id);
-  }, [liveEquity, balanceData.margin]);
+  // Live Free Margin: prefer API FreeMargin; fallback to Equity - Margin
+  const liveFreeMargin = React.useMemo(() => {
+    const fm = Number(balanceData.freeMargin)
+    if (Number.isFinite(fm) && fm !== 0) return parseFloat(fm.toFixed(2))
+    const eq = Number(balanceData.equity) || 0
+    const mg = Number(balanceData.margin) || 0
+    return parseFloat((eq - mg).toFixed(2))
+  }, [balanceData.freeMargin, balanceData.equity, balanceData.margin])
 
   // Closed trades (history)
   const { closedPositions, isLoading: closedLoading, error: closedError, refetch: refetchClosed } = useTradeHistory({ accountId: currentAccountId, enabled: true })
