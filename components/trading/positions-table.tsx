@@ -62,6 +62,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   const [isCollapsed, setIsCollapsed] = useAtom(positionsIsCollapsedAtom)
   const [columns] = useAtom(positionsColumnsAtom)
   const [, toggleColumn] = useAtom(togglePositionColumnAtom)
+  // Track expanded/collapsed state for grouped rows by group key
+  const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>({})
   
   // Track which modify popover is open: positionId_columnKey (e.g., "123_tp", "123_sl", "123_actions")
   const [openModifyPopover, setOpenModifyPopover] = React.useState<string | null>(null)
@@ -114,6 +116,75 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   // ✨ FIX 1: Wrap formatPrice in useCallback
   const formatPrice = React.useCallback((price: number) => {
     return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 })
+  }, [])
+
+  // Grouping logic for Open positions: group by symbol + type (+ account if provided)
+  type PositionGroup = {
+    key: string
+    symbol: string
+    type: Position["type"]
+    positions: Position[]
+    volume: number
+    pnl: number
+    swap: number
+    openPrice: number // weighted by volume
+    currentPrice: number // use first (same for symbol)
+    countryCode?: string
+    icon?: string
+  }
+
+  // Detect if there are duplicates to auto-enable grouping UX
+  const hasDuplicateGroups = React.useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const p of openPositions || []) {
+      const key = `${p.symbol}__${p.type}`
+      counts.set(key, (counts.get(key) || 0) + 1)
+    }
+    for (const v of counts.values()) if (v > 1) return true
+    return false
+  }, [openPositions])
+
+  const shouldGroupOpen = isGrouped || hasDuplicateGroups
+
+  const groupedOpenPositions = React.useMemo<PositionGroup[]>(() => {
+    if (!shouldGroupOpen) return []
+    const map = new Map<string, PositionGroup>()
+    for (const p of openPositions || []) {
+      const key = `${p.symbol}__${p.type}`
+      const existing = map.get(key)
+      if (!existing) {
+        map.set(key, {
+          key,
+          symbol: p.symbol,
+          type: p.type,
+          positions: [p],
+          volume: p.volume ?? 0,
+          pnl: p.pnl ?? 0,
+          swap: p.swap ?? 0,
+          openPrice: (p.openPrice ?? 0) * (p.volume ?? 0),
+          currentPrice: p.currentPrice ?? 0,
+          countryCode: p.countryCode,
+          icon: p.icon,
+        })
+      } else {
+        existing.positions.push(p)
+        existing.volume += p.volume ?? 0
+        existing.pnl += p.pnl ?? 0
+        existing.swap += p.swap ?? 0
+        existing.openPrice += (p.openPrice ?? 0) * (p.volume ?? 0)
+        // currentPrice is the same per symbol; keep first
+      }
+    }
+    // finalize weighted open price
+    const list = Array.from(map.values()).map(g => ({
+      ...g,
+      openPrice: g.volume > 0 ? g.openPrice / g.volume : 0,
+    }))
+    return list
+  }, [shouldGroupOpen, openPositions])
+
+  const toggleGroupExpanded = React.useCallback((key: string) => {
+    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }))
   }, [])
 
   // ✨ FIX 2: Wrap renderPositionRow in useCallback to capture 'columns', 'formatPrice', and 'onClose' in its dependencies
@@ -649,6 +720,124 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     )
   }, [columns, formatPrice, onClose, activeTab]) // Dependencies must include everything used inside this function
 
+  // Renderer for grouped parent row (collapsed/expanded control)
+  const renderGroupRow = React.useCallback((group: PositionGroup) => {
+    const isExpanded = !!expandedGroups[group.key]
+    const pnlPositive = (group.pnl ?? 0) >= 0
+    return (
+      <div key={`group-${group.key}`} className="border-b border-white/5">
+        <div
+          className={cn(
+            "grid gap-4 px-4 py-3 hover:bg-white/5 transition-colors text-sm min-w-max cursor-pointer",
+            // Use the open tab columns layout (full columns)
+            "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]"
+          )}
+          onClick={() => toggleGroupExpanded(group.key)}
+        >
+          {/* Symbol with count badge and chevron */}
+          {columns.find(c => c.key === "symbol")?.visible && (
+            <div className="flex items-center gap-2">
+              <ChevronUp className={cn("h-4 w-4 text-white/60 transition-transform", isExpanded ? "rotate-0" : "-rotate-180")} />
+              {group.countryCode && <FlagIcon countryCode={group.countryCode} size="sm" />}
+              {group.icon && <span className="text-base">{group.icon}</span>}
+              <span className="font-medium text-white">{group.symbol}</span>
+              <span className="ml-2 text-xs bg-white/5 rounded-md text-white/60 h-5 px-2 inline-flex items-center justify-center">{group.positions.length}</span>
+            </div>
+          )}
+
+          {/* Type */}
+          {columns.find(c => c.key === "type")?.visible && (
+            <div className="flex items-center">
+              <span
+                className={cn(
+                  "px-2 py-0.5 rounded text-xs font-medium",
+                  group.type === "Buy" ? "bg-success/20 text-success" : "bg-danger/20 text-danger"
+                )}
+              >
+                ● {group.type}
+              </span>
+            </div>
+          )}
+
+          {/* Volume (sum) */}
+          {columns.find(c => c.key === "volume")?.visible && (
+            <div className="flex items-center price-font text-white/80">{(group.volume ?? 0).toFixed(2)}</div>
+          )}
+
+          {/* Open Price (weighted) */}
+          {columns.find(c => c.key === "openPrice")?.visible && (
+            <div className="flex items-center price-font text-white/80">{formatPrice(group.openPrice ?? 0)}</div>
+          )}
+
+          {/* Current Price */}
+          {columns.find(c => c.key === "currentPrice")?.visible && (
+            <div className="flex items-center price-font font-medium text-white">{formatPrice(group.currentPrice ?? 0)}</div>
+          )}
+
+          {/* T/P */}
+          {columns.find(c => c.key === "tp")?.visible && (
+            <div className="flex items-center text-xs text-white/40">—</div>
+          )}
+
+          {/* S/L */}
+          {columns.find(c => c.key === "sl")?.visible && (
+            <div className="flex items-center text-xs text-white/40">—</div>
+          )}
+
+          {/* Position (show range or first-last) */}
+          {columns.find(c => c.key === "position")?.visible && (
+            <div className="flex items-center price-font text-white/80">
+              {group.positions[0]?.position}
+            </div>
+          )}
+
+          {/* Open Time (first) */}
+          {columns.find(c => c.key === "openTime")?.visible && (
+            <div className="flex items-center text-white/60 text-xs">{group.positions[0]?.openTime}</div>
+          )}
+
+          {/* Swap (sum) */}
+          {columns.find(c => c.key === "swap")?.visible && (
+            <div className="flex items-center price-font text-white/80">{formatPrice(group.swap ?? 0)}</div>
+          )}
+
+          {/* P/L (sum) */}
+          {columns.find(c => c.key === "pnl")?.visible && (
+            <div className={cn("flex items-center price-font font-medium", pnlPositive ? "text-success" : "text-danger")}>{pnlPositive ? "+" : ""}{formatPrice(group.pnl ?? 0)}</div>
+          )}
+
+          {/* Actions column: Close all in group */}
+          <div className="flex items-center justify-end">
+            <button
+              type="button"
+              title="Close all positions in this group"
+              onClick={async (e) => {
+                e.stopPropagation()
+                try {
+                  if (!onClose) return
+                  const ok = window.confirm(`Close all (${group.positions.length}) ${group.symbol} ${group.type} positions?`)
+                  if (!ok) return
+                  // Close sequentially to keep server happy
+                  for (const p of group.positions) {
+                    await Promise.resolve(onClose(p.id))
+                    // small spacing to avoid hammering API
+                    await new Promise(res => setTimeout(res, 120))
+                  }
+                } catch {}
+              }}
+              className="inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 h-7 w-7 hover:bg-white/5 text-danger hover:text-danger/80 cursor-pointer border-0 bg-transparent"
+            >
+              <X className="h-3.5 w-3.5 pointer-events-none" />
+            </button>
+          </div>
+        </div>
+
+        {/* Children */}
+        {isExpanded && group.positions.map(p => renderPositionRow(p))}
+      </div>
+    )
+  }, [columns, expandedGroups, formatPrice, renderPositionRow, toggleGroupExpanded, onClose])
+
   return (
     <div className="flex flex-col glass-card rounded-lg overflow-hidden h-full">
       {/* Header */}
@@ -841,14 +1030,15 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
 
               {/* Table Rows */}
               <div className="min-w-max">
-                {activeTab === "open" && openPositions.length > 0 && openPositions.map(renderPositionRow)}
+                {activeTab === "open" && !shouldGroupOpen && openPositions.length > 0 && openPositions.map(renderPositionRow)}
+                {activeTab === "open" && shouldGroupOpen && groupedOpenPositions.length > 0 && groupedOpenPositions.map(renderGroupRow)}
                 {activeTab === "pending" && pendingPositions.length > 0 && pendingPositions.map(renderPositionRow)}
                 {activeTab === "closed" && closedPositions.length > 0 && closedPositions.map((pos, idx) => {
                   return renderPositionRow(pos, idx)
                 })}
 
                 {/* Empty State */}
-                {((activeTab === "open" && openPositions.length === 0) ||
+                {((activeTab === "open" && ((shouldGroupOpen && groupedOpenPositions.length === 0) || (!shouldGroupOpen && openPositions.length === 0))) ||
                   (activeTab === "pending" && pendingPositions.length === 0) ||
                   (activeTab === "closed" && closedPositions.length === 0)) && (
                   <div className="flex flex-col items-center justify-center h-32 text-white/40 text-sm gap-2">
@@ -868,5 +1058,3 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
 }
 
 export { PositionsTable }
-
-
