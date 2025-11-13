@@ -74,6 +74,16 @@ class CustomDatafeed {
         let symbolType = 'crypto';
         let pricescale = 100;
         if (/USD|EUR|GBP|JPY/.test(symbolName)) pricescale = 10000;
+        
+        // Determine symbol type more accurately
+        if (symbolName.startsWith('BTC') || symbolName.startsWith('ETH')) {
+            symbolType = 'crypto';
+        } else if (symbolName.startsWith('XAU') || symbolName.startsWith('XAG')) {
+            symbolType = 'commodity';
+        } else if (/USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD/.test(symbolName)) {
+            symbolType = 'forex';
+        }
+        
         const info = {
             ticker: symbolName,
             name: symbolName,
@@ -81,9 +91,9 @@ class CustomDatafeed {
             type: symbolType,
             session: '24x7',
             timezone: 'Etc/UTC',
-            // Hide exchange label (remove MT5 from header)
-            exchange: '',
-            listed_exchange: '',
+            // Provide exchange to avoid validation warnings (use a generic value)
+            exchange: 'FOREX',
+            listed_exchange: 'FOREX',
             minmov: 1,
             pricescale,
             has_intraday: true,

@@ -28,22 +28,36 @@ export async function GET(req: NextRequest) {
       token = loginJson?.data?.accessToken || null
     }
 
-    // Call remote tick endpoint
+    // Call remote tick endpoint with timeout
     const API_BASE = (process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api').replace(/\/$/, '')
     const url = `${API_BASE}/livedata/tick/${encodeURIComponent(symbol)}`
-    const upstream = await fetch(url, {
-      method: 'GET',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      cache: 'no-store'
-    })
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout
+    
+    try {
+      const upstream = await fetch(url, {
+        method: 'GET',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        cache: 'no-store',
+        signal: controller.signal
+      })
+      clearTimeout(timeoutId)
 
-    const text = await upstream.text().catch(() => '')
-    let body: any = null
-    try { body = text ? JSON.parse(text) : null } catch { body = text }
+      const text = await upstream.text().catch(() => '')
+      let body: any = null
+      try { body = text ? JSON.parse(text) : null } catch { body = text }
 
-    return NextResponse.json({ ok: upstream.ok, status: upstream.status, tokenUsed: !!token, symbol, endpoint: url, body }, { status: upstream.ok ? 200 : upstream.status || 502 })
+      return NextResponse.json({ ok: upstream.ok, status: upstream.status, tokenUsed: !!token, symbol, endpoint: url, body }, { status: upstream.ok ? 200 : upstream.status || 502 })
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId)
+      if (fetchError.name === 'AbortError') {
+        return NextResponse.json({ ok: false, error: 'Request timeout', symbol, endpoint: url }, { status: 504 })
+      }
+      return NextResponse.json({ ok: false, error: fetchError.message || 'Network error', symbol, endpoint: url }, { status: 502 })
+    }
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 })
   }

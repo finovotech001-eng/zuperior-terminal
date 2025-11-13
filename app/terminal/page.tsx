@@ -204,7 +204,26 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
     const API_PATH = `/apis/user/${accountId}/getClientProfile`;
 
     try {
-      const response = await fetch(API_PATH, { cache: 'no-store' });
+      // Add timeout to prevent hanging requests
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10s timeout
+      
+      let response: Response | null = null
+      try {
+        response = await fetch(API_PATH, { 
+          cache: 'no-store',
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId)
+        if (fetchErr.name === 'AbortError') {
+          throw new Error('Request timeout - server took too long to respond')
+        }
+        throw fetchErr
+      }
+      
+      if (!response) return
 
       if (!response.ok) {
         const result = await response.json().catch(() => ({ error: `HTTP status ${response.status}` }));

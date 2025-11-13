@@ -189,15 +189,27 @@
 
     resolveSymbol(symbolName, onResolve) {
       let pricescale = /USD|EUR|GBP|JPY/.test(symbolName) ? 10000 : 100;
+      
+      // Determine symbol type more accurately
+      let symbolType = 'crypto';
+      if (symbolName.startsWith('BTC') || symbolName.startsWith('ETH')) {
+        symbolType = 'crypto';
+      } else if (symbolName.startsWith('XAU') || symbolName.startsWith('XAG')) {
+        symbolType = 'commodity';
+      } else if (/USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD/.test(symbolName)) {
+        symbolType = 'forex';
+      }
+      
       const info = {
         ticker: symbolName,
         name: symbolName,
         description: symbolName,
-        type: 'crypto',
+        type: symbolType,
         session: '24x7',
         timezone: 'Etc/UTC',
-        exchange: '',
-        listed_exchange: '',
+        // Provide exchange to avoid validation warnings
+        exchange: 'FOREX',
+        listed_exchange: 'FOREX',
         minmov: 1,
         pricescale,
         has_intraday: true,

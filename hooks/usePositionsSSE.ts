@@ -355,7 +355,28 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
       try {
         // eslint-disable-next-line no-console
         console.log('[Positions] Fetching snapshot for', accId, 'seq', seq, 'current seq:', connectSeq.current)
-        const res = await fetch(`/apis/positions/snapshot?accountId=${encodeURIComponent(accId)}`, { cache: 'no-store' })
+        
+        // Add timeout to prevent hanging requests
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 15000) // 15s timeout
+        
+        let res: Response | null = null
+        try {
+          res = await fetch(`/apis/positions/snapshot?accountId=${encodeURIComponent(accId)}`, { 
+            cache: 'no-store',
+            signal: controller.signal
+          })
+          clearTimeout(timeoutId)
+        } catch (fetchErr: any) {
+          clearTimeout(timeoutId)
+          if (fetchErr.name === 'AbortError') {
+            console.warn('[Positions] Snapshot fetch timeout')
+            return
+          }
+          throw fetchErr
+        }
+        
+        if (!res) return
         
         if (!mounted.current) {
           console.log('[Positions] Snapshot aborted - component unmounted')

@@ -29,27 +29,45 @@ export function useTickPolling(symbols: string[], intervalMs = 800) {
     const fetchOnce = async () => {
       if (uniqueSymbols.length === 0) return
       try {
-        const results = await Promise.all(
+        const results = await Promise.allSettled(
           uniqueSymbols.map(async (s) => {
-            const url = `/apis/debug/tick?symbol=${encodeURIComponent(s)}`
-            const res = await fetch(url, { cache: 'no-store' })
-            if (!res.ok) return null
-            const json = await res.json().catch(() => null)
-            const body = json?.body
-            if (!body) return null
-            const bid = Number(body.Bid ?? body.bid)
-            const ask = Number(body.Ask ?? body.ask)
-            const spread = Number(body.Spread ?? body.spread)
-            const ts = Number(body.Timestamp ?? body.ts)
-            if (!Number.isFinite(bid) || !Number.isFinite(ask)) return null
-            const symbol = (body.Symbol || body.symbol || s).toString()
-            return { symbol, bid, ask, spread, ts } as Tick
+            try {
+              const url = `/apis/debug/tick?symbol=${encodeURIComponent(s)}`
+              const controller = new AbortController()
+              const timeoutId = setTimeout(() => controller.abort(), 5000) // 5s timeout
+              
+              const res = await fetch(url, { 
+                cache: 'no-store',
+                signal: controller.signal
+              }).catch(() => null)
+              
+              clearTimeout(timeoutId)
+              
+              if (!res || !res.ok) return null
+              const json = await res.json().catch(() => null)
+              if (!json) return null
+              
+              const body = json?.body
+              if (!body) return null
+              const bid = Number(body.Bid ?? body.bid)
+              const ask = Number(body.Ask ?? body.ask)
+              const spread = Number(body.Spread ?? body.spread)
+              const ts = Number(body.Timestamp ?? body.ts)
+              if (!Number.isFinite(bid) || !Number.isFinite(ask)) return null
+              const symbol = (body.Symbol || body.symbol || s).toString()
+              return { symbol, bid, ask, spread, ts } as Tick
+            } catch (err) {
+              // Silently ignore individual symbol failures
+              return null
+            }
           })
         )
         setTicks((prev) => {
           const next = new Map(prev)
-          results.forEach((t) => {
-            if (t) next.set(t.symbol, t)
+          results.forEach((result) => {
+            if (result.status === 'fulfilled' && result.value) {
+              next.set(result.value.symbol, result.value)
+            }
           })
           return next
         })
