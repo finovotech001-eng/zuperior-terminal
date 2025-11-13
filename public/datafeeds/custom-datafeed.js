@@ -106,7 +106,37 @@ class CustomDatafeed {
     async getBars(symbolInfo, resolution, periodParams, onResult, onError) {
         const { from, to, firstDataRequest } = periodParams;
         const timeframe = this.getTimeframe(resolution);
-        // Dynamic count: default 500, scale to viewport if available
+        
+        // Convert from/to (seconds) to UTC timestamps
+        // from and to are in seconds (Unix timestamp), convert to milliseconds for Date
+        const toMs = (t) => {
+            if (t == null) return NaN;
+            const n = typeof t === 'string' && /^\d+$/.test(t) ? Number(t) : t;
+            if (typeof n === 'number') { return n < 1e12 ? n * 1000 : n; }
+            const d = new Date(t); return d.getTime();
+        };
+        
+        // Convert to UTC ISO-8601 with Z suffix (e.g., 2025-01-08T23:59:59Z)
+        const toUTCISO = (seconds) => {
+            if (!seconds) return null;
+            const ms = toMs(seconds);
+            if (!Number.isFinite(ms)) return null;
+            return new Date(ms).toISOString(); // Already in UTC, includes Z
+        };
+        
+        // Convert to milliseconds-since-epoch (UTC)
+        const toUTCMs = (seconds) => {
+            if (!seconds) return null;
+            const ms = toMs(seconds);
+            return Number.isFinite(ms) ? ms : null;
+        };
+        
+        const startTimeISO = toUTCISO(from);
+        const endTimeISO = toUTCISO(to);
+        const startTimeMs = toUTCMs(from);
+        const endTimeMs = toUTCMs(to);
+        
+        // Fallback to count if timestamps not available (for first request)
         const DEFAULT_COUNT = 500;
         const tfMin = parseInt(timeframe) || 1; // minutes
         const rangeSec = (to && from) ? Math.max(0, (to - from)) : 0; // seconds
@@ -115,22 +145,39 @@ class CustomDatafeed {
             const est = Math.ceil(rangeSec / (tfMin * 60));
             count = Math.max(DEFAULT_COUNT, Math.min(est + 50, 5000));
         }
+        
         try {
-            const toMs = (t) => {
-                if (t == null) return NaN;
-                const n = typeof t === 'string' && /^\d+$/.test(t) ? Number(t) : t;
-                if (typeof n === 'number') { return n < 1e12 ? n * 1000 : n; }
-                const d = new Date(t); return d.getTime();
-            };
             // Try multiple symbol variants and URL shapes to match backend
             const baseSymbol = symbolInfo.name;
             const candidatesSymbols = /m$/.test(baseSymbol) ? [baseSymbol, baseSymbol.replace(/m$/, '')] : [baseSymbol, baseSymbol + 'm'];
-            const pathsFor = (sym) => [
-                `/chart/candle/history/${sym}?timeframe=${timeframe}&count=${count}`,
-                `/chart/candle/history/${sym}?timeframe=${timeframe}&Count=${count}`,
-                `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=${timeframe}&count=${count}`,
-                `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=${timeframe}&Count=${count}`,
-            ];
+            
+            // Build paths with startTime/endTime (prefer ISO-8601 with Z, fallback to ms)
+            const pathsFor = (sym) => {
+                const params = [];
+                params.push(`timeframe=${timeframe}`);
+                
+                // Prefer startTime/endTime as UTC ISO-8601 with Z
+                if (startTimeISO && endTimeISO) {
+                    params.push(`startTime=${encodeURIComponent(startTimeISO)}`);
+                    params.push(`endTime=${encodeURIComponent(endTimeISO)}`);
+                } else if (startTimeMs && endTimeMs) {
+                    // Fallback to milliseconds-since-epoch
+                    params.push(`startTime=${startTimeMs}`);
+                    params.push(`endTime=${endTimeMs}`);
+                } else {
+                    // Fallback to count if no timestamps
+                    params.push(`count=${count}`);
+                }
+                
+                const qs = params.join('&');
+                return [
+                    `/chart/candle/history/${sym}?${qs}`,
+                    `/chart/candle/history?symbol=${encodeURIComponent(sym)}&${qs}`,
+                    // Keep count-based fallback for compatibility
+                    `/chart/candle/history/${sym}?timeframe=${timeframe}&count=${count}`,
+                    `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=${timeframe}&count=${count}`,
+                ];
+            };
             let data = null;
             for (const sym of candidatesSymbols) {
                 const paths = pathsFor(sym);
@@ -141,11 +188,25 @@ class CustomDatafeed {
             }
             if (!data) throw new Error('history fetch failed');
             if (!Array.isArray(data) || data.length === 0) return onResult([], { noData: true });
+            
+            // Parse timestamps from API response (treat as UTC)
+            const parseUTCTimestamp = (timeStr) => {
+                if (!timeStr) return NaN;
+                // If it's already a number (ms), use it
+                if (typeof timeStr === 'number') return timeStr < 1e12 ? timeStr * 1000 : timeStr;
+                // Parse ISO-8601 or other formats, treat as UTC
+                const d = new Date(timeStr);
+                return d.getTime(); // getTime() returns UTC milliseconds
+            };
+            
             const tfMs = parseInt(timeframe) * 60 * 1000;
-            let bars = data.map(c => ({
-                time: Math.floor(toMs(c.time) / tfMs) * tfMs,
-                open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +(c.volume || 0)
-            })).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close)).sort((a,b)=>a.time-b.time);
+            let bars = data.map(c => {
+                const timeMs = parseUTCTimestamp(c.time);
+                return {
+                    time: Math.floor(timeMs / tfMs) * tfMs,
+                    open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +(c.volume || 0)
+                };
+            }).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close)).sort((a,b)=>a.time-b.time);
 
             let finalBars;
             if (firstDataRequest) {
@@ -163,21 +224,47 @@ class CustomDatafeed {
                 const need1m = Math.min(tfInt*105, 6000);
                 try {
                     let one = null;
+                    // Use UTC timestamps for 1m aggregation request too
+                    const oneParams = [];
+                    oneParams.push('timeframe=1');
+                    if (startTimeISO && endTimeISO) {
+                        oneParams.push(`startTime=${encodeURIComponent(startTimeISO)}`);
+                        oneParams.push(`endTime=${encodeURIComponent(endTimeISO)}`);
+                    } else if (startTimeMs && endTimeMs) {
+                        oneParams.push(`startTime=${startTimeMs}`);
+                        oneParams.push(`endTime=${endTimeMs}`);
+                    } else {
+                        oneParams.push(`count=${need1m}`);
+                    }
+                    const oneQs = oneParams.join('&');
+                    
                     for (const sym of candidatesSymbols) {
                         const onePaths = [
+                            `/chart/candle/history/${sym}?${oneQs}`,
+                            `/chart/candle/history?symbol=${encodeURIComponent(sym)}&${oneQs}`,
+                            // Fallback to count
                             `/chart/candle/history/${sym}?timeframe=1&count=${need1m}`,
-                            `/chart/candle/history/${sym}?timeframe=1&Count=${need1m}`,
                             `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=1&count=${need1m}`,
-                            `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=1&Count=${need1m}`,
                         ];
                         for (const p of onePaths) { try { one = await this.fetchJsonWithFallback(p); break; } catch {} }
                         if (one) break;
                     }
                     if (!one) throw new Error('1m fetch failed');
-                    const oneBars = one.map(c=>({
-                        time: Math.floor(toMs(c.time) / (60*1000)) * 60*1000,
-                        open:+c.open, high:+c.high, low:+c.low, close:+c.close, volume:+(c.volume||0)
-                    })).filter(b=>Number.isFinite(b.time)&&Number.isFinite(b.close)).sort((a,b)=>a.time-b.time);
+                    
+                    const parseUTCTimestamp = (timeStr) => {
+                        if (!timeStr) return NaN;
+                        if (typeof timeStr === 'number') return timeStr < 1e12 ? timeStr * 1000 : timeStr;
+                        const d = new Date(timeStr);
+                        return d.getTime();
+                    };
+                    
+                    const oneBars = one.map(c => {
+                        const timeMs = parseUTCTimestamp(c.time);
+                        return {
+                            time: Math.floor(timeMs / (60*1000)) * 60*1000,
+                            open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +(c.volume || 0)
+                        };
+                    }).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close)).sort((a,b)=>a.time-b.time);
                     const bucketMs = tfInt*60*1000; const map=new Map();
                     for (const b of oneBars){
                         const t=Math.floor(b.time/bucketMs)*bucketMs; const a=map.get(t);
@@ -201,7 +288,9 @@ class CustomDatafeed {
             const poll = async () => {
                 try {
                     const c = await this.fetchJsonWithFallback(`/chart/candle/current/${symbolInfo.name}?timeframe=1`);
-                    const t = Math.floor(new Date(c.time).getTime()/(60*1000))*60*1000;
+                    // Parse timestamp as UTC
+                    const timeMs = typeof c.time === 'number' ? (c.time < 1e12 ? c.time * 1000 : c.time) : new Date(c.time).getTime();
+                    const t = Math.floor(timeMs / (60*1000)) * 60*1000;
                     const bar={ time:t, open:+(c.open??c.close), high:+(c.high??c.close), low:+(c.low??c.close), close:+c.close, volume:+(c.volume||0) };
                     const last=this.lastBars[listenerGuid];
                     if(!last || bar.time>last.time){ this.lastBars[listenerGuid]=bar; onTick(bar); return; }
@@ -219,7 +308,9 @@ class CustomDatafeed {
         const pollAgg = async () => {
             try {
                 const c = await this.fetchJsonWithFallback(`/chart/candle/current/${symbolInfo.name}?timeframe=1`);
-                const oneTime=Math.floor(new Date(c.time).getTime()/(60*1000))*60*1000;
+                // Parse timestamp as UTC
+                const timeMs = typeof c.time === 'number' ? (c.time < 1e12 ? c.time * 1000 : c.time) : new Date(c.time).getTime();
+                const oneTime = Math.floor(timeMs / (60*1000)) * 60*1000;
                 const bucketTime=Math.floor(oneTime/bucketMs)*bucketMs;
                 const oneBar={ time:oneTime, open:+(c.open??c.close), high:+(c.high??c.close), low:+(c.low??c.close), close:+c.close, volume:+(c.volume||0) };
                 let agg=this.aggregators[listenerGuid];

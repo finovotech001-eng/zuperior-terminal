@@ -28,10 +28,14 @@ const FlagIcon: React.FC<FlagIconProps> = ({
     return String.fromCodePoint(...codePoints)
   }
 
+  // Check if className includes 'rounded-full' to determine if it should be circular
+  const isCircular = className?.includes('rounded-full') || props.style?.borderRadius === '50%'
+  
   return (
     <div
       className={cn(
-        "inline-flex items-center justify-center overflow-hidden rounded-md pb-1",
+        "inline-flex items-center justify-center overflow-hidden",
+        isCircular ? "rounded-full" : "rounded-md pb-1",
         "bg-white/5 backdrop-blur-sm",
         "leading-0.5",
         sizeClasses[size],

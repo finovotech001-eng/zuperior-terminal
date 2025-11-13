@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { PositionManagementPanel } from "./position-management-panel"
 import { Label } from "@/components/ui/label"
 import { FlagIcon } from "@/components/data-display/flag-icon"
+import { CurrencyPairFlags } from "@/components/data-display/currency-pair-flags"
 import {
   positionsActiveTabAtom,
   positionsIsGroupedAtom,
@@ -194,6 +195,63 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   }, [])
 
   // ✨ FIX 2: Wrap renderPositionRow in useCallback to capture 'columns', 'formatPrice', and 'onClose' in its dependencies
+  // Helper function to parse currency pairs and get country codes
+  const getCurrencyPairFlags = React.useCallback((symbol: string): [string | null, string | null] => {
+    // Map currency codes to country codes
+    const currencyToCountry: Record<string, string> = {
+      'EUR': 'EU',
+      'GBP': 'GB',
+      'USD': 'US',
+      'JPY': 'JP',
+      'CHF': 'CH',
+      'CAD': 'CA',
+      'AUD': 'AU',
+      'NZD': 'NZ',
+      'CNY': 'CN',
+      'HKD': 'HK',
+      'SGD': 'SG',
+      'NOK': 'NO',
+      'SEK': 'SE',
+      'DKK': 'DK',
+      'PLN': 'PL',
+      'TRY': 'TR',
+      'ZAR': 'ZA',
+      'MXN': 'MX',
+      'BRL': 'BR',
+      'INR': 'IN',
+      'KRW': 'KR',
+      'XAU': 'US', // Gold (typically traded in USD)
+      'XAG': 'US', // Silver (typically traded in USD)
+      'BTC': 'US', // Bitcoin (crypto, default to US)
+      'ETH': 'US', // Ethereum (crypto, default to US)
+    }
+    
+    // Remove common suffixes like 'm' (micro/mini)
+    const cleanSymbol = symbol.replace(/m$/i, '').toUpperCase()
+    
+    // Try to parse as currency pair (e.g., EURUSD, GBPUSD, BTCUSD)
+    // Common patterns: 3-letter + 3-letter, 3-letter + 3-letter + suffix
+    const patterns = [
+      /^([A-Z]{3})([A-Z]{3})$/, // EURUSD
+      /^([A-Z]{3})([A-Z]{3})M?$/, // EURUSDm
+      /^([A-Z]{3,4})([A-Z]{3})$/, // BTCUSD, ETHUSD
+    ]
+    
+    for (const pattern of patterns) {
+      const match = cleanSymbol.match(pattern)
+      if (match) {
+        const baseCurrency = match[1]
+        const quoteCurrency = match[2]
+        const baseCountry = currencyToCountry[baseCurrency] || null
+        const quoteCountry = currencyToCountry[quoteCurrency] || null
+        return [baseCountry, quoteCountry]
+      }
+    }
+    
+    // If no pattern matches, return nulls
+    return [null, null]
+  }, [])
+
   const renderPositionRow = React.useCallback((position: Position, index?: number) => {
     
     // For closed positions, hide T/P, S/L, and Actions columns
@@ -211,8 +269,13 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
       {/* Symbol */}
       {columns.find(c => c.key === "symbol")?.visible && (
         <div className="flex items-center gap-2">
-          {position.countryCode && <FlagIcon countryCode={position.countryCode} size="sm" />}
-          {position.icon && <span className="text-base">{position.icon}</span>}
+          {/* Show overlapping currency pair flags with fallback support */}
+          <CurrencyPairFlags 
+            symbol={position.symbol} 
+            size="sm" 
+            fallbackCountryCode={position.countryCode || undefined}
+            fallbackIcon={position.icon || undefined}
+          />
           <span className="font-medium text-white">{position.symbol}</span>
         </div>
       )}
@@ -759,8 +822,13 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
           {columns.find(c => c.key === "symbol")?.visible && (
             <div className="flex items-center gap-2">
               <ChevronUp className={cn("h-4 w-4 text-white/60 transition-transform", isExpanded ? "rotate-0" : "-rotate-180")} />
-              {group.countryCode && <FlagIcon countryCode={group.countryCode} size="sm" />}
-              {group.icon && <span className="text-base">{group.icon}</span>}
+              {/* Show overlapping currency pair flags with fallback support */}
+              <CurrencyPairFlags 
+                symbol={group.symbol} 
+                size="sm" 
+                fallbackCountryCode={group.countryCode || undefined}
+                fallbackIcon={group.icon || undefined}
+              />
               <span className="font-medium text-white">{group.symbol}</span>
               <span className="ml-2 text-xs bg-white/5 rounded-md text-white/60 h-5 px-2 inline-flex items-center justify-center">{group.positions.length}</span>
             </div>

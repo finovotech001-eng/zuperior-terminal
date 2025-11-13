@@ -17,6 +17,7 @@
     }
 
     _bindHandlers() {
+      // Parse timestamps as UTC (server sends UTC timestamps)
       const toMs = (t) => {
         if (t == null) return NaN;
         const n = typeof t === 'string' && /^\d+$/.test(t) ? Number(t) : t;
@@ -24,8 +25,8 @@
           // if seconds (10 digits), convert to ms
           return n < 1e12 ? n * 1000 : n;
         }
-        const d = new Date(t);
-        return d.getTime();
+        const d = new Date(t); // Parse as UTC (ISO-8601 with Z or UTC milliseconds)
+        return d.getTime(); // Returns UTC milliseconds
       };
       this._onHistoricalCandles = (msg) => {
         try {

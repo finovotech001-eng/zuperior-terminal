@@ -13,8 +13,19 @@ const __chartTokenCache = ((global as any).__chartTokenCache ||= new Map<string,
 const RAW_BASE = (process.env.MT5_API_BASE || process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
 const API_BASE = RAW_BASE.endsWith('/api') ? RAW_BASE : `${RAW_BASE}/api`
 
-function buildUrl(symbol: string, timeframe: string, count: string) {
-  return `${API_BASE}/chart/candle/history/${symbol}?timeframe=${timeframe}&count=${count}`
+function buildUrl(symbol: string, timeframe: string, count?: string, startTime?: string, endTime?: string) {
+  const params = new URLSearchParams()
+  params.set('timeframe', timeframe)
+  
+  // Prefer startTime/endTime (UTC) over count
+  if (startTime && endTime) {
+    params.set('startTime', startTime)
+    params.set('endTime', endTime)
+  } else if (count) {
+    params.set('count', count)
+  }
+  
+  return `${API_BASE}/chart/candle/history/${symbol}?${params.toString()}`
 }
 
 export async function GET(
@@ -26,6 +37,8 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const timeframe = searchParams.get('timeframe') || '1'
     const count = searchParams.get('count') || '500'
+    const startTime = searchParams.get('startTime') // UTC ISO-8601 with Z or milliseconds
+    const endTime = searchParams.get('endTime') // UTC ISO-8601 with Z or milliseconds
     const accountId = searchParams.get('accountId')
 
     // Obtain access token for upstream if possible
@@ -75,7 +88,7 @@ export async function GET(
     let data: any = null
     let lastStatus = 0
     for (const s of candidates) {
-      const url = buildUrl(s, timeframe, count)
+      const url = buildUrl(s, timeframe, count, startTime || undefined, endTime || undefined)
       const headers: Record<string, string> = { 'Accept': 'application/json' }
       if (token && verifiedAccountId) {
         headers['Authorization'] = `Bearer ${token}`

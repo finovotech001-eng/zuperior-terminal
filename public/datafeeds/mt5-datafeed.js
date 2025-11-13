@@ -106,11 +106,48 @@ class MT5Datafeed {
         console.log('[MT5Datafeed]: getBars', symbolInfo.name, resolution, firstDataRequest ? '(first request)' : '(scrollback)');
 
         const timeframe = this.getTimeframe(resolution);
-        // Fetch a lighter history on first load for reliability
-        const count = firstDataRequest ? 100 : 500;
         
-        const apiUrl = `${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=${timeframe}&count=${count}`;
-        console.log('[MT5Datafeed]: Fetching history:', symbolInfo.name, 'Timeframe:', timeframe, 'Count:', count);
+        // Convert from/to (seconds) to UTC timestamps
+        const toMs = (t) => {
+            if (t == null) return NaN;
+            const n = typeof t === 'string' && /^\d+$/.test(t) ? Number(t) : t;
+            if (typeof n === 'number') { return n < 1e12 ? n * 1000 : n; }
+            const d = new Date(t); return d.getTime();
+        };
+        
+        // Convert to UTC ISO-8601 with Z suffix
+        const toUTCISO = (seconds) => {
+            if (!seconds) return null;
+            const ms = toMs(seconds);
+            if (!Number.isFinite(ms)) return null;
+            return new Date(ms).toISOString();
+        };
+        
+        // Convert to milliseconds-since-epoch (UTC)
+        const toUTCMs = (seconds) => {
+            if (!seconds) return null;
+            const ms = toMs(seconds);
+            return Number.isFinite(ms) ? ms : null;
+        };
+        
+        const startTimeISO = toUTCISO(from);
+        const endTimeISO = toUTCISO(to);
+        const startTimeMs = toUTCMs(from);
+        const endTimeMs = toUTCMs(to);
+        
+        // Build URL with startTime/endTime (prefer ISO-8601 with Z, fallback to ms or count)
+        let apiUrl;
+        if (startTimeISO && endTimeISO) {
+            apiUrl = `${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=${timeframe}&startTime=${encodeURIComponent(startTimeISO)}&endTime=${encodeURIComponent(endTimeISO)}`;
+        } else if (startTimeMs && endTimeMs) {
+            apiUrl = `${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=${timeframe}&startTime=${startTimeMs}&endTime=${endTimeMs}`;
+        } else {
+            // Fallback to count
+            const count = firstDataRequest ? 100 : 500;
+            apiUrl = `${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=${timeframe}&count=${count}`;
+        }
+        
+        console.log('[MT5Datafeed]: Fetching history:', symbolInfo.name, 'Timeframe:', timeframe, startTimeISO ? `startTime: ${startTimeISO}, endTime: ${endTimeISO}` : 'using count');
         
         fetch(apiUrl, { cache: 'no-cache' })
             .then(response => {
@@ -128,10 +165,18 @@ class MT5Datafeed {
                 }
 
                 // Transform MT5 data to TradingView format
+                // Parse timestamps as UTC
+                const parseUTCTimestamp = (timeStr) => {
+                    if (!timeStr) return NaN;
+                    if (typeof timeStr === 'number') return timeStr < 1e12 ? timeStr * 1000 : timeStr;
+                    const d = new Date(timeStr);
+                    return d.getTime(); // getTime() returns UTC milliseconds
+                };
+                
                 const bars = data
                     .map(candle => {
-                        // Parse timestamp and align to candle open time
-                        let timestamp = new Date(candle.time).getTime();
+                        // Parse timestamp as UTC and align to candle open time
+                        let timestamp = parseUTCTimestamp(candle.time);
                         
                         // Align timestamp to the start of the timeframe period
                         const timeframeMs = parseInt(timeframe) * 60 * 1000;
@@ -175,19 +220,37 @@ class MT5Datafeed {
                     try {
                 // Request just enough 1m bars to build ~100 aggregated bars with a small buffer
                 const need1m = Math.min(tfInt * 105, 6000);
-                const oneUrl = `${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=1&count=${need1m}`;
+                // Use UTC timestamps for 1m aggregation request too
+                let oneUrl;
+                if (startTimeISO && endTimeISO) {
+                    oneUrl = `${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=1&startTime=${encodeURIComponent(startTimeISO)}&endTime=${encodeURIComponent(endTimeISO)}`;
+                } else if (startTimeMs && endTimeMs) {
+                    oneUrl = `${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=1&startTime=${startTimeMs}&endTime=${endTimeMs}`;
+                } else {
+                    oneUrl = `${this.apiUrl}/chart/candle/history/${symbolInfo.name}?timeframe=1&count=${need1m}`;
+                }
                         const oneRes = await fetch(oneUrl, { cache: 'no-cache' });
                         if (oneRes.ok) {
                             const oneData = await oneRes.json();
+                            const parseUTCTimestamp = (timeStr) => {
+                                if (!timeStr) return NaN;
+                                if (typeof timeStr === 'number') return timeStr < 1e12 ? timeStr * 1000 : timeStr;
+                                const d = new Date(timeStr);
+                                return d.getTime();
+                            };
+                            
                             const oneBars = oneData
-                                .map(c => ({
-                                    time: Math.floor(new Date(c.time).getTime() / (60 * 1000)) * 60 * 1000,
-                                    open: parseFloat(c.open),
-                                    high: parseFloat(c.high),
-                                    low: parseFloat(c.low),
-                                    close: parseFloat(c.close),
-                                    volume: parseFloat(c.volume || 0)
-                                }))
+                                .map(c => {
+                                    const timeMs = parseUTCTimestamp(c.time);
+                                    return {
+                                        time: Math.floor(timeMs / (60 * 1000)) * 60 * 1000,
+                                        open: parseFloat(c.open),
+                                        high: parseFloat(c.high),
+                                        low: parseFloat(c.low),
+                                        close: parseFloat(c.close),
+                                        volume: parseFloat(c.volume || 0)
+                                    };
+                                })
                                 .filter(b => !isNaN(b.time) && !isNaN(b.close))
                                 .sort((a,b) => a.time - b.time);
 
@@ -244,10 +307,10 @@ class MT5Datafeed {
                 
                 const candle = await response.json();
                 
-                // Parse and align timestamp to candle boundary
-                let timestamp = new Date(candle.time).getTime();
+                // Parse timestamp as UTC and align to candle boundary
+                const timeMs = typeof candle.time === 'number' ? (candle.time < 1e12 ? candle.time * 1000 : candle.time) : new Date(candle.time).getTime();
                 const timeframeMs = parseInt(timeframe) * 60 * 1000;
-                timestamp = Math.floor(timestamp / timeframeMs) * timeframeMs;
+                const timestamp = Math.floor(timeMs / timeframeMs) * timeframeMs;
                 
                 // Raw bar as returned by API (may not be cumulative)
                 const bar = {
@@ -348,8 +411,9 @@ class MT5Datafeed {
                 if (!response.ok) return;
                 const one = await response.json();
 
-                // Align 1m candle open time
-                const oneTime = Math.floor(new Date(one.time).getTime() / (60 * 1000)) * 60 * 1000;
+                // Parse timestamp as UTC and align 1m candle open time
+                const timeMs = typeof one.time === 'number' ? (one.time < 1e12 ? one.time * 1000 : one.time) : new Date(one.time).getTime();
+                const oneTime = Math.floor(timeMs / (60 * 1000)) * 60 * 1000;
                 const bucketTime = Math.floor(oneTime / bucketMs) * bucketMs;
 
                 // Normalize bar fields
