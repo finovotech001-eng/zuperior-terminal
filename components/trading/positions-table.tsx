@@ -378,7 +378,18 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     )
                     
                     if (isSuccess) {
-                      try { onNotify?.({ type: 'success', title: 'Position modified', message: `Updated TP/SL for ${position.symbol}` }) } catch {}
+                      // Build detailed message showing what was modified
+                      const modifiedParts: string[] = []
+                      if (data.takeProfit !== undefined) {
+                        modifiedParts.push(`TP: ${data.takeProfit.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                      }
+                      if (data.stopLoss !== undefined) {
+                        modifiedParts.push(`SL: ${data.stopLoss.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                      }
+                      const detailMsg = modifiedParts.length > 0 
+                        ? `${position.symbol} - ${modifiedParts.join(', ')}`
+                        : `${position.symbol} position modified`
+                      try { onNotify?.({ type: 'success', title: 'Position modified', message: detailMsg }) } catch {}
                       // Keep popover open for a moment so user can see the updated values
                       // Close after a short delay to allow user to see the changes
                       setTimeout(() => {
@@ -679,7 +690,18 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   )
                   
                     if (isSuccess) {
-                      try { onNotify?.({ type: 'success', title: 'Position modified', message: `Updated SL for ${position.symbol}` }) } catch {}
+                      // Build detailed message showing what was modified
+                      const modifiedParts: string[] = []
+                      if (data.takeProfit !== undefined) {
+                        modifiedParts.push(`TP: ${data.takeProfit.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                      }
+                      if (data.stopLoss !== undefined) {
+                        modifiedParts.push(`SL: ${data.stopLoss.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                      }
+                      const detailMsg = modifiedParts.length > 0 
+                        ? `${position.symbol} - ${modifiedParts.join(', ')}`
+                        : `${position.symbol} position modified`
+                      try { onNotify?.({ type: 'success', title: 'Position modified', message: detailMsg }) } catch {}
                       // Keep popover open for a moment so user can see the updated values
                       // Close after a short delay to allow user to see the changes
                       setTimeout(() => {
