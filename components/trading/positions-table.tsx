@@ -149,7 +149,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     return false
   }, [openPositions])
 
-  const shouldGroupOpen = isGrouped || hasDuplicateGroups
+  // Respect user's explicit grouping preference via toggle
+  const shouldGroupOpen = isGrouped
 
   const groupedOpenPositions = React.useMemo<PositionGroup[]>(() => {
     if (!shouldGroupOpen) return []
@@ -201,10 +202,10 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     return (
     <TooltipProvider key={position.id} delayDuration={300}>
       <div
-        className={`grid gap-4 px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 text-sm min-w-max ${
+        className={`grid gap-1 px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 text-sm min-w-max ${
           isClosedPosition
-            ? "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_150px_90px_100px]" // Without T/P, S/L, Actions
-            : "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]" // Full columns
+            ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px_100px]" // Without T/P, S/L, Actions - P/L at end
+            : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]" // Full columns
         }`}
       >
       {/* Symbol */}
@@ -726,9 +727,9 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
       <div key={`group-${group.key}`} className="border-b border-white/5">
         <div
           className={cn(
-            "grid gap-4 px-4 py-3 hover:bg-white/5 transition-colors text-sm min-w-max cursor-pointer",
+            "grid gap-1 px-4 py-3 hover:bg-white/5 transition-colors text-sm min-w-max cursor-pointer",
             // Use the open tab columns layout (full columns)
-            "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]"
+            "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]"
           )}
           onClick={() => toggleGroupExpanded(group.key)}
         >
@@ -1037,14 +1038,14 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
           >
             <div className="inline-block min-w-full">
               {/* Table Header */}
-              <div className={`grid gap-4 px-4 py-2 bg-white/5 text-xs font-medium text-white/60 border-b border-white/10 sticky top-0 z-10 min-w-max backdrop-blur-xl ${
+              <div className={`grid gap-1 px-4 py-2 bg-white/5 text-xs font-medium text-white/60 border-b border-white/10 sticky top-0 z-10 min-w-max backdrop-blur-xl ${
                 activeTab === "closed" 
-                  ? "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_150px_90px_100px]" // Without T/P, S/L, Actions
-                  : "grid-cols-[minmax(200px,1fr)_80px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]" // Full columns
+                  ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px_100px]" // Without T/P, S/L, Actions - P/L at end
+                  : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]" // Full columns
               }`}>
                 {columns.find(c => c.key === "symbol")?.visible && <div>Symbol</div>}
                 {columns.find(c => c.key === "type")?.visible && <div>Type</div>}
-                {columns.find(c => c.key === "volume")?.visible && <div>Volume, lot</div>}
+                {columns.find(c => c.key === "volume")?.visible && <div>Volume</div>}
                 {columns.find(c => c.key === "openPrice")?.visible && (
                   <div>{activeTab === "pending" ? "Price Order" : "Open price"}</div>
                 )}
