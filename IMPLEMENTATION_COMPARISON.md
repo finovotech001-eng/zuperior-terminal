@@ -16,11 +16,11 @@ const accountId = searchParams.get('accountId')  // "123456"
 
 // Step 2: Get client token
 const { token, accountId: verifiedAccountId } = await getClientToken(accountId)
-// This calls: POST http://18.175.242.21:5003/api/client/ClientAuth/login
+// This calls: POST https://metaapi.zuperior.com/api/client/ClientAuth/login
 // With: { AccountId: 123456, Password: "from_db", DeviceId: "web_xxx", DeviceType: "web" }
 
 // Step 3: Build external API URL
-const tradesApiUrl = `http://18.175.242.21:5003/api/client/tradehistory/trades?accountId=${accountId}&fromDate=...&toDate=...&page=1&pageSize=500`
+const tradesApiUrl = `https://metaapi.zuperior.com/api/client/tradehistory/trades?accountId=${accountId}&fromDate=...&toDate=...&page=1&pageSize=500`
 
 // Step 4: Call external API
 fetch(tradesApiUrl, {
@@ -62,7 +62,7 @@ const mapped = validTrades.map(item => ({
 
 ### Step 1: Get Token
 ```
-POST http://18.175.242.21:5003/api/client/ClientAuth/login
+POST https://metaapi.zuperior.com/api/client/ClientAuth/login
 Body: {
   "AccountId": 123456,
   "Password": "your_password",
@@ -74,7 +74,7 @@ Response: { "accessToken": "..." }
 
 ### Step 2: Get Trade History
 ```
-GET http://18.175.242.21:5003/api/client/tradehistory/trades?accountId=123456&page=1&pageSize=50
+GET https://metaapi.zuperior.com/api/client/tradehistory/trades?accountId=123456&page=1&pageSize=50
 Headers:
   Authorization: Bearer <token>
   AccountId: 123456

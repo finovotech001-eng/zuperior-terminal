@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/session'
 
-const API_BASE = (process.env.LIVE_API_URL || 'http://18.175.242.21:5003/api').replace(/\/$/, '')
+const API_BASE = (process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api').replace(/\/$/, '')
 
 export async function GET(req: NextRequest) {
   try {

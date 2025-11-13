@@ -21,7 +21,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // MT5 API Configuration
-const MT5_API_URL = 'http://18.175.242.21:5003/api';
+const MT5_API_URL = 'https://metaapi.zuperior.com/api';
 const SYMBOLS_ENDPOINT = `${MT5_API_URL}/Symbols/categories`;
 
 interface MT5Symbol {

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Authenticate to MT5 API
-    const MT5_API_URL = process.env.LIVE_API_URL || 'http://18.175.242.21:5003/api'
+    const MT5_API_URL = process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api'
     const loginUrl = `${MT5_API_URL}/client/ClientAuth/login`
     const payload = {
       AccountId: parseInt(mt5.accountId, 10),
@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         // SignalR connection from server (no CORS restrictions)
-        const HUB_BASE = process.env.TRADING_HUB_URL || 'http://18.175.242.21:5003/hubs/mobiletrading'
+        const HUB_BASE = process.env.TRADING_HUB_URL || 'https://metaapi.zuperior.com/hubs/mobiletrading'
         const qp = new URLSearchParams({
           accountId: mt5.accountId,
           clientVersion: '1.0.0',

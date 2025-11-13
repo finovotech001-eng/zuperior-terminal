@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Ensure external API base and get token if needed
-    const RAW_API_BASE = (process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
+    const RAW_API_BASE = (process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com').replace(/\/$/, '')
     const API_BASE = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`
     
     if (!token) {

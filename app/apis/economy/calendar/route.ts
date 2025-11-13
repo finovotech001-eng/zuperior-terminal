@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db'
 
 // Configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
-const LIVE_API_URL = process.env.LIVE_API_URL || 'http://18.175.242.21:5003/api'
+const LIVE_API_URL = process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api'
 
 /**
  * Get Client Access Token using AccountId and password

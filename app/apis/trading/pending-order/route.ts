@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/session'
 
 // Always ensure trailing /api in API_BASE
-const RAW_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.LIVE_API_URL || 'http://18.175.242.21:5003/api'
+const RAW_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api'
 const API_BASE = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : RAW_API_BASE.replace(/\/$/, '') + '/api'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

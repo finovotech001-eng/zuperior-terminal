@@ -63,7 +63,7 @@ interface UseEconomicCalendarReturn {
 }
 
 // SignalR Hub URL for economy
-const ECONOMY_HUB_URL = (process.env.NEXT_PUBLIC_API_BASE_URL && `${process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, '')}/hubs/economy`) || 'http://18.175.242.21:5003/hubs/economy'
+const ECONOMY_HUB_URL = (process.env.NEXT_PUBLIC_API_BASE_URL && `${process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, '')}/hubs/economy`) || 'https://metaapi.zuperior.com/hubs/economy'
 
 /**
  * Format ISO date string to "HH:MM AM/PM" format

@@ -71,7 +71,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         }
 
         // Point datafeed directly at your backend (not the local proxy), with configurable templates
-        const extBase = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
+        const extBase = (process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com').replace(/\/$/, '')
         const historyTemplate = process.env.NEXT_PUBLIC_CHART_HISTORY_TEMPLATE || '/chart/candle/history/{symbol}?timeframe={timeframe}&count={count}'
         const currentTemplate = process.env.NEXT_PUBLIC_CHART_CURRENT_TEMPLATE || '/chart/candle/current/{symbol}?timeframe={timeframe}'
         const httpFallback = new window.CustomDatafeed({
@@ -168,7 +168,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     let timer: NodeJS.Timeout | null = null
     const run = async () => {
       try {
-        const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003'
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com'
         const sym = normalizeSymbol(symbol)
         // Try primary symbol, then fallback by toggling micro suffix
         const candidates: string[] = [sym]

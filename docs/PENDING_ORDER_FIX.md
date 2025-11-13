@@ -151,7 +151,7 @@ or
 ## External API Endpoints
 
 All pending order types use a **single unified endpoint**:
-- `POST http://18.175.242.21:5003/api/client/orders`
+- `POST https://metaapi.zuperior.com/api/client/orders`
 
 This endpoint handles all pending order types based on the `OrderType` field:
 - `OrderType: 2` = Buy Limit

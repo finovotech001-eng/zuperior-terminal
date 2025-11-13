@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'MT5 account not found or password not set' }, { status: 400 })
     }
 
-    const API_BASE = (process.env.LIVE_API_URL || 'http://18.175.242.21:5003/api').replace(/\/$/, '')
+    const API_BASE = (process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api').replace(/\/$/, '')
 
     // Login to get access token
     const loginRes = await tryFetch(`${API_BASE}/client/ClientAuth/login`, {

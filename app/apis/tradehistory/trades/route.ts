@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db'
 
 // Configuration
 // Prefer LIVE_API_URL, fallback to NEXT_PUBLIC_API_BASE_URL, ensure "/api" suffix exists
-const RAW_API_BASE = (process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
+const RAW_API_BASE = (process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com').replace(/\/$/, '')
 const EXTERNAL_API_BASE = RAW_API_BASE.endsWith('/api') ? RAW_API_BASE : `${RAW_API_BASE}/api`
 
 /**

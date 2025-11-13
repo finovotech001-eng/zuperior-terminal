@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const MT5_API_BASE = 'http://18.175.242.21:5003'
+const MT5_API_BASE = 'https://metaapi.zuperior.com'
 
 // Proxy endpoint for live tick data (Bid/Ask/Last)
 export async function GET(request: NextRequest, context: { params: { symbol: string } }) {

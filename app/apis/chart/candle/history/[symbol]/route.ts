@@ -10,7 +10,7 @@ type TokenEntry = { token: string; accountId: string; exp: number }
 const __chartTokenCache = ((global as any).__chartTokenCache ||= new Map<string, TokenEntry>()) as Map<string, TokenEntry>
 
 // Build external API base from envs and ensure "/api" suffix
-const RAW_BASE = (process.env.MT5_API_BASE || process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
+const RAW_BASE = (process.env.MT5_API_BASE || process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com').replace(/\/$/, '')
 const API_BASE = RAW_BASE.endsWith('/api') ? RAW_BASE : `${RAW_BASE}/api`
 
 function buildUrl(symbol: string, timeframe: string, count?: string, startTime?: string, endTime?: string) {

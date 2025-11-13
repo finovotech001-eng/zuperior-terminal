@@ -4,13 +4,13 @@
 This document explains how the trade history API is implemented and how it compares to Postman testing.
 
 ## 🔗 API Endpoint
-**External API**: `http://18.175.242.21:5003/api/client/tradehistory/trades`
+**External API**: `https://metaapi.zuperior.com/api/client/tradehistory/trades`
 
 ## 🔐 Authentication Flow
 
 ### In Postman:
 1. First, get the bearer token by calling:
-   - **POST** `http://18.175.242.21:5003/api/client/ClientAuth/login`
+   - **POST** `https://metaapi.zuperior.com/api/client/ClientAuth/login`
    - **Body**:
      ```json
      {
@@ -23,7 +23,7 @@ This document explains how the trade history API is implemented and how it compa
    - Response contains `accessToken` or `AccessToken`
 
 2. Then call the trade history endpoint:
-   - **GET** `http://18.175.242.21:5003/api/client/tradehistory/trades?accountId=123456&page=1&pageSize=50`
+   - **GET** `https://metaapi.zuperior.com/api/client/tradehistory/trades?accountId=123456&page=1&pageSize=50`
    - **Headers**:
      - `Authorization: Bearer <token_from_step_1>`
      - `AccountId: 123456`
@@ -42,7 +42,7 @@ const toDate = searchParams.get('toDate')
 const { token: accessToken } = await getClientToken(accountId)
 
 // 3. Call external API
-const tradesApiUrl = `http://18.175.242.21:5003/api/client/tradehistory/trades?accountId=${accountId}&...`
+const tradesApiUrl = `https://metaapi.zuperior.com/api/client/tradehistory/trades?accountId=${accountId}&...`
 
 const tradesResponse = await fetch(tradesApiUrl, {
   method: 'GET',

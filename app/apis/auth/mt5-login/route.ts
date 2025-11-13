@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Call the MT5 ClientAuth/login API
-    const MT5_API_URL = process.env.LIVE_API_URL || 'http://18.175.242.21:5003/api';
+    const MT5_API_URL = process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api';
     const loginUrl = `${MT5_API_URL}/client/ClientAuth/login`;
 
     const loginPayload = {

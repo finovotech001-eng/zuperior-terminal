@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 4. Login to get access token
-    const API_BASE = (process.env.LIVE_API_URL || 'http://18.175.242.21:5003/api').replace(/\/$/, '')
+    const API_BASE = (process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api').replace(/\/$/, '')
     
     const loginRes = await fetch(`${API_BASE}/client/ClientAuth/login`, {
       method: 'POST',

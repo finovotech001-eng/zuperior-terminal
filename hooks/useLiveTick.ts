@@ -18,7 +18,7 @@ export function useLiveTick(symbol: string) {
     const fetchTick = async () => {
       try {
         setIsLoading(true)
-        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://18.175.242.21:5003"
+        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "https://metaapi.zuperior.com"
         const response = await fetch(`${apiUrl}/api/livedata/tick/${symbol}`)
         if (response.ok) {
           const data = await response.json()

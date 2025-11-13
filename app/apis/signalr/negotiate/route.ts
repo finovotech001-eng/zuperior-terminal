@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     // Build the target negotiate URL
     const TRADING_HUB_BASE = process.env.TRADING_HUB_URL || 
       (process.env.NEXT_PUBLIC_API_BASE_URL && `${process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/$/, '')}/hubs/${hub}`) ||
-      `http://18.175.242.21:5003/hubs/${hub}`;
+      `https://metaapi.zuperior.com/hubs/${hub}`;
     
     const negotiateUrl = `${TRADING_HUB_BASE}/negotiate${params.toString() ? '?' + params.toString() : ''}`;
     
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
             acct = await prisma.mT5Account.findFirst({ where: { userId: session.userId }, select: { accountId: true, password: true } });
           }
           if (acct?.password) {
-            const RAW_BASE = (process.env.MT5_API_BASE || process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://18.175.242.21:5003').replace(/\/$/, '')
+            const RAW_BASE = (process.env.MT5_API_BASE || process.env.LIVE_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com').replace(/\/$/, '')
             const API_BASE = RAW_BASE.endsWith('/api') ? RAW_BASE : `${RAW_BASE}/api`;
             const loginRes = await fetch(`${API_BASE}/client/ClientAuth/login`, {
               method: 'POST',
