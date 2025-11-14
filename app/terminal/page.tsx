@@ -1538,10 +1538,67 @@ function TerminalContent() {
     };
 
 
+  // Helper function to calculate required margin
+  // Simplified margin calculation for validation purposes
+  const calculateRequiredMargin = React.useCallback((volume: number, price: number, symbol: string, leverage: number): number => {
+    const symbolUpper = symbol.toUpperCase()
+    
+    // Simplified margin calculation based on symbol type
+    // For most symbols: Margin ≈ (Volume * Price) / Leverage (conservative estimate)
+    // This is a simplified validation check - actual MT5 calculation may vary
+    
+    let requiredMargin: number
+    
+    if (symbolUpper.includes('XAU') || symbolUpper.includes('XAG')) {
+      // Metals: 1 lot = 100 oz, so margin = (volume * 100 * price) / leverage
+      requiredMargin = (volume * 100 * price) / leverage
+    } else if (symbolUpper.includes('BTC') || symbolUpper.includes('ETH')) {
+      // Crypto: 1 lot = 1 unit, so margin = (volume * price) / leverage
+      requiredMargin = (volume * price) / leverage
+    } else {
+      // Forex and others: Simplified calculation
+      // For forex, 1 lot = 100,000 units, but margin depends on base currency
+      // For validation, use a conservative estimate: (volume * price * 100000) / leverage
+      // But since price is already in quote currency, we simplify to: (volume * price) / leverage
+      // This is conservative and will catch most insufficient margin cases
+      requiredMargin = (volume * price * 100000) / leverage
+    }
+    
+    return requiredMargin
+  }, [])
+
   // Clean submit handlers used by OrderPanel (avoid alerts)
   const handleBuySubmit = async (data: OrderData) => {
     try {
+      // Validate balance and margin before placing trade
+      const currentBalance = balanceData.balance || 0
+      if (currentBalance <= 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Trade failed', 
+          message: 'No balance to trade. Please deposit funds to place orders.' 
+        })
+        return
+      }
+
       const chosenSymbol = activeTab?.symbol || selectedInstrument.symbol
+      const tradePrice = data.openPrice || selectedInstrument.ask || 0
+      const tradeVolume = data.volume
+      const leverage = balanceData.leverage || 500 // Default leverage if not available
+      
+      // Calculate required margin for this trade
+      const requiredMargin = calculateRequiredMargin(tradeVolume, tradePrice, chosenSymbol, leverage)
+      const availableMargin = liveFreeMargin || balanceData.freeMargin || 0
+      
+      if (requiredMargin > availableMargin) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Insufficient margin', 
+          message: `Required margin: ${formatCurrency(requiredMargin, 2)} USD. Available: ${formatCurrency(availableMargin, 2)} USD` 
+        })
+        return
+      }
+
       const order = {
         symbol: chosenSymbol,
         side: 'buy' as const,
@@ -1551,7 +1608,7 @@ function TerminalContent() {
         stopLoss: data.stopLoss,
         takeProfit: data.takeProfit,
         accountId: currentAccountId || '0',
-        price: data.openPrice || selectedInstrument.ask || 0,
+        price: tradePrice,
       }
       console.log('[Trade][BUY] submitting', { order, activeTabId, chosenSymbol })
       const response = order.orderType === 'pending'
@@ -1581,7 +1638,35 @@ function TerminalContent() {
 
   const handleSellSubmit = async (data: OrderData) => {
     try {
+      // Validate balance and margin before placing trade
+      const currentBalance = balanceData.balance || 0
+      if (currentBalance <= 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Trade failed', 
+          message: 'No balance to trade. Please deposit funds to place orders.' 
+        })
+        return
+      }
+
       const chosenSymbol = activeTab?.symbol || selectedInstrument.symbol
+      const tradePrice = data.openPrice || selectedInstrument.bid || 0
+      const tradeVolume = data.volume
+      const leverage = balanceData.leverage || 500 // Default leverage if not available
+      
+      // Calculate required margin for this trade
+      const requiredMargin = calculateRequiredMargin(tradeVolume, tradePrice, chosenSymbol, leverage)
+      const availableMargin = liveFreeMargin || balanceData.freeMargin || 0
+      
+      if (requiredMargin > availableMargin) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Insufficient margin', 
+          message: `Required margin: ${formatCurrency(requiredMargin, 2)} USD. Available: ${formatCurrency(availableMargin, 2)} USD` 
+        })
+        return
+      }
+
       const order = {
         symbol: chosenSymbol,
         side: 'sell' as const,
@@ -1591,7 +1676,7 @@ function TerminalContent() {
         stopLoss: data.stopLoss,
         takeProfit: data.takeProfit,
         accountId: currentAccountId || '0',
-        price: data.openPrice || selectedInstrument.bid || 0,
+        price: tradePrice,
       }
       console.log('[Trade][SELL] submitting', { order, activeTabId, chosenSymbol })
       const response = order.orderType === 'pending'
