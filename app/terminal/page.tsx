@@ -1539,32 +1539,32 @@ function TerminalContent() {
 
 
   // Helper function to calculate required margin
-  // Simplified margin calculation for validation purposes
+  // Accurate margin calculation matching MT5 logic
   const calculateRequiredMargin = React.useCallback((volume: number, price: number, symbol: string, leverage: number): number => {
     const symbolUpper = symbol.toUpperCase()
     
-    // Simplified margin calculation based on symbol type
-    // For most symbols: Margin ≈ (Volume * Price) / Leverage (conservative estimate)
-    // This is a simplified validation check - actual MT5 calculation may vary
+    // MT5 margin calculation:
+    // Margin = (Volume * ContractSize * Price) / Leverage
+    // Where Volume is in lots, ContractSize is units per lot
     
-    let requiredMargin: number
+    let contractSize: number
     
     if (symbolUpper.includes('XAU') || symbolUpper.includes('XAG')) {
-      // Metals: 1 lot = 100 oz, so margin = (volume * 100 * price) / leverage
-      requiredMargin = (volume * 100 * price) / leverage
+      // Metals (XAUUSDm, XAGUSDm): 1 lot = 100 oz
+      contractSize = 100
     } else if (symbolUpper.includes('BTC') || symbolUpper.includes('ETH')) {
-      // Crypto: 1 lot = 1 unit, so margin = (volume * price) / leverage
-      requiredMargin = (volume * price) / leverage
+      // Crypto: 1 lot = 1 unit (contract size = 1)
+      contractSize = 1
     } else {
-      // Forex and others: Simplified calculation
-      // For forex, 1 lot = 100,000 units, but margin depends on base currency
-      // For validation, use a conservative estimate: (volume * price * 100000) / leverage
-      // But since price is already in quote currency, we simplify to: (volume * price) / leverage
-      // This is conservative and will catch most insufficient margin cases
-      requiredMargin = (volume * price * 100000) / leverage
+      // Forex pairs: 1 lot = 100,000 units of base currency
+      contractSize = 100000
     }
     
-    return requiredMargin
+    // Calculate margin: (Volume * ContractSize * Price) / Leverage
+    const requiredMargin = (volume * contractSize * price) / leverage
+    
+    // Add 5% buffer for safety (spread, slippage, etc.)
+    return requiredMargin * 1.05
   }, [])
 
   // Clean submit handlers used by OrderPanel (avoid alerts)
@@ -1588,13 +1588,63 @@ function TerminalContent() {
       
       // Calculate required margin for this trade
       const requiredMargin = calculateRequiredMargin(tradeVolume, tradePrice, chosenSymbol, leverage)
-      const availableMargin = liveFreeMargin || balanceData.freeMargin || 0
+      const currentEquity = liveEquity || balanceData.equity || 0
+      const currentMargin = balanceData.margin || 0
+      const availableMargin = liveFreeMargin !== undefined ? liveFreeMargin : (balanceData.freeMargin || 0)
       
+      // CRITICAL CHECK: Calculate what the NEW margin would be after this trade
+      const newMargin = currentMargin + requiredMargin
+      const newFreeMargin = currentEquity - newMargin
+      
+      // Check if free margin is already negative (already over-leveraged)
+      if (availableMargin < 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Insufficient funds. Free margin: ${formatCurrency(availableMargin, 2)} USD. Please close positions or deposit funds.` 
+        })
+        return
+      }
+      
+      // CRITICAL CHECK: Block if new margin would exceed equity (would make free margin negative)
+      if (newMargin > currentEquity) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Insufficient funds. This trade would require ${formatCurrency(requiredMargin, 2)} USD margin. Total margin would be ${formatCurrency(newMargin, 2)} USD, exceeding equity of ${formatCurrency(currentEquity, 2)} USD.` 
+        })
+        return
+      }
+      
+      // Check if required margin exceeds available free margin
       if (requiredMargin > availableMargin) {
         setTradeNotice({ 
           type: 'error', 
-          title: 'Insufficient margin', 
-          message: `Required margin: ${formatCurrency(requiredMargin, 2)} USD. Available: ${formatCurrency(availableMargin, 2)} USD` 
+          title: 'Not enough money', 
+          message: `Insufficient margin. Required: ${formatCurrency(requiredMargin, 2)} USD. Available: ${formatCurrency(availableMargin, 2)} USD` 
+        })
+        return
+      }
+      
+      // Additional safety check: ensure margin level would remain reasonable after trade
+      const newMarginLevel = currentEquity > 0 ? (currentEquity / newMargin) * 100 : 0
+      
+      // Block if margin level would be too low (below 100% is dangerous, below 50% is critical)
+      if (newMarginLevel < 50 && newMarginLevel > 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Insufficient funds. Margin level would be ${newMarginLevel.toFixed(2)}%. Minimum required: 50%` 
+        })
+        return
+      }
+      
+      // Final check: ensure new free margin would not be negative
+      if (newFreeMargin < 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Insufficient funds. This trade would result in negative free margin: ${formatCurrency(newFreeMargin, 2)} USD` 
         })
         return
       }
@@ -1656,13 +1706,63 @@ function TerminalContent() {
       
       // Calculate required margin for this trade
       const requiredMargin = calculateRequiredMargin(tradeVolume, tradePrice, chosenSymbol, leverage)
-      const availableMargin = liveFreeMargin || balanceData.freeMargin || 0
+      const currentEquity = liveEquity || balanceData.equity || 0
+      const currentMargin = balanceData.margin || 0
+      const availableMargin = liveFreeMargin !== undefined ? liveFreeMargin : (balanceData.freeMargin || 0)
       
+      // CRITICAL CHECK: Calculate what the NEW margin would be after this trade
+      const newMargin = currentMargin + requiredMargin
+      const newFreeMargin = currentEquity - newMargin
+      
+      // Check if free margin is already negative (already over-leveraged)
+      if (availableMargin < 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Insufficient funds. Free margin: ${formatCurrency(availableMargin, 2)} USD. Please close positions or deposit funds.` 
+        })
+        return
+      }
+      
+      // CRITICAL CHECK: Block if new margin would exceed equity (would make free margin negative)
+      if (newMargin > currentEquity) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Insufficient funds. This trade would require ${formatCurrency(requiredMargin, 2)} USD margin. Total margin would be ${formatCurrency(newMargin, 2)} USD, exceeding equity of ${formatCurrency(currentEquity, 2)} USD.` 
+        })
+        return
+      }
+      
+      // Check if required margin exceeds available free margin
       if (requiredMargin > availableMargin) {
         setTradeNotice({ 
           type: 'error', 
-          title: 'Insufficient margin', 
-          message: `Required margin: ${formatCurrency(requiredMargin, 2)} USD. Available: ${formatCurrency(availableMargin, 2)} USD` 
+          title: 'Not enough money', 
+          message: `Insufficient margin. Required: ${formatCurrency(requiredMargin, 2)} USD. Available: ${formatCurrency(availableMargin, 2)} USD` 
+        })
+        return
+      }
+      
+      // Additional safety check: ensure margin level would remain reasonable after trade
+      const newMarginLevel = currentEquity > 0 ? (currentEquity / newMargin) * 100 : 0
+      
+      // Block if margin level would be too low (below 100% is dangerous, below 50% is critical)
+      if (newMarginLevel < 50 && newMarginLevel > 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Insufficient funds. Margin level would be ${newMarginLevel.toFixed(2)}%. Minimum required: 50%` 
+        })
+        return
+      }
+      
+      // Final check: ensure new free margin would not be negative
+      if (newFreeMargin < 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Insufficient funds. This trade would result in negative free margin: ${formatCurrency(newFreeMargin, 2)} USD` 
         })
         return
       }
