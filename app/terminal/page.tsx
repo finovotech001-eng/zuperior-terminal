@@ -1570,8 +1570,21 @@ function TerminalContent() {
   // Clean submit handlers used by OrderPanel (avoid alerts)
   const handleBuySubmit = async (data: OrderData) => {
     try {
+      // CRITICAL: Refresh balance data immediately before validation to ensure we have latest values
+      if (refreshBalance && currentAccountId) {
+        await refreshBalance(currentAccountId)
+        // Small delay to ensure state is updated
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      // Get the LATEST balance data after refresh
+      const latestBalanceData = balances[currentAccountId || ''] || balanceData
+      const currentBalance = latestBalanceData.balance || 0
+      const currentEquity = liveEquity || latestBalanceData.equity || 0
+      const currentMargin = latestBalanceData.margin || 0
+      const availableMargin = liveFreeMargin !== undefined ? liveFreeMargin : (latestBalanceData.freeMargin || 0)
+      
       // Validate balance and margin before placing trade
-      const currentBalance = balanceData.balance || 0
       if (currentBalance <= 0) {
         setTradeNotice({ 
           type: 'error', 
@@ -1581,20 +1594,40 @@ function TerminalContent() {
         return
       }
 
+      if (currentEquity <= 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: 'Insufficient equity. Please close positions or deposit funds.' 
+        })
+        return
+      }
+
       const chosenSymbol = activeTab?.symbol || selectedInstrument.symbol
       const tradePrice = data.openPrice || selectedInstrument.ask || 0
       const tradeVolume = data.volume
-      const leverage = balanceData.leverage || 500 // Default leverage if not available
+      const leverage = latestBalanceData.leverage || 500 // Default leverage if not available
       
       // Calculate required margin for this trade
       const requiredMargin = calculateRequiredMargin(tradeVolume, tradePrice, chosenSymbol, leverage)
-      const currentEquity = liveEquity || balanceData.equity || 0
-      const currentMargin = balanceData.margin || 0
-      const availableMargin = liveFreeMargin !== undefined ? liveFreeMargin : (balanceData.freeMargin || 0)
       
       // CRITICAL CHECK: Calculate what the NEW margin would be after this trade
       const newMargin = currentMargin + requiredMargin
       const newFreeMargin = currentEquity - newMargin
+      
+      // Log validation details for debugging
+      console.log('[Trade][VALIDATION]', {
+        currentBalance,
+        currentEquity,
+        currentMargin,
+        availableMargin,
+        requiredMargin,
+        newMargin,
+        newFreeMargin,
+        tradeVolume,
+        tradePrice,
+        symbol: chosenSymbol
+      })
       
       // Check if free margin is already negative (already over-leveraged)
       if (availableMargin < 0) {
@@ -1688,8 +1721,21 @@ function TerminalContent() {
 
   const handleSellSubmit = async (data: OrderData) => {
     try {
+      // CRITICAL: Refresh balance data immediately before validation to ensure we have latest values
+      if (refreshBalance && currentAccountId) {
+        await refreshBalance(currentAccountId)
+        // Small delay to ensure state is updated
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      // Get the LATEST balance data after refresh
+      const latestBalanceData = balances[currentAccountId || ''] || balanceData
+      const currentBalance = latestBalanceData.balance || 0
+      const currentEquity = liveEquity || latestBalanceData.equity || 0
+      const currentMargin = latestBalanceData.margin || 0
+      const availableMargin = liveFreeMargin !== undefined ? liveFreeMargin : (latestBalanceData.freeMargin || 0)
+      
       // Validate balance and margin before placing trade
-      const currentBalance = balanceData.balance || 0
       if (currentBalance <= 0) {
         setTradeNotice({ 
           type: 'error', 
@@ -1699,20 +1745,40 @@ function TerminalContent() {
         return
       }
 
+      if (currentEquity <= 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: 'Insufficient equity. Please close positions or deposit funds.' 
+        })
+        return
+      }
+
       const chosenSymbol = activeTab?.symbol || selectedInstrument.symbol
       const tradePrice = data.openPrice || selectedInstrument.bid || 0
       const tradeVolume = data.volume
-      const leverage = balanceData.leverage || 500 // Default leverage if not available
+      const leverage = latestBalanceData.leverage || 500 // Default leverage if not available
       
       // Calculate required margin for this trade
       const requiredMargin = calculateRequiredMargin(tradeVolume, tradePrice, chosenSymbol, leverage)
-      const currentEquity = liveEquity || balanceData.equity || 0
-      const currentMargin = balanceData.margin || 0
-      const availableMargin = liveFreeMargin !== undefined ? liveFreeMargin : (balanceData.freeMargin || 0)
       
       // CRITICAL CHECK: Calculate what the NEW margin would be after this trade
       const newMargin = currentMargin + requiredMargin
       const newFreeMargin = currentEquity - newMargin
+      
+      // Log validation details for debugging
+      console.log('[Trade][VALIDATION]', {
+        currentBalance,
+        currentEquity,
+        currentMargin,
+        availableMargin,
+        requiredMargin,
+        newMargin,
+        newFreeMargin,
+        tradeVolume,
+        tradePrice,
+        symbol: chosenSymbol
+      })
       
       // Check if free margin is already negative (already over-leveraged)
       if (availableMargin < 0) {
