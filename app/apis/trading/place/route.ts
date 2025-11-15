@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/session'
+import { isWeekendRestrictionActive } from '@/lib/weekend-trading'
 
 const API_BASE = (process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api').replace(/\/$/, '')
 
@@ -16,6 +17,31 @@ export async function POST(req: NextRequest) {
     const { side, accountId, symbol, volume, price, stopLoss, takeProfit, comment, orderType } = merged || {}
     if (!side || !accountId || !symbol || typeof volume !== 'number') {
       return NextResponse.json({ success: false, message: 'Missing required fields (side, accountId, symbol, volume)' }, { status: 400 })
+    }
+
+    // WEEKEND VALIDATION: Block non-crypto trades on Saturday/Sunday (server-side check)
+    const isWeekend = isWeekendRestrictionActive()
+    const rawSymbol = String(symbol)
+    
+    // For server-side, we need to check instruments from database
+    // Since we don't have instruments list here, use pattern matching
+    const symbolUpper = rawSymbol.toUpperCase()
+    const isCrypto = symbolUpper.startsWith('BTC') || 
+                     symbolUpper.startsWith('ETH') || 
+                     (symbolUpper.includes('USD') && symbolUpper.length > 3 && 
+                      !['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'NZDUSD', 'USDCAD'].includes(symbolUpper.replace('/', '').replace('M', '')))
+    
+    if (isWeekend && !isCrypto) {
+      console.log('[API][Weekend Validation] BLOCKED', {
+        symbol: rawSymbol,
+        isWeekend,
+        isCrypto,
+        utcTime: new Date().toISOString()
+      })
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Trading is closed on Saturday and Sunday for all pairs except crypto' 
+      }, { status: 403 })
     }
 
     // Verify user owns the account; get password for token fetch
@@ -55,8 +81,7 @@ export async function POST(req: NextRequest) {
     const path = isSell ? 'trade-sell' : 'trade'
     const url = `${API_BASE}/client/${path}?account_id=${encodeURIComponent(mt5.accountId)}`
 
-    // Use symbol exactly as received
-    const rawSymbol = String(symbol)
+    // rawSymbol already declared above in weekend validation
 
     // Price rules: if no later/limit price chosen, send 0
     const isMarket = (orderTypeText === 'market' || !orderTypeText)

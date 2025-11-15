@@ -55,6 +55,8 @@ import { usePositionsSignalR } from "@/hooks/usePositionsSSE"
 import { usePendingOrders } from "@/hooks/usePendingOrders"
 import { useTradeHistory } from "@/hooks/useTradeHistory"
 import { useEconomicCalendar } from "@/hooks/useEconomicCalendar"
+import { isWeekendRestrictionActive, isCryptoSymbol } from "@/lib/weekend-trading"
+import { WeekendToast } from "@/components/ui/weekend-toast"
 import { 
   instrumentsAtom, 
   positionsIsCollapsedAtom,
@@ -589,6 +591,9 @@ function TerminalContent() {
     const t = setTimeout(() => setTradeNotice(null), 3000)
     return () => clearTimeout(t)
   }, [tradeNotice])
+  
+  // Weekend toast state (top-right)
+  const [weekendToast, setWeekendToast] = React.useState<string | null>(null)
   // State for MT5 accounts and selected account
   const [mt5Accounts, setMt5Accounts] = React.useState<MT5Account[]>([]);
 
@@ -1482,11 +1487,23 @@ function TerminalContent() {
   }, [openTabs, activeTabId])
   const handleBuy = async (data: OrderData) => {
       try {
-        // âœ… Build the payload using the current active instrument
+        const chosenSymbol = selectedInstrument.symbol
+        
+        // WEEKEND VALIDATION: Check if weekend restriction is active and symbol is not crypto
+        const isWeekend = isWeekendRestrictionActive()
+        const isCrypto = isCryptoSymbol(chosenSymbol, instruments)
+        
+        if (isWeekend && !isCrypto) {
+          console.error('[Trade][Weekend Validation][handleBuy] BLOCKED - Non-crypto trade on weekend')
+          setWeekendToast('Trading is closed on Saturday and Sunday for all pairs except crypto')
+          return
+        }
+        
+        // Build the payload using the current active instrument
         const order = {
           symbol: selectedInstrument.symbol,
           side: "buy" as const,
-          volume: data.volume, // â¬…ï¸ UPDATED: Volume is multiplied by 100
+          volume: data.volume,
           orderType: data.orderType,
           openPrice: data.openPrice,
           stopLoss: data.stopLoss,
@@ -1495,10 +1512,9 @@ function TerminalContent() {
           price: data.openPrice || selectedInstrument.ask || 0,
         };
 
-        // Fix syntax error with correct string for emoji + message
-        console.log("🟢 Sending BUY order:", order);
+        console.log("Sending BUY order:", order);
 
-        const response = order.orderType === 'pending' ? await placeSellLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Sell Limit via web' }) : await placeMarketOrder(order);
+        const response = order.orderType === 'pending' ? await placeBuyLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Buy Limit via web' }) : await placeMarketOrder(order);
 
         console.log("âœ… Buy Order Success:", response);
         console.log(`[Order] Buy placed for ${order.symbol}`);
@@ -1510,11 +1526,23 @@ function TerminalContent() {
 
     const handleSell = async (data: OrderData) => {
       try {
-        // âœ… Build the payload with all required fields for backend
+        const chosenSymbol = selectedInstrument.symbol
+        
+        // WEEKEND VALIDATION: Check if weekend restriction is active and symbol is not crypto
+        const isWeekend = isWeekendRestrictionActive()
+        const isCrypto = isCryptoSymbol(chosenSymbol, instruments)
+        
+        if (isWeekend && !isCrypto) {
+          console.error('[Trade][Weekend Validation][handleSell] BLOCKED - Non-crypto trade on weekend')
+          setWeekendToast('Trading is closed on Saturday and Sunday for all pairs except crypto')
+          return
+        }
+        
+        // Build the payload with all required fields for backend
         const order = {
           symbol: selectedInstrument.symbol,
           side: "sell" as const,
-          volume: data.volume, // â¬…ï¸ UPDATED: Volume is multiplied by 100
+          volume: data.volume,
           orderType: data.orderType,
           openPrice: data.openPrice,
           stopLoss: data.stopLoss,
@@ -1523,10 +1551,8 @@ function TerminalContent() {
           price: data.openPrice || selectedInstrument.bid || 0,
         };
 
-        // Fix syntax error with correct string for emoji + message
-        console.log("🔴 Sending SELL order:", order);
+        console.log("Sending SELL order:", order);
 
-        // âœ… Call your API proxy
         const response = order.orderType === 'pending' ? await placeSellLimit({ accountId: order.accountId, symbol: order.symbol.replace('/', ''), price: Number(order.openPrice || order.price), volume: Number(order.volume), stopLoss: order.stopLoss, takeProfit: order.takeProfit, comment: 'Sell Limit via web' }) : await placeMarketOrder(order);
 
         console.log("âœ… Sell Order Success:", response);
@@ -1570,6 +1596,31 @@ function TerminalContent() {
   // Clean submit handlers used by OrderPanel (avoid alerts)
   const handleBuySubmit = async (data: OrderData) => {
     try {
+      const chosenSymbol = activeTab?.symbol || selectedInstrument.symbol
+      
+      // WEEKEND VALIDATION: Check if weekend restriction is active and symbol is not crypto
+      const isWeekend = isWeekendRestrictionActive()
+      const isCrypto = isCryptoSymbol(chosenSymbol, instruments)
+      
+      console.log('[Trade][Weekend Validation][BUY]', {
+        symbol: chosenSymbol,
+        isWeekend,
+        isCrypto,
+        instrumentsCount: instruments.length,
+        utcTime: new Date().toISOString(),
+        localTime: new Date().toString()
+      })
+      
+      if (isWeekend) {
+        if (!isCrypto) {
+          console.error('[Trade][Weekend Validation][BUY] BLOCKED - Non-crypto trade on weekend')
+          setWeekendToast('Trading is closed on Saturday and Sunday for all pairs except crypto')
+          return
+        } else {
+          console.log('[Trade][Weekend Validation][BUY] ALLOWED - Crypto trade on weekend')
+        }
+      }
+      
       // CRITICAL: Refresh balance data immediately before validation to ensure we have latest values
       if (refreshBalance && currentAccountId) {
         await refreshBalance(currentAccountId)
@@ -1603,7 +1654,6 @@ function TerminalContent() {
         return
       }
 
-      const chosenSymbol = activeTab?.symbol || selectedInstrument.symbol
       const tradePrice = data.openPrice || selectedInstrument.ask || 0
       const tradeVolume = data.volume
       const leverage = latestBalanceData.leverage || 500 // Default leverage if not available
@@ -1721,6 +1771,31 @@ function TerminalContent() {
 
   const handleSellSubmit = async (data: OrderData) => {
     try {
+      const chosenSymbol = activeTab?.symbol || selectedInstrument.symbol
+      
+      // WEEKEND VALIDATION: Check if weekend restriction is active and symbol is not crypto
+      const isWeekend = isWeekendRestrictionActive()
+      const isCrypto = isCryptoSymbol(chosenSymbol, instruments)
+      
+      console.log('[Trade][Weekend Validation][SELL]', {
+        symbol: chosenSymbol,
+        isWeekend,
+        isCrypto,
+        instrumentsCount: instruments.length,
+        utcTime: new Date().toISOString(),
+        localTime: new Date().toString()
+      })
+      
+      if (isWeekend) {
+        if (!isCrypto) {
+          console.error('[Trade][Weekend Validation][SELL] BLOCKED - Non-crypto trade on weekend')
+          setWeekendToast('Trading is closed on Saturday and Sunday for all pairs except crypto')
+          return
+        } else {
+          console.log('[Trade][Weekend Validation][SELL] ALLOWED - Crypto trade on weekend')
+        }
+      }
+      
       // CRITICAL: Refresh balance data immediately before validation to ensure we have latest values
       if (refreshBalance && currentAccountId) {
         await refreshBalance(currentAccountId)
@@ -1754,7 +1829,6 @@ function TerminalContent() {
         return
       }
 
-      const chosenSymbol = activeTab?.symbol || selectedInstrument.symbol
       const tradePrice = data.openPrice || selectedInstrument.bid || 0
       const tradeVolume = data.volume
       const leverage = latestBalanceData.leverage || 500 // Default leverage if not available
@@ -1888,6 +1962,12 @@ function TerminalContent() {
             </div>
           </div>
         </div>
+      )}
+      {weekendToast && (
+        <WeekendToast 
+          message={weekendToast} 
+          onDismiss={() => setWeekendToast(null)} 
+        />
       )}
       {/* Top Navbar */}
       <header className="flex items-center h-14 px-4 border-b border-white/8 bg-[#01040D] shrink-0 z-30 gap-4">

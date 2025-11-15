@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/session'
+import { isWeekendRestrictionActive } from '@/lib/weekend-trading'
 
 const API_BASE = (process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api').replace(/\/$/, '')
 export const dynamic = 'force-dynamic'
@@ -15,6 +16,27 @@ export async function POST(req: NextRequest) {
     const { accountId, symbol, price, volume, stopLoss, takeProfit, comment, accessToken } = body || {}
     if (!accountId || !symbol || typeof price !== 'number' || typeof volume !== 'number') {
       return NextResponse.json({ success: false, message: 'Missing required fields (accountId, symbol, price, volume)' }, { status: 400 })
+    }
+
+    // WEEKEND VALIDATION: Block non-crypto pending orders on Saturday/Sunday
+    const isWeekend = isWeekendRestrictionActive()
+    const symbolUpper = String(symbol).toUpperCase()
+    const isCrypto = symbolUpper.startsWith('BTC') || 
+                     symbolUpper.startsWith('ETH') || 
+                     (symbolUpper.includes('USD') && symbolUpper.length > 3 && 
+                      !['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'NZDUSD', 'USDCAD'].includes(symbolUpper.replace('/', '').replace('M', '')))
+    
+    if (isWeekend && !isCrypto) {
+      console.log('[API][Weekend Validation][Buy Limit] BLOCKED', {
+        symbol: String(symbol),
+        isWeekend,
+        isCrypto,
+        utcTime: new Date().toISOString()
+      })
+      return NextResponse.json({ 
+        success: false, 
+        message: 'Trading is closed on Saturday and Sunday for all pairs except crypto' 
+      }, { status: 403 })
     }
 
     // Use client token if provided, otherwise login via DB credentials
