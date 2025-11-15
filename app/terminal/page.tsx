@@ -1303,8 +1303,19 @@ function TerminalContent() {
     return parseFloat((eq - mg).toFixed(2))
   }, [balanceData.freeMargin, balanceData.equity, balanceData.margin])
 
-  // Closed trades (history)
-  const { closedPositions, isLoading: closedLoading, error: closedError, refetch: refetchClosed } = useTradeHistory({ accountId: currentAccountId, enabled: true })
+  // Closed trades (history) - refetch when account changes
+  const { closedPositions, isLoading: closedLoading, error: closedError, refetch: refetchClosed } = useTradeHistory({ 
+    accountId: currentAccountId, 
+    enabled: !!currentAccountId // Only enable if account is selected
+  })
+  
+  // Refetch closed trades when account changes
+  React.useEffect(() => {
+    if (currentAccountId) {
+      console.log('[Terminal] Account changed, refetching closed trades for:', currentAccountId)
+      refetchClosed()
+    }
+  }, [currentAccountId, refetchClosed])
   
   // DEEP DEBUG: Track closed positions state changes
   React.useEffect(() => {

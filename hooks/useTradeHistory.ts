@@ -151,8 +151,11 @@ export function useTradeHistory({ accountId, enabled = true, fromDate, toDate, p
 
   const fetchHistory = useCallback(async () => {
     if (!enabled || !accountId) {
+      console.log('[Trade History] Skipping fetch - enabled:', enabled, 'accountId:', accountId)
       return
     }
+    
+    console.log('[Trade History] Starting fetch for accountId:', accountId)
     setIsLoading(true)
     setError(null)
 
@@ -169,10 +172,30 @@ export function useTradeHistory({ accountId, enabled = true, fromDate, toDate, p
       if (toDate) params.append('toDate', toDate)
       if (page !== undefined && page !== null && String(page).length > 0) params.append('page', String(page))
 
-      const res = await fetch(`/apis/tradehistory/trades?${params.toString()}`, { cache: 'no-store', signal: controller.signal })
+      // Add timeout to prevent hanging requests
+      const timeoutId = setTimeout(() => {
+        controller.abort()
+      }, 30000) // 30 second timeout
+      
+      const res = await fetch(`/apis/tradehistory/trades?${params.toString()}`, { 
+        cache: 'no-store', 
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      }).finally(() => {
+        clearTimeout(timeoutId)
+      })
       
       if (!res.ok) {
         const errorText = await res.text().catch(() => 'No response body')
+        
+        console.error('[Trade History] API error:', {
+          status: res.status,
+          statusText: res.statusText,
+          error: errorText,
+          accountId
+        })
         
         // Handle 5xx errors gracefully - server issues shouldn't break the UI
         if (res.status >= 500 && res.status < 600) {
@@ -181,6 +204,15 @@ export function useTradeHistory({ accountId, enabled = true, fromDate, toDate, p
           setIsLoading(false);
           return;
         }
+        
+        // Handle 503 (Service Unavailable) - token/auth issues
+        if (res.status === 503) {
+          setError('Failed to authenticate. Please check account credentials.');
+          setClosedPositions([]);
+          setIsLoading(false);
+          return;
+        }
+        
         throw new Error(errorText || `HTTP ${res.status}`)
       }
       
@@ -244,6 +276,13 @@ export function useTradeHistory({ accountId, enabled = true, fromDate, toDate, p
       }
       
       // Update state with mapped positions - always update even if empty to clear stale data
+      console.log('[Trade History] Successfully fetched closed positions:', {
+        accountId,
+        totalItems: items.length,
+        validTrades: validTrades.length,
+        mappedPositions: mapped.length
+      })
+      
       setClosedPositions(mapped)
       setError(null) // Clear any previous errors on successful fetch
     } catch (e) {
