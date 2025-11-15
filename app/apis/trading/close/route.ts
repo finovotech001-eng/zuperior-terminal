@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/session'
 import { prisma } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { isWeekendRestrictionActive } from '@/lib/weekend-trading'
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,12 +20,34 @@ export async function POST(request: NextRequest) {
     const positionId = Number(rawId)
     const volume = Number(body.volume ?? 0)
     const accessTokenFromClient = body.accessToken ?? body.token ?? body.Token
+    const symbol = body.symbol ?? body.Symbol ?? ''
     
     if (!accountId || !positionId) {
       return NextResponse.json({ 
         success: false, 
         message: 'accountId and positionId are required' 
       }, { status: 400 })
+    }
+
+    // WEEKEND VALIDATION: Block closing non-crypto positions on Saturday/Sunday (server-side check)
+    const isWeekend = isWeekendRestrictionActive()
+    if (isWeekend && symbol) {
+      // ONLY BTC and ETH are crypto - metals (XAU, XAG) are NOT crypto
+      const symbolUpper = String(symbol).toUpperCase()
+      const isCrypto = symbolUpper.startsWith('BTC') || symbolUpper.startsWith('ETH')
+      
+      if (!isCrypto) {
+        console.log('[API][Close][Weekend Validation] BLOCKED', {
+          symbol: symbolUpper,
+          isWeekend,
+          isCrypto,
+          positionId
+        })
+        return NextResponse.json({ 
+          success: false, 
+          message: 'Trading is closed on Saturday and Sunday for all pairs except crypto' 
+        }, { status: 403 })
+      }
     }
 
     // 3. Get MT5 account credentials (or use provided token)

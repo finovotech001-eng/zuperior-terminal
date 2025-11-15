@@ -2584,6 +2584,21 @@ function TerminalContent() {
                         return; 
                       }
 
+                      // WEEKEND VALIDATION: Block closing non-crypto positions on Saturday/Sunday
+                      const isWeekend = isWeekendRestrictionActive()
+                      const positionSymbol = position.symbol || ''
+                      const isCrypto = isCryptoSymbol(positionSymbol, instruments)
+                      
+                      if (isWeekend && !isCrypto) {
+                        console.log('[Close][Weekend Validation] BLOCKED - Non-crypto position on weekend', {
+                          symbol: positionSymbol,
+                          isWeekend,
+                          isCrypto
+                        })
+                        setWeekendToast('Trading is closed on Saturday and Sunday for all pairs except crypto')
+                        return
+                      }
+
                       if (isPending) {
                         console.log('[Pending] Cancel order:', positionId)
                         const res = await cancelPendingOrder({ accountId: currentAccountId, orderId: Number(positionId), comment: 'Cancel via web terminal' })
@@ -2594,11 +2609,11 @@ function TerminalContent() {
                         return
                       }
 
-                      console.log('[Close] Calling close API with position ID:', positionId, 'accountId:', currentAccountId)
+                      console.log('[Close] Calling close API with position ID:', positionId, 'accountId:', currentAccountId, 'symbol:', positionSymbol)
                       const res = await fetch('/apis/trading/close', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ accountId: currentAccountId, positionId }),
+                        body: JSON.stringify({ accountId: currentAccountId, positionId, symbol: positionSymbol }),
                       })
                       
                       if (!res.ok) {
@@ -2747,6 +2762,21 @@ function TerminalContent() {
                           let failedCount = 0
                           for (const position of formattedPositions) {
                             try {
+                              // WEEKEND VALIDATION: Skip non-crypto positions on weekends
+                              const isWeekend = isWeekendRestrictionActive()
+                              const positionSymbol = position.symbol || ''
+                              const isCrypto = isCryptoSymbol(positionSymbol, instruments)
+                              
+                              if (isWeekend && !isCrypto) {
+                                console.log('[Close All][Weekend Validation] SKIPPED - Non-crypto position on weekend', {
+                                  symbol: positionSymbol,
+                                  isWeekend,
+                                  isCrypto
+                                })
+                                failedCount++
+                                continue
+                              }
+
                               let positionId: number | null = null
                               if (position.ticket && position.ticket > 0) {
                                 positionId = position.ticket
@@ -2762,7 +2792,7 @@ function TerminalContent() {
                               const res = await fetch('/apis/trading/close', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ accountId: currentAccountId, positionId })
+                                body: JSON.stringify({ accountId: currentAccountId, positionId, symbol: positionSymbol })
                               })
                               const json = await res.json().catch(() => ({} as any))
                               if (res.ok && (json.success || json.Success)) {
@@ -2819,6 +2849,21 @@ function TerminalContent() {
                           let failedCount = 0
                           for (const position of profitablePositions) {
                             try {
+                              // WEEKEND VALIDATION: Skip non-crypto positions on weekends
+                              const isWeekend = isWeekendRestrictionActive()
+                              const positionSymbol = position.symbol || ''
+                              const isCrypto = isCryptoSymbol(positionSymbol, instruments)
+                              
+                              if (isWeekend && !isCrypto) {
+                                console.log('[Close Profitable][Weekend Validation] SKIPPED - Non-crypto position on weekend', {
+                                  symbol: positionSymbol,
+                                  isWeekend,
+                                  isCrypto
+                                })
+                                failedCount++
+                                continue
+                              }
+
                               let positionId: number | null = null
                               if (position.ticket && position.ticket > 0) {
                                 positionId = position.ticket
@@ -2833,7 +2878,7 @@ function TerminalContent() {
                               const res = await fetch('/apis/trading/close', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ accountId: currentAccountId, positionId })
+                                body: JSON.stringify({ accountId: currentAccountId, positionId, symbol: positionSymbol })
                               })
                               const json = await res.json().catch(() => ({} as any))
                               if (res.ok && (json.success || json.Success)) {
@@ -2890,6 +2935,21 @@ function TerminalContent() {
                           let failedCount = 0
                           for (const position of losingPositions) {
                             try {
+                              // WEEKEND VALIDATION: Skip non-crypto positions on weekends
+                              const isWeekend = isWeekendRestrictionActive()
+                              const positionSymbol = position.symbol || ''
+                              const isCrypto = isCryptoSymbol(positionSymbol, instruments)
+                              
+                              if (isWeekend && !isCrypto) {
+                                console.log('[Close Losing][Weekend Validation] SKIPPED - Non-crypto position on weekend', {
+                                  symbol: positionSymbol,
+                                  isWeekend,
+                                  isCrypto
+                                })
+                                failedCount++
+                                continue
+                              }
+
                               let positionId: number | null = null
                               if (position.ticket && position.ticket > 0) {
                                 positionId = position.ticket
@@ -2904,7 +2964,7 @@ function TerminalContent() {
                               const res = await fetch('/apis/trading/close', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ accountId: currentAccountId, positionId })
+                                body: JSON.stringify({ accountId: currentAccountId, positionId, symbol: positionSymbol })
                               })
                               const json = await res.json().catch(() => ({} as any))
                               if (res.ok && (json.success || json.Success)) {
