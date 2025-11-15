@@ -69,21 +69,18 @@ export function isCryptoSymbol(symbol: string, instruments: Instrument[]): boole
   }
   
   // Fallback to pattern matching
-  // Check if starts with BTC or ETH
+  // ONLY BTC and ETH are considered crypto - nothing else
+  // Metals (XAU, XAG) are NOT crypto and should be blocked on weekends
   if (symbolUpper.startsWith('BTC') || symbolUpper.startsWith('ETH')) {
     return true
   }
   
-  // Check if contains USD and length > 3 (crypto pairs like BTCUSD, ETHUSD)
-  // But exclude forex pairs like EURUSD, GBPUSD (they have / separator or are exactly 6 chars)
-  if (symbolUpper.includes('USD') && symbolUpper.length > 3) {
-    // Additional check: if it's a common forex pair, exclude it
-    const commonForex = ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'NZDUSD', 'USDCAD']
-    if (!commonForex.includes(symbolUpper.replace('/', '').replace('M', ''))) {
-      return true
-    }
+  // Explicitly exclude metals (they should be blocked on weekends)
+  if (symbolUpper.startsWith('XAU') || symbolUpper.startsWith('XAG')) {
+    return false
   }
   
+  // No other symbols are considered crypto for weekend trading
   return false
 }
 

@@ -25,11 +25,14 @@ export async function POST(req: NextRequest) {
     
     // For server-side, we need to check instruments from database
     // Since we don't have instruments list here, use pattern matching
+    // ONLY BTC and ETH are crypto - metals (XAU, XAG) are NOT crypto
     const symbolUpper = rawSymbol.toUpperCase()
-    const isCrypto = symbolUpper.startsWith('BTC') || 
-                     symbolUpper.startsWith('ETH') || 
-                     (symbolUpper.includes('USD') && symbolUpper.length > 3 && 
-                      !['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'NZDUSD', 'USDCAD'].includes(symbolUpper.replace('/', '').replace('M', '')))
+    const isCrypto = symbolUpper.startsWith('BTC') || symbolUpper.startsWith('ETH')
+    
+    // Explicitly exclude metals - they should be blocked on weekends
+    if (symbolUpper.startsWith('XAU') || symbolUpper.startsWith('XAG')) {
+      // Metals are not crypto, so isCrypto remains false
+    }
     
     if (isWeekend && !isCrypto) {
       console.log('[API][Weekend Validation] BLOCKED', {

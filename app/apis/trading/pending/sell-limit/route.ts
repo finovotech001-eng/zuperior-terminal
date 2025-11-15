@@ -19,12 +19,10 @@ export async function POST(req: NextRequest) {
     }
 
     // WEEKEND VALIDATION: Block non-crypto pending orders on Saturday/Sunday
+    // ONLY BTC and ETH are crypto - metals (XAU, XAG) are NOT crypto
     const isWeekend = isWeekendRestrictionActive()
     const symbolUpper = String(symbol).toUpperCase()
-    const isCrypto = symbolUpper.startsWith('BTC') || 
-                     symbolUpper.startsWith('ETH') || 
-                     (symbolUpper.includes('USD') && symbolUpper.length > 3 && 
-                      !['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'NZDUSD', 'USDCAD'].includes(symbolUpper.replace('/', '').replace('M', '')))
+    const isCrypto = symbolUpper.startsWith('BTC') || symbolUpper.startsWith('ETH')
     
     if (isWeekend && !isCrypto) {
       console.log('[API][Weekend Validation][Sell Limit] BLOCKED', {
