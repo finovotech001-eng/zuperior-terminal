@@ -2720,6 +2720,10 @@ function TerminalContent() {
                     // ✅ PASS THE FUNCTION REFERENCE ONLY, IT WILL RECEIVE THE DATA FROM ORDER PANEL
                     onBuy={handleBuySubmit}
                     onSell={handleSellSubmit}
+                    balanceData={{
+                      credit: balanceData.credit || 0,
+                      leverage: balanceData.leverage || "1:400"
+                    }}
                     className="w-full h-full"
                 />
             </div>

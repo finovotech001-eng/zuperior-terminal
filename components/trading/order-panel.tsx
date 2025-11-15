@@ -28,6 +28,11 @@ export interface OrderPanelProps extends React.HTMLAttributes<HTMLDivElement> {
     ask?: number
     [key: string]: unknown
   }
+  balanceData?: {
+    credit?: number
+    leverage?: string
+    [key: string]: unknown
+  }
 }
 
 export interface OrderData {
@@ -50,6 +55,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   onClose,
   onBuy,
   onSell,
+  balanceData,
   className,
   ...props
 }) => {
@@ -75,6 +81,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const [stopLossMode, setStopLossMode] = React.useState<"pips" | "price">("price")
   const [volumePercentage] = React.useState(21)
   const [openPrice, setOpenPrice] = React.useState("")
+  const [showMoreDetails, setShowMoreDetails] = React.useState(false)
 
   // Update dropdown modes when form type changes
   React.useEffect(() => {
@@ -209,6 +216,195 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
       <div className="absolute left-1/2 bottom-0 -translate-x-1/2 px-2 py-0.5 rounded backdrop-blur-xl bg-white/[0.03] border border-white/10 text-[10px] text-white/80 font-medium whitespace-nowrap z-10">
         {currentSpread} {isSubscribed && <span className="text-green-500 ml-1">●</span>}
       </div>
+    </div>
+  )
+
+  // Calculate financial metrics in real-time
+  const calculateFinancialMetrics = React.useMemo(() => {
+    const vol = parseFloat(volume) || 0
+    const price = orderType === "limit" && openPrice ? parseFloat(openPrice) : currentBuyPrice
+    const symbolUpper = symbol.toUpperCase()
+    
+    // Determine contract size and pip value based on symbol type
+    let contractSize = 100000 // Default for forex
+    let pipValue = 0.0001 // Default pip size
+    
+    if (symbolUpper.includes('XAU') || symbolUpper.includes('XAG')) {
+      // Metals: 1 lot = 100 oz, pip = 0.01
+      contractSize = 100
+      pipValue = 0.01
+    } else if (symbolUpper.includes('BTC') || symbolUpper.includes('ETH')) {
+      // Crypto: 1 lot = 1 unit, pip = 0.01
+      contractSize = 1
+      pipValue = 0.01
+    } else {
+      // Forex: 1 lot = 100,000 units, pip = 0.0001 (or 0.01 for JPY pairs)
+      contractSize = 100000
+      pipValue = symbolUpper.includes('JPY') ? 0.01 : 0.0001
+    }
+    
+    // Extract leverage from balanceData (format: "1:400" or "400" or number)
+    const leverageStr = String(balanceData?.leverage || "1:400")
+    const leverageMatch = leverageStr.match(/:?(\d+)/)
+    const leverage = leverageMatch ? parseInt(leverageMatch[1], 10) : 400
+    
+    // Calculate margin: (Volume * ContractSize * Price) / Leverage
+    const margin = (vol * contractSize * price) / leverage
+    
+    // Calculate fees: Typically 0.1% of trade value (commission + spread)
+    const tradeValue = vol * contractSize * price
+    const fees = tradeValue * 0.001 // 0.1% commission
+    
+    // Calculate pip value: ContractSize * PipValue * Volume (for most pairs)
+    const calculatedPipValue = contractSize * pipValue * vol
+    
+    // Swap calculations (simplified - typically negative for long positions)
+    // Swap Long: Usually negative, calculated as percentage of position value
+    const swapLong = -(tradeValue * 0.0001) // Simplified: -0.01% per day
+    const swapShort = 0 // Usually 0 or minimal for short positions
+    
+    // Volume in units
+    const volumeInUnits = vol * contractSize
+    
+    // Volume in USD
+    const volumeInUSD = tradeValue
+    
+    // Credit from balance data
+    const credit = balanceData?.credit || 0
+    
+    return {
+      fees,
+      leverage: `1:${leverage}`,
+      margin,
+      swapLong,
+      swapShort,
+      pipValue: calculatedPipValue,
+      volumeInUnits,
+      volumeInUSD,
+      credit
+    }
+  }, [volume, currentBuyPrice, openPrice, orderType, symbol, balanceData])
+  
+  // Render financial details section
+  const renderFinancialDetails = () => (
+    <div className="space-y-2 pt-2 border-t border-white/10">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-white/60">Fees:</span>
+        <div className="flex items-center gap-1">
+          <span className="text-white price-font">≈ {calculateFinancialMetrics.fees.toFixed(2)} USD</span>
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <button className="cursor-pointer">
+                <HelpCircle className="h-3 w-3 text-white/40" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs">Estimated commission and spread costs</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+      
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-white/60">Leverage:</span>
+        <div className="flex items-center gap-1">
+          <span className="text-white price-font">{calculateFinancialMetrics.leverage}</span>
+          <Tooltip delayDuration={300}>
+            <TooltipTrigger asChild>
+              <button className="cursor-pointer">
+                <HelpCircle className="h-3 w-3 text-white/40" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs">Account leverage ratio</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+      
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-white/60">Margin:</span>
+        <span className="text-white price-font">{calculateFinancialMetrics.margin.toFixed(2)} USD</span>
+      </div>
+      
+      {showMoreDetails && (
+        <>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white/60">Swap Long:</span>
+            <div className="flex items-center gap-1">
+              <span className="text-white price-font">{calculateFinancialMetrics.swapLong.toFixed(2)} USD</span>
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <button className="cursor-pointer">
+                    <HelpCircle className="h-3 w-3 text-white/40" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs">Overnight swap for long positions</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white/60">Swap Short:</span>
+            <div className="flex items-center gap-1">
+              <span className="text-white price-font">{calculateFinancialMetrics.swapShort.toFixed(2)} USD</span>
+              <Tooltip delayDuration={300}>
+                <TooltipTrigger asChild>
+                  <button className="cursor-pointer">
+                    <HelpCircle className="h-3 w-3 text-white/40" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs">Overnight swap for short positions</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white/60">Pip Value:</span>
+            <span className="text-white price-font">{calculateFinancialMetrics.pipValue.toFixed(2)} USD</span>
+          </div>
+          
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white/60">Volume in units:</span>
+            <span className="text-white price-font">{calculateFinancialMetrics.volumeInUnits.toFixed(2)} {symbol.toUpperCase().includes('BTC') ? 'BTC' : symbol.toUpperCase().includes('ETH') ? 'ETH' : symbol.toUpperCase().includes('XAU') ? 'oz' : ''}</span>
+          </div>
+          
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white/60">Volume in USD:</span>
+            <span className="text-white price-font">{calculateFinancialMetrics.volumeInUSD.toFixed(2)} USD</span>
+          </div>
+          
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-white/60">Credit:</span>
+            <span className="text-white price-font">{calculateFinancialMetrics.credit.toFixed(2)} USD</span>
+          </div>
+        </>
+      )}
+      
+      <button
+        onClick={() => setShowMoreDetails(!showMoreDetails)}
+        className="w-full flex items-center justify-center gap-1 text-xs text-white/60 hover:text-white/80 transition-colors pt-1"
+      >
+        {showMoreDetails ? (
+          <>
+            <span>Less</span>
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </>
+        ) : (
+          <>
+            <span>More</span>
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </>
+        )}
+      </button>
     </div>
   )
 
@@ -419,6 +615,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
 
               {/* Percentage Slider */}
               {renderPercentageSlider()}
+              
+              {/* Financial Details */}
+              {renderFinancialDetails()}
             </>
           )}
 
@@ -542,6 +741,9 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                 ],
                 true
               )}
+              
+              {/* Financial Details */}
+              {renderFinancialDetails()}
             </>
           )}
 
