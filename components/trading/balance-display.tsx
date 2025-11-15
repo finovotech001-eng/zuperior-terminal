@@ -15,6 +15,7 @@ export interface BalanceInfo {
   freeMargin: number
   marginLevel: number
   leverage: string
+  credit: number
 }
 
 export interface BalanceDisplayProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -32,7 +33,7 @@ const BalanceDisplay: React.FC<BalanceDisplayProps> = ({
 }) => {
   // Local state [isHidden, setIsHidden] is removed, using the prop `hideBalance` instead.
 
-  const { balance, equity, margin, freeMargin, marginLevel, leverage } = balanceInfo
+  const { balance, equity, margin, freeMargin, marginLevel, leverage, credit } = balanceInfo
   const newLeverage = `1:${leverage}`;
 
   const formatValue = (value: number) => {
@@ -75,6 +76,11 @@ const BalanceDisplay: React.FC<BalanceDisplayProps> = ({
         <div>
           <div className="text-xs text-muted-foreground">Free Margin</div>
           <div className="text-sm font-medium price-font">{formatValue(freeMargin)} USD</div>
+        </div>
+
+        <div>
+          <div className="text-xs text-muted-foreground">Credit</div>
+          <div className="text-sm font-medium price-font">{formatValue(credit)} USD</div>
         </div>
       </div>
 

@@ -119,6 +119,7 @@ export default function DesignSystemPage() {
     freeMargin: 3786.70,
     marginLevel: 187.06,
     leverage: "1:200",
+    credit: 500.00,
   }
 
   const sidebarItems = [

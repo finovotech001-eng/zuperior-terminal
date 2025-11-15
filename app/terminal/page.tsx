@@ -97,6 +97,7 @@ interface BalanceData {
   profit:number;
   leverage: string;
   totalPL: number; // This is calculated field (Equity - Balance)
+  credit: number; // Credit amount from API
   accountType: 'Demo' | 'Live';
   name: string;
   accountGroup: string;
@@ -112,6 +113,7 @@ const initialBalanceData: BalanceData = {
   profit:0,
   leverage: "1:200",
   totalPL: 0,
+  credit: 0,
   accountType: 'Demo',
   name: 'Test Account',
   accountGroup: 'Standard',
@@ -273,6 +275,8 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
           Profit?: number;
           Leverage?: string;
           leverage?: string;
+          Credit?: number;
+          credit?: number;
           Name?: string;
           name?: string;
           Group?: string;
@@ -286,6 +290,7 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
         const equity = Number(apiData.Equity ?? apiData.equity ?? 0) || 0;
         const margin = Number(apiData.Margin ?? apiData.MarginUsed ?? apiData.marginUsed ?? apiData.margin ?? 0) || 0;
         const freeMargin = Number(apiData.FreeMargin ?? apiData.freeMargin ?? 0) || 0;
+        const credit = Number(apiData.Credit ?? apiData.credit ?? 0) || 0;
         const totalPL = equity - balance;
         const profit = Number(apiData.Profit ?? apiData.profit ?? totalPL) || totalPL;
         
@@ -339,6 +344,7 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
           profit: profit,
           leverage: apiData.Leverage ?? apiData.leverage ?? "1:200",
           totalPL: parseFloat(totalPL.toFixed(2)),
+          credit: credit,
           name: apiData.Name ?? apiData.name ?? 'Test',
           accountGroup: accountGroup,
           accountType: finalAccountType,
@@ -1624,16 +1630,31 @@ function TerminalContent() {
       // CRITICAL: Refresh balance data immediately before validation to ensure we have latest values
       if (refreshBalance && currentAccountId) {
         await refreshBalance(currentAccountId)
-        // Small delay to ensure state is updated
-        await new Promise(resolve => setTimeout(resolve, 100))
+        // Wait longer to ensure state is fully updated
+        await new Promise(resolve => setTimeout(resolve, 300))
       }
 
-      // Get the LATEST balance data after refresh
+      // Get the LATEST balance data after refresh - force fresh fetch if needed
       const latestBalanceData = balances[currentAccountId || ''] || balanceData
       const currentBalance = latestBalanceData.balance || 0
       const currentEquity = liveEquity || latestBalanceData.equity || 0
       const currentMargin = latestBalanceData.margin || 0
       const availableMargin = liveFreeMargin !== undefined ? liveFreeMargin : (latestBalanceData.freeMargin || 0)
+      
+      // CRITICAL: If free margin is already negative, BLOCK ALL TRADES IMMEDIATELY
+      if (availableMargin < 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Cannot place trade. Free margin is negative: ${formatCurrency(availableMargin, 2)} USD. Please close positions or deposit funds.` 
+        })
+        console.error('[Trade][VALIDATION][BUY] BLOCKED - Free margin already negative', {
+          availableMargin,
+          currentEquity,
+          currentMargin
+        })
+        return
+      }
       
       // Validate balance and margin before placing trade
       if (currentBalance <= 0) {
@@ -1666,7 +1687,7 @@ function TerminalContent() {
       const newFreeMargin = currentEquity - newMargin
       
       // Log validation details for debugging
-      console.log('[Trade][VALIDATION]', {
+      console.log('[Trade][VALIDATION][BUY]', {
         currentBalance,
         currentEquity,
         currentMargin,
@@ -1676,18 +1697,9 @@ function TerminalContent() {
         newFreeMargin,
         tradeVolume,
         tradePrice,
-        symbol: chosenSymbol
+        symbol: chosenSymbol,
+        leverage
       })
-      
-      // Check if free margin is already negative (already over-leveraged)
-      if (availableMargin < 0) {
-        setTradeNotice({ 
-          type: 'error', 
-          title: 'Not enough money', 
-          message: `Insufficient funds. Free margin: ${formatCurrency(availableMargin, 2)} USD. Please close positions or deposit funds.` 
-        })
-        return
-      }
       
       // CRITICAL CHECK: Block if new margin would exceed equity (would make free margin negative)
       if (newMargin > currentEquity) {
@@ -1799,16 +1811,31 @@ function TerminalContent() {
       // CRITICAL: Refresh balance data immediately before validation to ensure we have latest values
       if (refreshBalance && currentAccountId) {
         await refreshBalance(currentAccountId)
-        // Small delay to ensure state is updated
-        await new Promise(resolve => setTimeout(resolve, 100))
+        // Wait longer to ensure state is fully updated
+        await new Promise(resolve => setTimeout(resolve, 300))
       }
 
-      // Get the LATEST balance data after refresh
+      // Get the LATEST balance data after refresh - force fresh fetch if needed
       const latestBalanceData = balances[currentAccountId || ''] || balanceData
       const currentBalance = latestBalanceData.balance || 0
       const currentEquity = liveEquity || latestBalanceData.equity || 0
       const currentMargin = latestBalanceData.margin || 0
       const availableMargin = liveFreeMargin !== undefined ? liveFreeMargin : (latestBalanceData.freeMargin || 0)
+      
+      // CRITICAL: If free margin is already negative, BLOCK ALL TRADES IMMEDIATELY
+      if (availableMargin < 0) {
+        setTradeNotice({ 
+          type: 'error', 
+          title: 'Not enough money', 
+          message: `Cannot place trade. Free margin is negative: ${formatCurrency(availableMargin, 2)} USD. Please close positions or deposit funds.` 
+        })
+        console.error('[Trade][VALIDATION][SELL] BLOCKED - Free margin already negative', {
+          availableMargin,
+          currentEquity,
+          currentMargin
+        })
+        return
+      }
       
       // Validate balance and margin before placing trade
       if (currentBalance <= 0) {
@@ -1841,7 +1868,7 @@ function TerminalContent() {
       const newFreeMargin = currentEquity - newMargin
       
       // Log validation details for debugging
-      console.log('[Trade][VALIDATION]', {
+      console.log('[Trade][VALIDATION][SELL]', {
         currentBalance,
         currentEquity,
         currentMargin,
@@ -1851,18 +1878,9 @@ function TerminalContent() {
         newFreeMargin,
         tradeVolume,
         tradePrice,
-        symbol: chosenSymbol
+        symbol: chosenSymbol,
+        leverage
       })
-      
-      // Check if free margin is already negative (already over-leveraged)
-      if (availableMargin < 0) {
-        setTradeNotice({ 
-          type: 'error', 
-          title: 'Not enough money', 
-          message: `Insufficient funds. Free margin: ${formatCurrency(availableMargin, 2)} USD. Please close positions or deposit funds.` 
-        })
-        return
-      }
       
       // CRITICAL CHECK: Block if new margin would exceed equity (would make free margin negative)
       if (newMargin > currentEquity) {
@@ -2136,6 +2154,23 @@ function TerminalContent() {
                           </TooltipTrigger>
                           <TooltipContent>
                             <p className="text-xs">Maximum leverage for trading</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-white/60">Credit</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-white price-font">
+                          {hideBalance ? "......" : formatCurrency(balanceData.credit, 2)} USD
+                        </span>
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <Info className="h-3.5 w-3.5 text-white/40" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs">Credit amount available on account</p>
                           </TooltipContent>
                         </Tooltip>
                       </div>
