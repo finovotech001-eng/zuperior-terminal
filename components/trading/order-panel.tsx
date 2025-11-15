@@ -72,7 +72,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   
   const [formType, setFormType] = React.useState<FormType>("regular")
   const [orderType, setOrderType] = React.useState<"market" | "limit" | "pending">("market")
-  const [volume, setVolume] = React.useState("1")
+  const [volume, setVolume] = React.useState("0.01")
   const [risk, setRisk] = React.useState("")
   const [riskMode, setRiskMode] = React.useState<"usd" | "percent">("usd")
   const [takeProfit, setTakeProfit] = React.useState("")
@@ -96,19 +96,46 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   }, [formType])
 
   const handleVolumeChange = (value: string) => {
+    // Allow empty string for typing
+    if (value === '') {
+      setVolume('')
+      return
+    }
+    
+    // Parse the value
+    const numValue = parseFloat(value)
+    
+    // If not a valid number, keep current value
+    if (isNaN(numValue)) {
+      return
+    }
+    
+    // Enforce minimum: 0.01
+    if (numValue < 0.01) {
+      setVolume('0.01')
+      return
+    }
+    
+    // Enforce maximum: 10.00
+    if (numValue > 10.00) {
+      setVolume('10.00')
+      return
+    }
+    
+    // Set the value (allow up to 2 decimal places)
     setVolume(value)
   }
 
   const incrementVolume = () => {
-    const currentValue = parseFloat(volume) || 0
-    setVolume((currentValue + 0.01).toFixed(2))
+    const currentValue = parseFloat(volume) || 0.01
+    const newValue = Math.min(10.00, currentValue + 0.01)
+    setVolume(newValue.toFixed(2))
   }
 
   const decrementVolume = () => {
-    const currentValue = parseFloat(volume) || 0
-    if (currentValue > 0.01) {
-      setVolume((currentValue - 0.01).toFixed(2))
-    }
+    const currentValue = parseFloat(volume) || 0.01
+    const newValue = Math.max(0.01, currentValue - 0.01)
+    setVolume(newValue.toFixed(2))
   }
 
   const incrementField = (value: string, setter: (v: string) => void) => {
@@ -588,8 +615,17 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                 <div className="flex items-stretch border border-white/10 rounded-md overflow-hidden bg-white/[0.02] focus-within:border-[#8B5CF6]">
                   <Input
                     type="number"
-            value={volume}
+                    value={volume}
                     onChange={(e) => handleVolumeChange(e.target.value)}
+                    onBlur={(e) => {
+                      // On blur, ensure value is within bounds
+                      const numValue = parseFloat(e.target.value) || 0.01
+                      const clampedValue = Math.max(0.01, Math.min(10.00, numValue))
+                      setVolume(clampedValue.toFixed(2))
+                    }}
+                    min="0.01"
+                    max="10.00"
+                    step="0.01"
                     className="flex-1 border-0 bg-transparent text-center price-font text-sm h-9 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <div className="flex items-center justify-center px-3 text-xs text-white/60 min-w-[50px]">
@@ -692,9 +728,18 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                 <div className="flex items-stretch border border-white/10 rounded-md overflow-hidden bg-white/[0.02] focus-within:border-[#8B5CF6]">
           <Input
             type="number"
-                    value={volume}
-                    onChange={(e) => handleVolumeChange(e.target.value)}
-                    className="flex-1 border-0 bg-transparent text-center price-font text-sm h-9 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            value={volume}
+            onChange={(e) => handleVolumeChange(e.target.value)}
+            onBlur={(e) => {
+              // On blur, ensure value is within bounds
+              const numValue = parseFloat(e.target.value) || 0.01
+              const clampedValue = Math.max(0.01, Math.min(10.00, numValue))
+              setVolume(clampedValue.toFixed(2))
+            }}
+            min="0.01"
+            max="10.00"
+            step="0.01"
+            className="flex-1 border-0 bg-transparent text-center price-font text-sm h-9 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <div className="flex items-center justify-center px-3 text-xs text-white/60 min-w-[50px]">
                     Lots
