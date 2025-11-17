@@ -1,5 +1,12 @@
 // Custom MT5-compatible Datafeed (uses the TradingView Library)
 // Simplified implementation following the architecture guide
+// Browser-only - should not be executed during SSR
+(function(global) {
+  // Guard: Only execute in browser environment
+  if (typeof window === 'undefined' && typeof globalThis !== 'undefined' && !globalThis.window) {
+    return;
+  }
+
 class CustomDatafeed {
     constructor(baseOrConfig = '/apis') {
         const cfg = (baseOrConfig && typeof baseOrConfig === 'object') ? baseOrConfig : { baseUrl: baseOrConfig };
@@ -436,7 +443,8 @@ if (typeof window !== 'undefined') {
     window.CustomDatafeed = CustomDatafeed;
 }
 
-// Export for Node.js
-if (typeof module !== 'undefined' && module.exports) { 
+// Export for Node.js (only if not in browser)
+if (typeof module !== 'undefined' && module.exports && typeof window === 'undefined') {
     module.exports = CustomDatafeed; 
 }
+})(typeof window !== 'undefined' ? window : globalThis);

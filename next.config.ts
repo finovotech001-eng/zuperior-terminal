@@ -31,6 +31,25 @@ const nextConfig = {
   
   // Improve chunk loading reliability and optimize production builds
   webpack: (config, { isServer, dev }) => {
+    // Exclude datafeed files from server-side bundling (browser-only)
+    if (isServer) {
+      // Use IgnorePlugin to completely ignore datafeed files during server build
+      const webpack = require('webpack');
+      config.plugins = config.plugins || [];
+      config.plugins.push(
+        new webpack.IgnorePlugin({
+          resourceRegExp: /datafeeds\/(custom-datafeed|signalr-datafeed)\.js$/,
+        })
+      );
+      
+      // Also set alias to false to prevent any imports
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        '@/datafeeds/custom-datafeed.js': false,
+        '@/datafeeds/signalr-datafeed.js': false,
+      };
+    }
+    
     // Production optimizations
     if (!dev) {
       config.optimization = {

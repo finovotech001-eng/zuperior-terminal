@@ -9,7 +9,10 @@
   class SignalRDatafeed {
     constructor(baseUrl = 'http://localhost:3000', fallbackDatafeed = null, options = {}) {
       this.baseUrl = baseUrl.replace(/\/$/, '');
-      this.hubUrl = `${this.baseUrl}/hubs/chart`;
+      // Use relative path for hub URL - will be proxied through /apis/signalr/negotiate
+      // This avoids CORS issues by using the local proxy
+      this.hubUrl = '/hubs/chart';
+      this._externalBaseUrl = this.baseUrl; // Keep external URL for reference if needed
       this._connection = null;
       this._connected = false;
       this._connectPromise = null;
@@ -158,8 +161,18 @@
           return new global.signalR.HttpResponse(res.status, res.statusText, text);
         }
       }
+      // Use relative URL with proxy HttpClient - this routes all requests through our proxy
+      // The proxy will forward to the actual external API
+      const hubUrl = this.hubUrl.startsWith('/') ? this.hubUrl : `${this._externalBaseUrl}${this.hubUrl}`;
+      console.log('[SignalRDatafeed] Building connection with hubUrl:', hubUrl);
       this._connection = new global.signalR.HubConnectionBuilder()
-        .withUrl(this.hubUrl, { httpClient: new ProxyHttpClient(), withCredentials: false, transport: global.signalR.HttpTransportType.LongPolling })
+        .withUrl(hubUrl, { 
+          httpClient: new ProxyHttpClient(), 
+          withCredentials: false, 
+          transport: global.signalR.HttpTransportType.LongPolling,
+          // Ensure all requests go through our proxy
+          skipNegotiation: false,
+        })
         .withAutomaticReconnect()
         .build();
 

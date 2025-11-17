@@ -91,14 +91,19 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           accountId: accountId || undefined,
         })
         
-        // Prefer SignalR datafeed if available, otherwise fall back to HTTP
+        // Use HTTP-only datafeed for now (SignalR has CORS issues with external API)
+        // TODO: Enable SignalR once proxy is fully configured
         let datafeed: any
         const extBase = (process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com').replace(/\/$/, '')
-        if (window.SignalRDatafeed && typeof window.SignalRDatafeed === 'function') {
+        
+        // Disable SignalR for now due to CORS issues - use HTTP polling instead
+        const useSignalR = false; // Set to true once SignalR proxy is working
+        
+        if (useSignalR && window.SignalRDatafeed && typeof window.SignalRDatafeed === 'function') {
           console.log('[Chart] Using SignalR datafeed with fallback')
           datafeed = new window.SignalRDatafeed(extBase, httpFallback, { accountId: accountId || undefined })
         } else {
-          console.warn('[Chart] window.SignalRDatafeed missing, using HTTP datafeed only')
+          console.log('[Chart] Using HTTP datafeed only (SignalR disabled)')
           datafeed = httpFallback
         }
 
