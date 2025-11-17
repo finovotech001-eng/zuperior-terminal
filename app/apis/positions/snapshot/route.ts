@@ -1,3 +1,4 @@
+import '@/lib/polyfills' // Polyfill 'self' for SignalR in Node.js
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getSession } from '@/lib/session'

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build --no-lint",
+    "build": "prisma generate && NODE_OPTIONS='--require ./server-bootstrap.js' next build --no-lint",
     "build:render": "NODE_OPTIONS='--max-old-space-size=4096' prisma generate && NODE_OPTIONS='--max-old-space-size=4096' next build --no-lint",
     "start": "next start",
     "clean": "rm -rf .next && rm -rf node_modules/.cache",

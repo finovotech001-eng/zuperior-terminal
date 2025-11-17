@@ -1,5 +1,15 @@
 "use client"
 
+// CRITICAL: Polyfill 'self' BEFORE importing SignalR
+// SignalR references 'self' which doesn't exist in Node.js (during build)
+if (typeof globalThis !== 'undefined' && typeof globalThis.self === 'undefined') {
+  // @ts-ignore
+  globalThis.self = globalThis;
+} else if (typeof global !== 'undefined' && typeof global.self === 'undefined') {
+  // @ts-ignore  
+  global.self = global;
+}
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as signalR from '@microsoft/signalr'
 import { EventsByDate } from '@/components/trading/economic-calendar'
@@ -362,7 +372,7 @@ export function useEconomicCalendar({
     try {
       setIsConnecting(true)
       setError(null)
-
+      
       // Get manager token for authentication (economic calendar uses manager auth, not account-specific)
       const tokenResponse = await fetch('/apis/economy/calendar', { method: 'HEAD' }).catch(() => null)
       

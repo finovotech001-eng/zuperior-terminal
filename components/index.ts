@@ -58,8 +58,11 @@ export { Header } from "./navigation/header"
 export { Sidebar } from "./navigation/sidebar"
 export { InstrumentTabs } from "./navigation/instrument-tabs"
 
-// Chart Components
-export { ChartContainer } from "./chart/chart-container"
+// Chart Components - Export removed to prevent server-side bundling
+// Use dynamic import in consuming components instead:
+// import dynamic from 'next/dynamic'
+// const ChartContainer = dynamic(() => import("@/components/chart/chart-container").then(mod => ({ default: mod.ChartContainer })), { ssr: false })
+// export { ChartContainer }
 
 
 

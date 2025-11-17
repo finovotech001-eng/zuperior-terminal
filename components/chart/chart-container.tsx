@@ -14,12 +14,14 @@ interface ChartContainerProps {
   positions?: Position[] // Open positions for chart overlays
 }
 
+// TypeScript declarations only - no runtime code, safe for SSR
+// These are just type hints for the window object
 declare global {
   interface Window {
-    TradingView: any
-    tvWidget: any
-    CustomDatafeed: any
-    SignalRDatafeed: any
+    TradingView?: any
+    tvWidget?: any
+    CustomDatafeed?: any
+    SignalRDatafeed?: any
   }
 }
 
@@ -41,12 +43,9 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
   const economicCalendarMarkersRef = useRef<Map<string, any>>(new Map())
 
   // Normalize symbols while preserving trailing micro suffix 'm' in lowercase
-  // Examples:
-  //  - "XAU/USD" -> "XAUUSD"
-  //  - "xauusdm" -> "XAUUSDm"
-  //  - "XAUUSDM" -> "XAUUSDm"
-  //  - "BTCUSD"  -> "BTCUSD"
+  // Safe: Pure function, no browser globals
   const normalizeSymbol = (s: string) => {
+    if (typeof s !== 'string') return 'BTCUSD'
     const raw = (s || '').replace(/[^A-Za-z0-9]/g, '')
     const hasMicro = /m$/i.test(raw)
     const core = hasMicro ? raw.slice(0, -1) : raw
@@ -54,9 +53,15 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
   }
 
   useEffect(() => {
-    if (!containerRef.current) return
+    // CRITICAL: Early return if not in browser - prevents 'self is not defined' errors
+    if (typeof window === 'undefined' || !containerRef.current) return
 
     const loadScript = (src: string): Promise<void> => {
+      // Guard: Only run in browser
+      if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return Promise.reject(new Error('Cannot load script: not in browser'))
+      }
+      
       return new Promise((resolve, reject) => {
         if (document.querySelector(`script[src="${src}"]`)) {
           resolve()
@@ -170,10 +175,13 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         }
       }
     }
-  }, [])
+  }, [accountId, interval, symbol])
 
   // Update symbol dynamically without resetting user's chart resolution
   useEffect(() => {
+    // Guard: Only run in browser
+    if (typeof window === 'undefined') return
+    
     const w = widgetRef.current
     if (!w) return
     try {
@@ -192,11 +200,13 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     } catch (e) {
       console.warn('[Chart] setSymbol failed', e)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [symbol])
 
   // Poll live tick and move bid/ask lines
   useEffect(() => {
+    // Guard: Only run in browser
+    if (typeof window === 'undefined') return
+    
     let timer: NodeJS.Timeout | null = null
     const run = async () => {
       try {
@@ -271,6 +281,9 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
 
   // Update chart overlays based on settings and positions
   useEffect(() => {
+    // Guard: Only run in browser
+    if (typeof window === 'undefined') return
+    
     const w = widgetRef.current
     if (!w || !settings.showOnChart) {
       // Clear all overlays if showOnChart is disabled
@@ -356,7 +369,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         if (settings.showTPSL) {
           relevantPositions.forEach(pos => {
             const key = `tpsl_${pos.id}`
-            let tpslRefs = tpSlLinesRef.current.get(key) || {}
+            const tpslRefs = tpSlLinesRef.current.get(key) || {}
             
             // Take Profit line
             if (pos.takeProfit && pos.takeProfit > 0) {

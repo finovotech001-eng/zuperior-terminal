@@ -36,7 +36,25 @@ import { useEconomicIndicators } from "@/hooks/useEconomicIndicators"
 import { useInterestRates } from "@/hooks/useInterestRates"
 import { useEconomicNews } from "@/hooks/useEconomicNews"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { ChartContainer } from "@/components/chart/chart-container"
+import dynamic from 'next/dynamic'
+
+// Dynamically import ChartContainer with SSR disabled to prevent self/window errors during build
+// Using inline require check to ensure it's never evaluated during build
+const ChartContainer = dynamic(
+  () => {
+    // This will only execute in browser at runtime, never during build
+    if (typeof window === 'undefined') {
+      return Promise.resolve({ default: () => null })
+    }
+    return import("@/components/chart/chart-container").then(mod => ({ default: mod.ChartContainer }))
+  },
+  { 
+    ssr: false,
+    loading: () => <div className="w-full h-full bg-[#01040D] rounded-lg flex items-center justify-center">
+      <div className="text-white/60">Loading chart...</div>
+    </div>
+  }
+)
 import { soundManager } from "@/lib/sound-manager"
 import { settingsAtom } from "@/lib/store"
 

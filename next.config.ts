@@ -30,7 +30,6 @@ const nextConfig = {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
   },
   
-  // Improve chunk loading reliability and optimize production builds
   webpack: (config, { isServer, dev }) => {
     // Exclude browser-only files from server-side bundling
     if (isServer) {
@@ -51,19 +50,56 @@ const nextConfig = {
         })
       );
       
+      // Mark chart-container and SignalR as external for server builds (prevents bundling)
+      config.externals = config.externals || [];
+      const externalsConfig: any = {
+        '@/components/chart/chart-container': 'commonjs @/components/chart/chart-container',
+        './chart/chart-container': 'commonjs ./chart/chart-container',
+        '../chart/chart-container': 'commonjs ../chart/chart-container',
+        '@microsoft/signalr': 'commonjs @microsoft/signalr', // Exclude SignalR from server bundles
+      };
+      
+      if (Array.isArray(config.externals)) {
+        config.externals.push(externalsConfig);
+      } else if (typeof config.externals === 'object') {
+        Object.assign(config.externals, externalsConfig);
+      } else {
+        config.externals = [config.externals, externalsConfig];
+      }
+      
       // Set aliases to false to prevent imports
       config.resolve.alias = {
         ...config.resolve.alias,
+        '@/components/chart/chart-container': false,
         '@/datafeeds/custom-datafeed.js': false,
         '@/datafeeds/signalr-datafeed.js': false,
         '/datafeeds/custom-datafeed.js': false,
         '/datafeeds/signalr-datafeed.js': false,
         '/charting_library': false,
       };
+      
+      const path = require('path');
+      
+      // Note: SignalR polyfills are handled via direct imports in API routes and hooks
+      // We don't inject polyfills at the webpack level as it breaks the runtime
+      
+      // Replace chart-container module with stub during server build to prevent 'self' errors
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(
+          /components[\\/]chart[\\/]chart-container|chart-container/,
+          path.resolve(__dirname, 'lib/chart-stub.ts')
+        )
+      );
+      
+      // Also prevent any dynamic imports from resolving to the real file
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        '@/components/chart/chart-container': false,
+      };
     }
     
-    // Production optimizations
-    if (!dev) {
+    // Production optimizations (client only)
+    if (!dev && !isServer) {
       config.optimization = {
         ...config.optimization,
         minimize: true,
