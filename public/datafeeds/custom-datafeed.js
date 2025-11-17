@@ -91,24 +91,28 @@ class CustomDatafeed {
         // Normalize symbol - remove 'm' suffix for API call
         const apiSymbol = this.normalizeSymbol(symbolInfo.name);
         
-        // Try both symbol variants
-        const candidates = [apiSymbol];
-        if (symbolInfo.name.toLowerCase().endsWith('m')) {
+        // Try both symbol variants - start with the original symbol first
+        const candidates = [symbolInfo.name];
+        if (!symbolInfo.name.toLowerCase().endsWith('m')) {
             candidates.push(apiSymbol + 'm');
-        } else {
-            candidates.push(apiSymbol.replace(/m$/i, ''));
         }
+        candidates.push(apiSymbol);
+        // Remove duplicates
+        const uniqueCandidates = [...new Set(candidates)];
 
         console.log('[CustomDatafeed] getBars:', {
             symbol: symbolInfo.name,
             apiSymbol,
+            candidates: uniqueCandidates,
             resolution,
             timeframe,
             count,
-            firstDataRequest
+            firstDataRequest,
+            from: from ? new Date(from * 1000).toISOString() : null,
+            to: to ? new Date(to * 1000).toISOString() : null
         });
 
-        for (const sym of candidates) {
+        for (const sym of uniqueCandidates) {
             try {
                 const apiUrl = `${this.apiUrl}/chart/candle/history/${sym}?timeframe=${timeframe}&count=${count}`;
                 console.log('[CustomDatafeed] Fetching:', apiUrl);
@@ -118,76 +122,128 @@ class CustomDatafeed {
                     cache: 'no-cache' 
                 });
 
+                console.log('[CustomDatafeed] Response status:', response.status, response.statusText, 'for', sym);
+
                 if (!response.ok) {
-                    console.warn('[CustomDatafeed] Response not OK:', response.status, response.statusText);
+                    const errorText = await response.text().catch(() => '');
+                    console.warn('[CustomDatafeed] Response not OK:', response.status, response.statusText, errorText.substring(0, 200));
                     continue;
                 }
 
                 const data = await response.json();
-                console.log('[CustomDatafeed] Received data:', Array.isArray(data) ? data.length + ' candles' : 'not an array', data);
+                console.log('[CustomDatafeed] Received data for', sym, ':', {
+                    isArray: Array.isArray(data),
+                    length: Array.isArray(data) ? data.length : 'N/A',
+                    firstItem: Array.isArray(data) && data.length > 0 ? data[0] : data
+                });
 
-                if (!Array.isArray(data) || data.length === 0) {
-                    console.warn('[CustomDatafeed] Empty or invalid data for:', sym);
+                if (!Array.isArray(data)) {
+                    console.error('[CustomDatafeed] Data is not an array for:', sym, 'Got:', typeof data, data);
+                    continue;
+                }
+
+                if (data.length === 0) {
+                    console.warn('[CustomDatafeed] Empty array for:', sym);
                     continue;
                 }
 
                 // Transform API response to TradingView format
                 const tfMs = parseInt(timeframe) * 60 * 1000;
+                let transformErrors = 0;
                 const bars = data
-                    .map(candle => {
-                        // Parse timestamp - handle ISO string or number
-                        let timeMs;
-                        if (typeof candle.time === 'string') {
-                            timeMs = new Date(candle.time).getTime();
-                        } else if (typeof candle.time === 'number') {
-                            // If seconds (10 digits), convert to ms
-                            timeMs = candle.time < 1e12 ? candle.time * 1000 : candle.time;
-                        } else {
+                    .map((candle, idx) => {
+                        try {
+                            // Parse timestamp - handle ISO string or number
+                            let timeMs;
+                            if (typeof candle.time === 'string') {
+                                timeMs = new Date(candle.time).getTime();
+                            } else if (typeof candle.time === 'number') {
+                                // If seconds (10 digits), convert to ms
+                                timeMs = candle.time < 1e12 ? candle.time * 1000 : candle.time;
+                            } else {
+                                transformErrors++;
+                                return null;
+                            }
+
+                            if (!Number.isFinite(timeMs)) {
+                                transformErrors++;
+                                return null;
+                            }
+
+                            // Align to candle boundary
+                            const alignedTime = Math.floor(timeMs / tfMs) * tfMs;
+
+                            const open = parseFloat(candle.open);
+                            const high = parseFloat(candle.high);
+                            const low = parseFloat(candle.low);
+                            const close = parseFloat(candle.close);
+                            const volume = parseFloat(candle.volume || candle.tickVolume || candle.Volume || candle.TickVolume || 0);
+
+                            if (!Number.isFinite(close) || close <= 0) {
+                                transformErrors++;
+                                return null;
+                            }
+
+                return {
+                                time: alignedTime,
+                                open: Number.isFinite(open) ? open : close,
+                                high: Number.isFinite(high) ? high : close,
+                                low: Number.isFinite(low) ? low : close,
+                                close: close,
+                                volume: Number.isFinite(volume) ? volume : 0
+                            };
+                        } catch (e) {
+                            transformErrors++;
+                            console.warn('[CustomDatafeed] Error transforming candle', idx, ':', e);
                             return null;
                         }
-
-                        if (!Number.isFinite(timeMs)) return null;
-
-                        // Align to candle boundary
-                        const alignedTime = Math.floor(timeMs / tfMs) * tfMs;
-
-                        return {
-                            time: alignedTime,
-                            open: parseFloat(candle.open) || 0,
-                            high: parseFloat(candle.high) || 0,
-                            low: parseFloat(candle.low) || 0,
-                            close: parseFloat(candle.close) || 0,
-                            volume: parseFloat(candle.volume || candle.tickVolume || 0)
-                        };
                     })
-                    .filter(bar => bar && Number.isFinite(bar.time) && Number.isFinite(bar.close) && bar.close > 0)
+                    .filter(bar => bar !== null)
                     .sort((a, b) => a.time - b.time);
+
+                if (transformErrors > 0) {
+                    console.warn('[CustomDatafeed] Transform errors:', transformErrors, 'out of', data.length);
+                }
 
                 if (bars.length === 0) {
                     console.warn('[CustomDatafeed] No valid bars after transformation for:', sym);
                     continue;
                 }
 
-                console.log('[CustomDatafeed] Transformed to', bars.length, 'bars');
+                console.log('[CustomDatafeed] Transformed to', bars.length, 'bars (had', transformErrors, 'errors)');
 
                 // Filter by time range if needed
-                let finalBars;
-                if (firstDataRequest) {
-                    // For first request, take last 100 bars
-                    finalBars = bars.slice(-Math.min(100, bars.length));
+            let finalBars;
+            if (firstDataRequest) {
+                    // For first request, take last 200 bars to ensure we have enough
+                    finalBars = bars.slice(-Math.min(200, bars.length));
+                    console.log('[CustomDatafeed] First request: returning last', finalBars.length, 'bars');
                 } else if (from && to) {
                     // Filter by time range (from/to are in seconds)
                     const fromMs = from * 1000;
                     const toMs = to * 1000;
                     finalBars = bars.filter(bar => bar.time >= fromMs && bar.time <= toMs);
+                    console.log('[CustomDatafeed] Range request: filtered', bars.length, '->', finalBars.length, 'bars');
                     if (finalBars.length === 0) {
-                        finalBars = bars.slice(-Math.min(100, bars.length));
+                        // Fallback: return last 100 bars if no match in range
+                finalBars = bars.slice(-Math.min(100, bars.length));
+                        console.log('[CustomDatafeed] Range empty, using fallback:', finalBars.length, 'bars');
                     }
                 } else {
                     finalBars = bars.slice(-Math.min(100, bars.length));
+                    console.log('[CustomDatafeed] Default: returning last', finalBars.length, 'bars');
                 }
 
-                console.log('[CustomDatafeed] Returning', finalBars.length, 'bars');
+                if (finalBars.length > 0) {
+                    console.log('[CustomDatafeed] ✅ Success! Returning', finalBars.length, 'bars. First:', {
+                        time: new Date(finalBars[0].time).toISOString(),
+                        close: finalBars[0].close
+                    }, 'Last:', {
+                        time: new Date(finalBars[finalBars.length - 1].time).toISOString(),
+                        close: finalBars[finalBars.length - 1].close
+                    });
+                }
+                
                 return onResult(finalBars, { noData: finalBars.length === 0 });
             } catch (error) {
                 console.error('[CustomDatafeed] Error fetching for', sym, ':', error);
@@ -281,8 +337,8 @@ class CustomDatafeed {
         } else {
             // Aggregate from 1-minute for higher timeframes
             const bucketMs = tfInt * 60 * 1000;
-            const pollAgg = async () => {
-                try {
+        const pollAgg = async () => {
+            try {
                     const url = `${this.apiUrl}/chart/candle/current/${apiSymbol}?timeframe=1`;
                     const response = await fetch(url, { 
                         headers: { 'Accept': 'application/json' },
@@ -381,6 +437,6 @@ if (typeof window !== 'undefined') {
 }
 
 // Export for Node.js
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = CustomDatafeed;
+if (typeof module !== 'undefined' && module.exports) { 
+    module.exports = CustomDatafeed; 
 }
