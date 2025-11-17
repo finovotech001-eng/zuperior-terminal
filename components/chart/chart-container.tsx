@@ -117,11 +117,17 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           library_path: '/charting_library/',
           locale: 'en',
           debug: true,
-          disabled_features: ['use_localstorage_for_settings'],
-          enabled_features: ['study_templates'],
+          disabled_features: [
+            'use_localstorage_for_settings',
+            'save_chart_properties_to_local_storage',
+            'study_templates',
+          ],
           theme: 'dark',
           fullscreen: false,
           autosize: true,
+          // Disable study templates loading to avoid 404 errors
+          custom_css_url: undefined,
+          saveload_adapter: null,
           overrides: {
             "paneProperties.background": "#01040D",
             "paneProperties.vertGridProperties.color": "#2a2e39",
