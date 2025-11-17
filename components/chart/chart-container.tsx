@@ -325,39 +325,77 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
 
         // Show/Hide Open Positions
         if (settings.showOpenPositions) {
-          relevantPositions.forEach(pos => {
-            const key = `pos_${pos.id}`
-            const qtyText = (pos.volume ?? 0).toFixed(2)
-            const pnlText = formatPositionPnl(pos)
-            if (!positionLinesRef.current.has(key)) {
-              try {
-                if (typeof chart.createOrderLine === 'function') {
-                  const line = chart.createOrderLine()
-                  if (line && typeof line.setPrice === 'function') {
-                    line.setPrice(pos.openPrice)
-                    if (typeof line.setText === 'function') line.setText(pnlText)
+          // Process positions sequentially to avoid race conditions
+          const processPositions = async () => {
+            for (const pos of relevantPositions) {
+              const key = `pos_${pos.id}`
+              const qtyText = (pos.volume ?? 0).toFixed(2)
+              const pnlText = formatPositionPnl(pos)
+              const lineText = `${pos.type === 'Buy' ? 'Buy' : 'Sell'} ${qtyText} - ${pnlText}`
+              
+              if (!positionLinesRef.current.has(key)) {
+                try {
+                  // Try createPositionLine first (preferred for positions)
+                  let line: any = null
+                  if (typeof chart.createPositionLine === 'function') {
+                    try {
+                      line = await chart.createPositionLine()
+                      if (line && typeof line.setPrice === 'function') {
+                        line.setPrice(pos.openPrice)
+                        if (typeof line.setText === 'function') line.setText(lineText)
+                        if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
+                        if (typeof line.setLineColor === 'function') line.setLineColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
+                        if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
+                        if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
+                        if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
+                        positionLinesRef.current.set(key, line)
+                        console.log('[Chart] ✅ Created position line for:', pos.symbol, 'at price:', pos.openPrice, 'type:', pos.type)
+                      }
+                    } catch (e) {
+                      console.warn('[Chart] createPositionLine failed, trying createOrderLine:', e)
+                    }
+                  }
+                  
+                  // Fallback to createOrderLine if createPositionLine is not available
+                  if (!line && typeof chart.createOrderLine === 'function') {
+                    line = chart.createOrderLine()
+                    if (line && typeof line.setPrice === 'function') {
+                      line.setPrice(pos.openPrice)
+                      if (typeof line.setText === 'function') line.setText(lineText)
+                      if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
+                      if (typeof line.setLineColor === 'function') line.setLineColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
+                      if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
+                      if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
+                      if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
+                      positionLinesRef.current.set(key, line)
+                      console.log('[Chart] ✅ Created order line (fallback) for:', pos.symbol, 'at price:', pos.openPrice, 'type:', pos.type)
+                    }
+                  }
+                  
+                  if (!line) {
+                    console.warn('[Chart] ⚠️ No line creation method available for position:', pos.id)
+                  }
+                } catch (e) {
+                  console.error('[Chart] ❌ Failed to create position line:', e, 'for position:', pos)
+                }
+              } else {
+                // Update existing line
+                const line = positionLinesRef.current.get(key)
+                if (line) {
+                  try {
+                    if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
+                    if (typeof line.setText === 'function') line.setText(lineText)
                     if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
-                    if (typeof line.setLineColor === 'function') line.setLineColor('#2563EB')
-                    if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
-                    if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor('#2563EB')
-                    if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
-                    positionLinesRef.current.set(key, line)
+                  } catch (e) {
+                    console.warn('[Chart] Failed to update position line:', e)
                   }
                 }
-              } catch (e) {
-                console.warn('[Chart] Failed to create position line:', e)
-              }
-            } else {
-              // Update existing line
-              const line = positionLinesRef.current.get(key)
-              if (line) {
-                try {
-                  if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
-                  if (typeof line.setText === 'function') line.setText(pnlText)
-                  if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
-                } catch {}
               }
             }
+          }
+          
+          processPositions().catch(e => {
+            console.error('[Chart] Error processing positions:', e)
           })
           
           // Remove lines for positions that no longer exist
