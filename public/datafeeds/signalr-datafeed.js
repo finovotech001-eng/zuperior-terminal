@@ -1,6 +1,11 @@
 // SignalR Datafeed for TradingView Charting Library
 // Matches tradingview-chart project's implementation
+// Browser-only - should not be executed during SSR
 (function (global) {
+  // Guard: Only execute in browser environment
+  if (typeof window === 'undefined' && typeof globalThis !== 'undefined' && !globalThis.window) {
+    return;
+  }
   class SignalRDatafeed {
     constructor(baseUrl = 'http://localhost:3000', fallbackDatafeed = null, options = {}) {
       this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -106,13 +111,15 @@
       console.log('[SignalRDatafeed] connecting to', this.hubUrl);
       // Proxy HttpClient to route negotiate through our Next.js API to avoid CORS
       const HttpClient = global.signalR.HttpClient;
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      const datafeedInstance = this; // Capture reference for use in ProxyHttpClient
       class ProxyHttpClient extends HttpClient {
         async get(url, options) {
           try {
             if (url.includes('/negotiate')) {
               const urlObj = new URL(url);
               const qp = urlObj.searchParams.toString();
-              const extra = self._accountId ? `&accountId=${encodeURIComponent(self._accountId)}` : '';
+              const extra = datafeedInstance._accountId ? `&accountId=${encodeURIComponent(datafeedInstance._accountId)}` : '';
               const proxyUrl = `/apis/signalr/negotiate?hub=chart&${qp}${extra}`;
               const res = await fetch(proxyUrl, { method: 'GET', headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) } });
               const text = await res.text();
@@ -130,8 +137,8 @@
             if (url.includes('/negotiate')) {
               const urlObj = new URL(url);
               const qp = urlObj.searchParams.toString();
-              const extra = (typeof self._accountId !== 'undefined' && self._accountId !== null)
-                ? `&accountId=${encodeURIComponent(self._accountId)}`
+              const extra = (typeof datafeedInstance._accountId !== 'undefined' && datafeedInstance._accountId !== null)
+                ? `&accountId=${encodeURIComponent(datafeedInstance._accountId)}`
                 : '';
               const proxyUrl = `/apis/signalr/negotiate?hub=chart&${qp}${extra}`;
               const res = await fetch(proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) }, body: options?.content });
@@ -207,9 +214,6 @@
         type: symbolType,
         session: '24x7',
         timezone: 'Etc/UTC',
-        // Provide exchange to avoid validation warnings
-        exchange: 'FOREX',
-        listed_exchange: 'FOREX',
         minmov: 1,
         pricescale,
         has_intraday: true,
@@ -299,7 +303,7 @@
         if (this._connection && this._connected && sub && typeof this._connection.invoke === 'function') {
           await this._connection.invoke('UnsubscribeFromCandles', sub.symbol, sub.tf);
         }
-      } catch (e) {
+      } catch {
         // ignore if hub doesn't support explicit unsubscribe
       }
     }

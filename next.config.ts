@@ -3,8 +3,7 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
   
-  // Production optimizations
-  swcMinify: true,
+  // Production optimizations (swcMinify is enabled by default in Next.js 15)
   compress: true,
   poweredByHeader: false,
   
