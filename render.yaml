@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: zuperior-terminal
+    env: node
+    buildCommand: prisma generate && NODE_OPTIONS='--max-old-space-size=4096' next build --no-lint
+    startCommand: next start
+    envVars:
+      - key: NODE_ENV
+        value: production
+

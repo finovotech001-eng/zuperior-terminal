@@ -3,40 +3,68 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
   
-  // Improve HMR reliability
+  // Production optimizations
+  swcMinify: true,
+  compress: true,
+  poweredByHeader: false,
+  
+  // Improve HMR reliability (dev only)
   onDemandEntries: {
-    // Period (in ms) where the server will keep pages in the buffer
     maxInactiveAge: 60 * 1000,
-    // Number of pages that should be kept simultaneously without being disposed
     pagesBufferLength: 5,
   },
   
-  // Improve chunk loading reliability
+  // Exclude large files from build tracing (charting library is static)
+  outputFileTracingExcludes: {
+    '*': [
+      'node_modules/@swc/core-*',
+      'node_modules/@esbuild/**/*',
+      'node_modules/esbuild/**/*',
+      'node_modules/webpack/**/*',
+      'public/charting_library/**/*',
+    ],
+  },
+  
+  // Optimize static file serving
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+  },
+  
+  // Improve chunk loading reliability and optimize production builds
   webpack: (config, { isServer, dev }) => {
-    if (!isServer && dev) {
-      // Add error handling for chunk loading failures in development
+    // Production optimizations
+    if (!dev) {
       config.optimization = {
         ...config.optimization,
+        minimize: true,
         splitChunks: {
-          ...config.optimization.splitChunks,
+          chunks: 'all',
           cacheGroups: {
-            ...config.optimization.splitChunks?.cacheGroups,
             default: {
               minChunks: 2,
               priority: -20,
               reuseExistingChunk: true,
             },
+            vendor: {
+              test: /[\\/]node_modules[\\/]/,
+              name: 'vendors',
+              priority: -10,
+              reuseExistingChunk: true,
+            },
           },
         },
       };
-      
-      // Improve HMR reliability
+    }
+    
+    if (!isServer && dev) {
+      // Development HMR optimizations
       config.watchOptions = {
         ...config.watchOptions,
         poll: 1000,
         aggregateTimeout: 300,
       };
     }
+    
     return config;
   },
   async redirects() {
