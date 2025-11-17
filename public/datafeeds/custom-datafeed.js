@@ -57,8 +57,6 @@ class CustomDatafeed {
             type: symbolType,
             session: '24x7',
             timezone: 'Etc/UTC',
-            exchange: 'FOREX',
-            listed_exchange: 'FOREX',
             minmov: 1,
             pricescale,
             has_intraday: true,
