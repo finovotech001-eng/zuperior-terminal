@@ -242,3 +242,60 @@ export const removeTabAtom = atom(
     }
   }
 )
+
+// --- 4. Settings Atoms ---
+
+export interface Settings {
+  // Chart display settings
+  showOnChart: boolean
+  showSignals: boolean
+  showHMR: boolean
+  showPriceAlerts: boolean
+  showOpenPositions: boolean
+  showTPSL: boolean
+  showEconomicCalendar: boolean
+  
+  // Economic calendar impact filters
+  economicCalendarHighImpact: boolean
+  economicCalendarMiddleImpact: boolean
+  economicCalendarLowImpact: boolean
+  economicCalendarLowestImpact: boolean
+  
+  // Sound effects
+  priceAlertSound: boolean
+  closingSound: boolean
+  
+  // Trading settings
+  autoTPSL: boolean
+  openOrderMode: 'regular' | 'one-click' | 'risk-calculator'
+  priceSource: 'bid' | 'ask' | 'mid'
+  
+  // Appearance
+  appearance: 'dark' | 'light' | 'system'
+  
+  // Timezone
+  timezone: 'utc' | 'est' | 'pst' | 'gmt'
+}
+
+const defaultSettings: Settings = {
+  showOnChart: true,
+  showSignals: false,
+  showHMR: true,
+  showPriceAlerts: true,
+  showOpenPositions: true,
+  showTPSL: false,
+  showEconomicCalendar: true,
+  economicCalendarHighImpact: true,
+  economicCalendarMiddleImpact: false,
+  economicCalendarLowImpact: false,
+  economicCalendarLowestImpact: false,
+  priceAlertSound: false,
+  closingSound: false,
+  autoTPSL: false,
+  openOrderMode: 'regular',
+  priceSource: 'bid',
+  appearance: 'dark',
+  timezone: 'utc',
+}
+
+export const settingsAtom = atomWithStorage<Settings>('zuperior-settings', defaultSettings)

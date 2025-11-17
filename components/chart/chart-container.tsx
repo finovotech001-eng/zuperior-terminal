@@ -1,13 +1,17 @@
 "use client"
 
 import { useEffect, useRef, useState } from 'react'
+import { useAtom } from 'jotai'
 import { cn } from '@/lib/utils'
+import { settingsAtom } from '@/lib/store'
+import type { Position } from '@/components/trading/positions-table'
 
 interface ChartContainerProps {
   symbol?: string
   interval?: string // TradingView interval: '1','5','15','60','240','D','W','M'
   className?: string
   accountId?: string | null
+  positions?: Position[] // Open positions for chart overlays
 }
 
 declare global {
@@ -19,13 +23,22 @@ declare global {
   }
 }
 
-export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, accountId = null }: ChartContainerProps) {
+export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, accountId = null, positions = [] }: ChartContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetRef = useRef<any>(null)
   const [error, setError] = useState<string | null>(null)
   const bidLineRef = useRef<any>(null)
   const askLineRef = useRef<any>(null)
   const [priceLinesDisabled, setPriceLinesDisabled] = useState(false)
+  const [settings] = useAtom(settingsAtom)
+  
+  // Refs for chart overlays
+  const positionLinesRef = useRef<Map<string, any>>(new Map())
+  const tpSlLinesRef = useRef<Map<string, { tp?: any; sl?: any }>>(new Map())
+  const priceAlertLinesRef = useRef<Map<string, any>>(new Map())
+  const signalMarkersRef = useRef<Map<string, any>>(new Map())
+  const hmrZonesRef = useRef<Map<string, any>>(new Map())
+  const economicCalendarMarkersRef = useRef<Map<string, any>>(new Map())
 
   // Normalize symbols while preserving trailing micro suffix 'm' in lowercase
   // Examples:
@@ -70,35 +83,37 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           throw new Error('TradingView not loaded')
         }
 
-        // Point datafeed directly at your backend (not the local proxy), with configurable templates
-        const extBase = (process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com').replace(/\/$/, '')
-        const historyTemplate = process.env.NEXT_PUBLIC_CHART_HISTORY_TEMPLATE || '/chart/candle/history/{symbol}?timeframe={timeframe}&count={count}'
-        const currentTemplate = process.env.NEXT_PUBLIC_CHART_CURRENT_TEMPLATE || '/chart/candle/current/{symbol}?timeframe={timeframe}'
+        // Use local proxy routes to avoid CORS issues
+        // Proxy routes will forward to https://metaapi.zuperior.com/api with correct case
+        console.log('[Chart] Initializing datafeed with baseUrl: /apis')
         const httpFallback = new window.CustomDatafeed({
-          baseUrl: `${extBase}/api`,
-          historyTemplate,
-          currentTemplate,
-          trySymbolVariant: true,
+          baseUrl: '/apis',
           accountId: accountId || undefined,
         })
+        
         // Prefer SignalR datafeed if available, otherwise fall back to HTTP
         let datafeed: any
+        const extBase = (process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com').replace(/\/$/, '')
         if (window.SignalRDatafeed && typeof window.SignalRDatafeed === 'function') {
+          console.log('[Chart] Using SignalR datafeed with fallback')
           datafeed = new window.SignalRDatafeed(extBase, httpFallback, { accountId: accountId || undefined })
         } else {
-          console.warn('[Chart] window.SignalRDatafeed missing, falling back to HTTP datafeed')
+          console.warn('[Chart] window.SignalRDatafeed missing, using HTTP datafeed only')
           datafeed = httpFallback
         }
 
-        console.log('[Chart] Creating widget...')
+        const normalizedSymbol = normalizeSymbol(symbol)
+        console.log('[Chart] Creating widget with symbol:', normalizedSymbol, 'interval:', interval)
         const widget = new window.TradingView.widget({
-          symbol: normalizeSymbol(symbol),
+          symbol: normalizedSymbol,
           interval: interval,
           container: containerRef.current,
           datafeed: datafeed,
           library_path: '/charting_library/',
           locale: 'en',
+          debug: true,
           disabled_features: ['use_localstorage_for_settings'],
+          enabled_features: ['study_templates'],
           theme: 'dark',
           fullscreen: false,
           autosize: true,
@@ -236,6 +251,239 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     timer = setInterval(run, 1000)
     return () => { if (timer) clearInterval(timer) }
   }, [symbol, priceLinesDisabled])
+
+  // Update chart overlays based on settings and positions
+  useEffect(() => {
+    const w = widgetRef.current
+    if (!w || !settings.showOnChart) {
+      // Clear all overlays if showOnChart is disabled
+      positionLinesRef.current.clear()
+      tpSlLinesRef.current.clear()
+      priceAlertLinesRef.current.clear()
+      signalMarkersRef.current.clear()
+      hmrZonesRef.current.clear()
+      economicCalendarMarkersRef.current.clear()
+      return
+    }
+
+    w.onChartReady(() => {
+      try {
+        const chart = w.activeChart?.()
+        if (!chart) return
+
+        const normalizeSymbolForMatch = (s: string) => {
+          return s.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+        }
+        const currentSymbol = normalizeSymbolForMatch(symbol)
+        
+        // Filter positions for current symbol
+        const relevantPositions = positions.filter(p => {
+          const posSymbol = normalizeSymbolForMatch(p.symbol)
+          return posSymbol === currentSymbol || posSymbol.replace('M', '') === currentSymbol.replace('M', '')
+        })
+
+        // Show/Hide Open Positions
+        if (settings.showOpenPositions) {
+          relevantPositions.forEach(pos => {
+            const key = `pos_${pos.id}`
+            if (!positionLinesRef.current.has(key)) {
+              try {
+                if (typeof chart.createOrderLine === 'function') {
+                  const line = chart.createOrderLine()
+                  if (line && typeof line.setPrice === 'function') {
+                    line.setPrice(pos.openPrice)
+                    line.setText(`${pos.type} ${pos.volume} lot`)
+                    line.setLineColor(pos.type === 'Buy' ? '#16A34A' : '#EF4444')
+                    line.setBodyBackgroundColor('rgba(0,0,0,0)')
+                    positionLinesRef.current.set(key, line)
+                  }
+                }
+              } catch (e) {
+                console.warn('[Chart] Failed to create position line:', e)
+              }
+            } else {
+              // Update existing line
+              const line = positionLinesRef.current.get(key)
+              if (line && typeof line.setPrice === 'function') {
+                try {
+                  line.setPrice(pos.openPrice)
+                } catch {}
+              }
+            }
+          })
+          
+          // Remove lines for positions that no longer exist
+          positionLinesRef.current.forEach((line, key) => {
+            if (!relevantPositions.some(p => `pos_${p.id}` === key)) {
+              try {
+                if (line && typeof line.remove === 'function') {
+                  line.remove()
+                }
+              } catch {}
+              positionLinesRef.current.delete(key)
+            }
+          })
+        } else {
+          // Remove all position lines
+          positionLinesRef.current.forEach((line) => {
+            try {
+              if (line && typeof line.remove === 'function') {
+                line.remove()
+              }
+            } catch {}
+          })
+          positionLinesRef.current.clear()
+        }
+
+        // Show/Hide TP/SL Lines
+        if (settings.showTPSL) {
+          relevantPositions.forEach(pos => {
+            const key = `tpsl_${pos.id}`
+            let tpslRefs = tpSlLinesRef.current.get(key) || {}
+            
+            // Take Profit line
+            if (pos.takeProfit && pos.takeProfit > 0) {
+              if (!tpslRefs.tp) {
+                try {
+                  if (typeof chart.createOrderLine === 'function') {
+                    const tpLine = chart.createOrderLine()
+                    if (tpLine && typeof tpLine.setPrice === 'function') {
+                      tpLine.setPrice(pos.takeProfit)
+                      tpLine.setText('TP')
+                      tpLine.setLineColor('#10B981')
+                      tpLine.setBodyBackgroundColor('rgba(0,0,0,0)')
+                      tpslRefs.tp = tpLine
+                    }
+                  }
+                } catch (e) {
+                  console.warn('[Chart] Failed to create TP line:', e)
+                }
+              } else {
+                try {
+                  if (tpslRefs.tp && typeof tpslRefs.tp.setPrice === 'function') {
+                    tpslRefs.tp.setPrice(pos.takeProfit)
+                  }
+                } catch {}
+              }
+            } else if (tpslRefs.tp) {
+              try {
+                if (tpslRefs.tp && typeof tpslRefs.tp.remove === 'function') {
+                  tpslRefs.tp.remove()
+                }
+              } catch {}
+              tpslRefs.tp = undefined
+            }
+
+            // Stop Loss line
+            if (pos.stopLoss && pos.stopLoss > 0) {
+              if (!tpslRefs.sl) {
+                try {
+                  if (typeof chart.createOrderLine === 'function') {
+                    const slLine = chart.createOrderLine()
+                    if (slLine && typeof slLine.setPrice === 'function') {
+                      slLine.setPrice(pos.stopLoss)
+                      slLine.setText('SL')
+                      slLine.setLineColor('#EF4444')
+                      slLine.setBodyBackgroundColor('rgba(0,0,0,0)')
+                      tpslRefs.sl = slLine
+                    }
+                  }
+                } catch (e) {
+                  console.warn('[Chart] Failed to create SL line:', e)
+                }
+              } else {
+                try {
+                  if (tpslRefs.sl && typeof tpslRefs.sl.setPrice === 'function') {
+                    tpslRefs.sl.setPrice(pos.stopLoss)
+                  }
+                } catch {}
+              }
+            } else if (tpslRefs.sl) {
+              try {
+                if (tpslRefs.sl && typeof tpslRefs.sl.remove === 'function') {
+                  tpslRefs.sl.remove()
+                }
+              } catch {}
+              tpslRefs.sl = undefined
+            }
+
+            tpSlLinesRef.current.set(key, tpslRefs)
+          })
+          
+          // Remove TP/SL lines for positions that no longer exist
+          tpSlLinesRef.current.forEach((refs, key) => {
+            if (!relevantPositions.some(p => `tpsl_${p.id}` === key)) {
+              try {
+                if (refs.tp && typeof refs.tp.remove === 'function') refs.tp.remove()
+                if (refs.sl && typeof refs.sl.remove === 'function') refs.sl.remove()
+              } catch {}
+              tpSlLinesRef.current.delete(key)
+            }
+          })
+        } else {
+          // Remove all TP/SL lines
+          tpSlLinesRef.current.forEach((refs) => {
+            try {
+              if (refs.tp && typeof refs.tp.remove === 'function') refs.tp.remove()
+              if (refs.sl && typeof refs.sl.remove === 'function') refs.sl.remove()
+            } catch {}
+          })
+          tpSlLinesRef.current.clear()
+        }
+
+        // Price Alerts - placeholder (would need price alert data)
+        if (!settings.showPriceAlerts) {
+          priceAlertLinesRef.current.forEach((line) => {
+            try {
+              if (line && typeof line.remove === 'function') {
+                line.remove()
+              }
+            } catch {}
+          })
+          priceAlertLinesRef.current.clear()
+        }
+
+        // Signals - placeholder (would need signals data)
+        if (!settings.showSignals) {
+          signalMarkersRef.current.forEach((marker) => {
+            try {
+              if (marker && typeof marker.remove === 'function') {
+                marker.remove()
+              }
+            } catch {}
+          })
+          signalMarkersRef.current.clear()
+        }
+
+        // HMR Periods - placeholder (would need HMR data)
+        if (!settings.showHMR) {
+          hmrZonesRef.current.forEach((zone) => {
+            try {
+              if (zone && typeof zone.remove === 'function') {
+                zone.remove()
+              }
+            } catch {}
+          })
+          hmrZonesRef.current.clear()
+        }
+
+        // Economic Calendar - placeholder (would need calendar data)
+        if (!settings.showEconomicCalendar) {
+          economicCalendarMarkersRef.current.forEach((marker) => {
+            try {
+              if (marker && typeof marker.remove === 'function') {
+                marker.remove()
+              }
+            } catch {}
+          })
+          economicCalendarMarkersRef.current.clear()
+        }
+
+      } catch (e) {
+        console.warn('[Chart] Error updating overlays:', e)
+      }
+    })
+  }, [symbol, positions, settings])
 
   if (error) {
     return (

@@ -14,6 +14,7 @@ const RAW_BASE = (process.env.MT5_API_BASE || process.env.LIVE_API_URL || proces
 const API_BASE = RAW_BASE.endsWith('/api') ? RAW_BASE : `${RAW_BASE}/api`
 
 function buildUrl(symbol: string, timeframe: string) {
+  // Use lowercase c in chart for current endpoint
   return `${API_BASE}/chart/candle/current/${symbol}?timeframe=${timeframe}`
 }
 
@@ -69,6 +70,7 @@ export async function GET(
     let lastStatus = 0
     for (const s of candidates) {
       const url = buildUrl(s, timeframe)
+      console.log(`[Chart Current API] Fetching: ${url}`)
       const headers: Record<string, string> = { 'Accept': 'application/json' }
       if (token && verifiedAccountId) {
         headers['Authorization'] = `Bearer ${token}`
@@ -76,13 +78,18 @@ export async function GET(
       }
       const response = await fetch(url, { method: 'GET', headers, cache: 'no-store' })
       lastStatus = response.status
+      console.log(`[Chart Current API] Response status: ${lastStatus} for symbol: ${s}`)
       if (response.ok) {
         data = await response.json().catch(() => null)
-        if (data) break
+        if (data) {
+          console.log(`[Chart Current API] Success: Received current candle for ${s}`)
+          break
+        }
       }
     }
 
     if (!data) {
+      console.error(`[Chart Current API] Failed to fetch current candle for ${symbol}, last status: ${lastStatus}`)
       return NextResponse.json({ error: 'Failed to fetch current candle', status: lastStatus }, { status: 502 })
     }
     

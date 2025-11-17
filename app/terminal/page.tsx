@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useMemo } from "react"
-import { useAtom } from "jotai"
+import { useAtom, useAtomValue } from "jotai"
 import { motion, AnimatePresence } from "framer-motion"
 import { placeMarketOrder } from "@/components/trading/placeOrder";
 import { cn, formatCurrency } from "@/lib/utils"
@@ -37,6 +37,8 @@ import { useInterestRates } from "@/hooks/useInterestRates"
 import { useEconomicNews } from "@/hooks/useEconomicNews"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ChartContainer } from "@/components/chart/chart-container"
+import { soundManager } from "@/lib/sound-manager"
+import { settingsAtom } from "@/lib/store"
 
 import { PositionsTable, Position } from "@/components/trading/positions-table"
 import { OrderPanel, OrderData } from "@/components/trading/order-panel"
@@ -501,10 +503,34 @@ function useMultiAccountBalancePolling(accountIds: string[]): { balances: Record
 }
 
 // Helper function to format date from ISO string
-function formatPositionTime(isoString: string): string {
+function formatPositionTime(isoString: string, timezone: string = 'utc'): string {
   try {
     const date = new Date(isoString);
-    return date.toLocaleDateString('en-US', { 
+    if (isNaN(date.getTime())) return isoString;
+    
+    // Get timezone offset
+    let offset = 0;
+    switch (timezone.toLowerCase()) {
+      case 'est':
+        offset = -5;
+        break;
+      case 'pst':
+        offset = -8;
+        break;
+      case 'gmt':
+        offset = 0;
+        break;
+      case 'utc':
+      default:
+        offset = 0;
+        break;
+    }
+    
+    // Convert to target timezone
+    const utcTime = date.getTime() + (date.getTimezoneOffset() * 60000);
+    const targetTime = new Date(utcTime + (offset * 3600000));
+    
+    return targetTime.toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric', 
       hour: 'numeric',
@@ -546,6 +572,13 @@ export default function TerminalPage() {
 
 
 function TerminalContent() {
+  const settings = useAtomValue(settingsAtom)
+  
+  // Update sound manager enabled state based on settings
+  React.useEffect(() => {
+    soundManager.setEnabled(settings.priceAlertSound || settings.closingSound)
+  }, [settings.priceAlertSound, settings.closingSound])
+  
   // Initialize WebSocket connection for real-time market data
   const { isConnected: wsConnected, isConnecting: wsConnecting, error: wsError } = useWebSocketConnection()
   
@@ -1156,7 +1189,7 @@ function TerminalContent() {
         takeProfit: pos.takeProfit,
         stopLoss: pos.stopLoss,
         position: ticketNum > 0 ? ticketNum.toString() : posId,
-        openTime: formatPositionTime(pos.openTime),
+        openTime: formatPositionTime(pos.openTime, settings.timezone),
         swap: pos.swap,
         pnl: pos.profit,
       }
@@ -1686,7 +1719,27 @@ function TerminalContent() {
         return
       }
 
-      const tradePrice = data.openPrice || selectedInstrument.ask || 0
+      // Use price source setting to determine trade price
+      let tradePrice = data.openPrice
+      if (!tradePrice) {
+        const bid = selectedInstrument.bid || 0
+        const ask = selectedInstrument.ask || 0
+        const mid = (bid + ask) / 2
+        if (settings.priceSource === 'bid') {
+          tradePrice = bid
+        } else if (settings.priceSource === 'ask') {
+          tradePrice = ask
+        } else if (settings.priceSource === 'mid') {
+          tradePrice = mid
+        } else {
+          // Default to ask for buy orders
+          tradePrice = ask
+        }
+      }
+      if (!tradePrice || tradePrice === 0) {
+        setTradeNotice({ type: 'error', message: 'Invalid price. Please try again.' })
+        return
+      }
       const tradeVolume = data.volume
       const leverage = latestBalanceData.leverage || 500 // Default leverage if not available
       
@@ -1755,14 +1808,26 @@ function TerminalContent() {
         return
       }
 
+      // Auto TP/SL if enabled
+      let finalStopLoss = data.stopLoss
+      let finalTakeProfit = data.takeProfit
+      if (settings.autoTPSL && (!finalStopLoss || finalStopLoss === 0) && (!finalTakeProfit || finalTakeProfit === 0)) {
+        // Set default TP/SL based on symbol type and price
+        const spread = Math.abs((selectedInstrument.ask || 0) - (selectedInstrument.bid || 0))
+        const defaultTPDistance = spread * 3 // 3x spread for TP
+        const defaultSLDistance = spread * 2 // 2x spread for SL
+        finalTakeProfit = tradePrice + defaultTPDistance
+        finalStopLoss = tradePrice - defaultSLDistance
+      }
+      
       const order = {
         symbol: chosenSymbol,
         side: 'buy' as const,
         volume: data.volume,
         orderType: data.orderType,
         openPrice: data.openPrice,
-        stopLoss: data.stopLoss,
-        takeProfit: data.takeProfit,
+        stopLoss: finalStopLoss,
+        takeProfit: finalTakeProfit,
         accountId: currentAccountId || '0',
         price: tradePrice,
       }
@@ -1867,7 +1932,27 @@ function TerminalContent() {
         return
       }
 
-      const tradePrice = data.openPrice || selectedInstrument.bid || 0
+      // Use price source setting to determine trade price
+      let tradePrice = data.openPrice
+      if (!tradePrice) {
+        const bid = selectedInstrument.bid || 0
+        const ask = selectedInstrument.ask || 0
+        const mid = (bid + ask) / 2
+        if (settings.priceSource === 'bid') {
+          tradePrice = bid
+        } else if (settings.priceSource === 'ask') {
+          tradePrice = ask
+        } else if (settings.priceSource === 'mid') {
+          tradePrice = mid
+        } else {
+          // Default to bid for sell orders
+          tradePrice = bid
+        }
+      }
+      if (!tradePrice || tradePrice === 0) {
+        setTradeNotice({ type: 'error', message: 'Invalid price. Please try again.' })
+        return
+      }
       const tradeVolume = data.volume
       const leverage = latestBalanceData.leverage || 500 // Default leverage if not available
       
@@ -2549,6 +2634,7 @@ function TerminalContent() {
                   symbol={activeTab?.symbol || "BTCUSD"}
                   accountId={currentAccountId}
                   className="h-full"
+                  positions={formattedPositions.filter(p => p.type === 'Buy' || p.type === 'Sell')}
                 />
               </div>
 
@@ -2675,6 +2761,10 @@ function TerminalContent() {
                       if (json.success || json.Success) { 
                         console.log('[Close] Position closed successfully'); 
                         setTradeNotice({ type: 'success', title: 'Position closed', message: `Ticket ${positionId}` });
+                        // Play closing sound if enabled
+                        if (settings.closingSound) {
+                          soundManager.playClosing().catch(e => console.warn('[Sound] Failed to play closing sound:', e))
+                        }
                         // Optimistically hide the just-closed row without reconnecting
                         try { setOptimisticallyClosed(prev => { const n = new Set(prev); n.add(id); return n }) } catch {}
                         

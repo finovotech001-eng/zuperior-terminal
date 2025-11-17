@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useAtomValue } from "jotai"
 import { X, Plus, Minus, HelpCircle } from "lucide-react"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
@@ -11,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { FlagIcon } from "@/components/data-display/flag-icon"
 import { useTickPrice } from "@/hooks/useWebSocket"
 import { useTickPolling } from "@/hooks/useTickPolling"
+import { settingsAtom } from "@/lib/store"
 
 export interface OrderPanelProps extends React.HTMLAttributes<HTMLDivElement> {
   symbol?: string
@@ -70,8 +72,16 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const currentBuyPrice = (pollTick?.ask ?? ask) ?? buyPrice
   const currentSpread = (pollTick?.spread ?? liveSpread) !== undefined ? `${((pollTick?.spread ?? liveSpread) as number).toFixed(2)} pips` : spread
   
-  const [formType, setFormType] = React.useState<FormType>("regular")
+  const settings = useAtomValue(settingsAtom)
+  const [formType, setFormType] = React.useState<FormType>(settings.openOrderMode || "regular")
   const [orderType, setOrderType] = React.useState<"market" | "limit" | "pending">("market")
+  
+  // Update formType when settings change
+  React.useEffect(() => {
+    if (settings.openOrderMode && settings.openOrderMode !== formType) {
+      setFormType(settings.openOrderMode)
+    }
+  }, [settings.openOrderMode])
   const [volume, setVolume] = React.useState("0.01")
   const [risk, setRisk] = React.useState("")
   const [riskMode, setRiskMode] = React.useState<"usd" | "percent">("usd")

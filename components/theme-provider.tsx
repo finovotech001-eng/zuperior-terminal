@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { useAtomValue } from "jotai"
+import { settingsAtom } from "@/lib/store"
 
 type Theme = "dark" | "light" | "system"
 
@@ -29,6 +31,17 @@ export function ThemeProvider({
   ...props
 }: ThemeProviderProps) {
   const [theme, setTheme] = React.useState<Theme>(defaultTheme)
+  
+  // Get appearance setting from global settings (client-side only)
+  const settings = typeof window !== 'undefined' ? useAtomValue(settingsAtom) : null
+  const settingsTheme = settings?.appearance || defaultTheme
+  
+  // Update theme when settings change
+  React.useEffect(() => {
+    if (settingsTheme && settingsTheme !== theme) {
+      setTheme(settingsTheme as Theme)
+    }
+  }, [settingsTheme, theme])
 
   React.useEffect(() => {
     const root = window.document.documentElement

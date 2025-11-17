@@ -1,10 +1,12 @@
 "use client"
 
 import * as React from "react"
+import { useAtom } from "jotai"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { EconomicCalendarEvent, EconomicEvent } from "./economic-calendar-event"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { settingsAtom } from "@/lib/store"
 
 export interface EventsByDate {
   date: string
@@ -32,18 +34,43 @@ const EconomicCalendar: React.FC<EconomicCalendarProps> = ({
   const [showBottomFade, setShowBottomFade] = React.useState(true)
   const [impactFilter, setImpactFilter] = React.useState<string>("all")
   const [countryFilter, setCountryFilter] = React.useState<string>("all")
+  const [settings] = useAtom(settingsAtom)
 
-  // Filter events based on selected filters
+  // Filter events based on selected filters and settings
   const filteredEventsByDate = React.useMemo(() => {
     return eventsByDate.map(dateGroup => ({
       ...dateGroup,
       events: dateGroup.events.filter(event => {
-        const matchesImpact = impactFilter === "all" || event.impact === impactFilter
+        // Map event impact to settings impact levels
+        // Events use: high, medium, low
+        // Settings use: high, middle, low, lowest
+        let matchesImpact = true
+        if (settings.economicCalendarHighImpact || 
+            settings.economicCalendarMiddleImpact || 
+            settings.economicCalendarLowImpact || 
+            settings.economicCalendarLowestImpact) {
+          // At least one impact level is enabled, check if this event matches
+          matchesImpact = false
+          if (event.impact === 'high' && settings.economicCalendarHighImpact) {
+            matchesImpact = true
+          } else if (event.impact === 'medium' && settings.economicCalendarMiddleImpact) {
+            matchesImpact = true
+          } else if (event.impact === 'low') {
+            // Low impact events match if either low or lowest is enabled
+            if (settings.economicCalendarLowImpact || settings.economicCalendarLowestImpact) {
+              matchesImpact = true
+            }
+          }
+        }
+        
+        // Also respect the UI filter if showFilters is true
+        const matchesUIFilter = impactFilter === "all" || event.impact === impactFilter
         const matchesCountry = countryFilter === "all" || event.countryCode === countryFilter
-        return matchesImpact && matchesCountry
+        
+        return matchesImpact && matchesUIFilter && matchesCountry
       })
     })).filter(dateGroup => dateGroup.events.length > 0)
-  }, [eventsByDate, impactFilter, countryFilter])
+  }, [eventsByDate, impactFilter, countryFilter, settings])
 
   const handleScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget

@@ -25,7 +25,8 @@ function buildUrl(symbol: string, timeframe: string, count?: string, startTime?:
     params.set('count', count)
   }
   
-  return `${API_BASE}/chart/candle/history/${symbol}?${params.toString()}`
+  // Use capital C in Chart for history endpoint
+  return `${API_BASE}/Chart/candle/history/${symbol}?${params.toString()}`
 }
 
 export async function GET(
@@ -89,6 +90,7 @@ export async function GET(
     let lastStatus = 0
     for (const s of candidates) {
       const url = buildUrl(s, timeframe, count, startTime || undefined, endTime || undefined)
+      console.log(`[Chart History API] Fetching: ${url}`)
       const headers: Record<string, string> = { 'Accept': 'application/json' }
       if (token && verifiedAccountId) {
         headers['Authorization'] = `Bearer ${token}`
@@ -96,14 +98,19 @@ export async function GET(
       }
       const response = await fetch(url, { method: 'GET', headers, cache: 'no-store' })
       lastStatus = response.status
+      console.log(`[Chart History API] Response status: ${lastStatus} for symbol: ${s}`)
       if (response.ok) {
         data = await response.json().catch(() => null)
-        if (data) break
+        if (data) {
+          console.log(`[Chart History API] Success: Received ${Array.isArray(data) ? data.length : 'non-array'} candles for ${s}`)
+          break
+        }
       }
       // Non-404/400/422/500 we still try next, but we capture last status
     }
 
     if (!data) {
+      console.error(`[Chart History API] Failed to fetch chart history for ${symbol}, last status: ${lastStatus}`)
       return NextResponse.json({ error: 'Failed to fetch chart history', status: lastStatus }, { status: 502 })
     }
     

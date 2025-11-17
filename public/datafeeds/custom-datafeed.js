@@ -1,51 +1,14 @@
 // Custom MT5-compatible Datafeed (uses the TradingView Library)
+// Simplified implementation following the architecture guide
 class CustomDatafeed {
     constructor(baseOrConfig = '/apis') {
         const cfg = (baseOrConfig && typeof baseOrConfig === 'object') ? baseOrConfig : { baseUrl: baseOrConfig };
-        this.apiUrl = (cfg.baseUrl || '/apis').replace(/\/$/, ''); // Prefer external base like `${NEXT_PUBLIC_API_BASE_URL}/api`
-        this.historyTemplate = cfg.historyTemplate || '/chart/candle/history/{symbol}?timeframe={timeframe}&count={count}';
-        this.currentTemplate = cfg.currentTemplate || '/chart/candle/current/{symbol}?timeframe={timeframe}';
-        this.trySymbolVariant = Boolean(cfg.trySymbolVariant);
+        this.apiUrl = (cfg.baseUrl || '/apis').replace(/\/$/, '');
         this.accountId = cfg.accountId || null;
-        this.fallbackBase = '/apis'; // Local proxy fallback if external fails (502/CORS)
         this.subscribers = {};
         this.lastBars = {};
         this.aggregators = {};
-    }
-
-    buildPath(tpl, { symbol, timeframe, count }) {
-        let path = tpl
-            .replace('{symbol}', encodeURIComponent(symbol))
-            .replace('{timeframe}', encodeURIComponent(timeframe))
-            .replace('{count}', encodeURIComponent(String(count ?? '')));
-        if (this.accountId) {
-            path += (path.includes('?') ? '&' : '?') + `accountId=${encodeURIComponent(this.accountId)}`;
-        }
-        return path;
-    }
-
-    async fetchJsonWithFallback(path) {
-        const headers = { 'Accept': 'application/json' };
-        // Try external base
-        try {
-            const res = await fetch(`${this.apiUrl}${path}`, { headers, cache:'no-cache' });
-            if (res.ok) return await res.json();
-            // If external explicitly fails (e.g., 502), try fallback proxy
-            if (this.apiUrl !== this.fallbackBase) {
-                const res2 = await fetch(`${this.fallbackBase}${path}`, { headers, cache:'no-cache' });
-                if (res2.ok) return await res2.json();
-            }
-            throw new Error(`HTTP ${res.status}`);
-        } catch (e) {
-            // Last resort: try fallback if not yet tried
-            if (this.apiUrl !== this.fallbackBase) {
-                try {
-                    const res3 = await fetch(`${this.fallbackBase}${path}`, { headers, cache:'no-cache' });
-                    if (res3.ok) return await res3.json();
-                } catch {}
-            }
-            throw e;
-        }
+        console.log('[CustomDatafeed] Initialized with apiUrl:', this.apiUrl);
     }
 
     onReady(cb) {
@@ -62,24 +25,27 @@ class CustomDatafeed {
     searchSymbols(userInput, exchange, symbolType, onResult) {
         const symbols = [
             { symbol: 'BTCUSD', full_name: 'BTCUSD', description: 'Bitcoin vs US Dollar', exchange: '', type: 'crypto' },
+            { symbol: 'BTCUSDm', full_name: 'BTCUSDm', description: 'BTCUSD (m)', exchange: '', type: 'crypto' },
             { symbol: 'ETHUSD', full_name: 'ETHUSD', description: 'Ethereum vs US Dollar', exchange: '', type: 'crypto' },
             { symbol: 'XAUUSD', full_name: 'XAUUSD', description: 'Gold vs US Dollar', exchange: '', type: 'commodity' },
+            { symbol: 'XAUUSDm', full_name: 'XAUUSDm', description: 'XAUUSD (m)', exchange: '', type: 'commodity' },
             { symbol: 'EURUSD', full_name: 'EURUSD', description: 'Euro vs US Dollar', exchange: '', type: 'forex' },
         ];
         const q = (userInput || '').toLowerCase();
         onResult(symbols.filter(s => s.symbol.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)));
     }
 
-    resolveSymbol(symbolName, onResolve) {
+    resolveSymbol(symbolName, onResolve, onError) {
         let symbolType = 'crypto';
         let pricescale = 100;
+        
         if (/USD|EUR|GBP|JPY/.test(symbolName)) pricescale = 10000;
         
-        // Determine symbol type more accurately
         if (symbolName.startsWith('BTC') || symbolName.startsWith('ETH')) {
             symbolType = 'crypto';
         } else if (symbolName.startsWith('XAU') || symbolName.startsWith('XAG')) {
             symbolType = 'commodity';
+            pricescale = 100;
         } else if (/USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD/.test(symbolName)) {
             symbolType = 'forex';
         }
@@ -91,7 +57,6 @@ class CustomDatafeed {
             type: symbolType,
             session: '24x7',
             timezone: 'Etc/UTC',
-            // Provide exchange to avoid validation warnings (use a generic value)
             exchange: 'FOREX',
             listed_exchange: 'FOREX',
             minmov: 1,
@@ -106,247 +71,309 @@ class CustomDatafeed {
         setTimeout(() => onResolve(info), 0);
     }
 
-    getTimeframe(res) {
+    getTimeframe(resolution) {
         const m = {
-            '1':'1','3':'3','5':'5','15':'15','30':'30','60':'60','120':'120','240':'240','360':'360','480':'480','D':'1440','W':'10080','M':'43200'
+            '1':'1','3':'3','5':'5','15':'15','30':'30',
+            '60':'60','120':'120','240':'240','360':'360','480':'480',
+            'D':'1440','1D':'1440','W':'10080','1W':'10080','M':'43200','1M':'43200'
         };
-        return m[res] || '1';
+        return m[resolution] || '1';
+    }
+
+    normalizeSymbol(symbolName) {
+        // Remove trailing 'm' if present (e.g., BTCUSDm -> BTCUSD)
+        return symbolName.replace(/m$/i, '').toUpperCase();
     }
 
     async getBars(symbolInfo, resolution, periodParams, onResult, onError) {
         const { from, to, firstDataRequest } = periodParams;
         const timeframe = this.getTimeframe(resolution);
+        const count = firstDataRequest ? 1000 : 500;
         
-        // Convert from/to (seconds) to UTC timestamps
-        // from and to are in seconds (Unix timestamp), convert to milliseconds for Date
-        const toMs = (t) => {
-            if (t == null) return NaN;
-            const n = typeof t === 'string' && /^\d+$/.test(t) ? Number(t) : t;
-            if (typeof n === 'number') { return n < 1e12 ? n * 1000 : n; }
-            const d = new Date(t); return d.getTime();
-        };
+        // Normalize symbol - remove 'm' suffix for API call
+        const apiSymbol = this.normalizeSymbol(symbolInfo.name);
         
-        // Convert to UTC ISO-8601 with Z suffix (e.g., 2025-01-08T23:59:59Z)
-        const toUTCISO = (seconds) => {
-            if (!seconds) return null;
-            const ms = toMs(seconds);
-            if (!Number.isFinite(ms)) return null;
-            return new Date(ms).toISOString(); // Already in UTC, includes Z
-        };
-        
-        // Convert to milliseconds-since-epoch (UTC)
-        const toUTCMs = (seconds) => {
-            if (!seconds) return null;
-            const ms = toMs(seconds);
-            return Number.isFinite(ms) ? ms : null;
-        };
-        
-        const startTimeISO = toUTCISO(from);
-        const endTimeISO = toUTCISO(to);
-        const startTimeMs = toUTCMs(from);
-        const endTimeMs = toUTCMs(to);
-        
-        // Fallback to count if timestamps not available (for first request)
-        const DEFAULT_COUNT = 500;
-        const tfMin = parseInt(timeframe) || 1; // minutes
-        const rangeSec = (to && from) ? Math.max(0, (to - from)) : 0; // seconds
-        let count = DEFAULT_COUNT;
-        if (rangeSec > 0) {
-            const est = Math.ceil(rangeSec / (tfMin * 60));
-            count = Math.max(DEFAULT_COUNT, Math.min(est + 50, 5000));
+        // Try both symbol variants
+        const candidates = [apiSymbol];
+        if (symbolInfo.name.toLowerCase().endsWith('m')) {
+            candidates.push(apiSymbol + 'm');
+        } else {
+            candidates.push(apiSymbol.replace(/m$/i, ''));
         }
-        
-        try {
-            // Try multiple symbol variants and URL shapes to match backend
-            const baseSymbol = symbolInfo.name;
-            const candidatesSymbols = /m$/.test(baseSymbol) ? [baseSymbol, baseSymbol.replace(/m$/, '')] : [baseSymbol, baseSymbol + 'm'];
-            
-            // Build paths with startTime/endTime (prefer ISO-8601 with Z, fallback to ms)
-            const pathsFor = (sym) => {
-                const params = [];
-                params.push(`timeframe=${timeframe}`);
-                
-                // Prefer startTime/endTime as UTC ISO-8601 with Z
-                if (startTimeISO && endTimeISO) {
-                    params.push(`startTime=${encodeURIComponent(startTimeISO)}`);
-                    params.push(`endTime=${encodeURIComponent(endTimeISO)}`);
-                } else if (startTimeMs && endTimeMs) {
-                    // Fallback to milliseconds-since-epoch
-                    params.push(`startTime=${startTimeMs}`);
-                    params.push(`endTime=${endTimeMs}`);
-                } else {
-                    // Fallback to count if no timestamps
-                    params.push(`count=${count}`);
-                }
-                
-                const qs = params.join('&');
-                return [
-                    `/chart/candle/history/${sym}?${qs}`,
-                    `/chart/candle/history?symbol=${encodeURIComponent(sym)}&${qs}`,
-                    // Keep count-based fallback for compatibility
-                    `/chart/candle/history/${sym}?timeframe=${timeframe}&count=${count}`,
-                    `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=${timeframe}&count=${count}`,
-                ];
-            };
-            let data = null;
-            for (const sym of candidatesSymbols) {
-                const paths = pathsFor(sym);
-                for (const p of paths) {
-                    try { data = await this.fetchJsonWithFallback(p); break; } catch(e) { /* try next */ }
-                }
-                if (data) break;
-            }
-            if (!data) throw new Error('history fetch failed');
-            if (!Array.isArray(data) || data.length === 0) return onResult([], { noData: true });
-            
-            // Parse timestamps from API response (treat as UTC)
-            const parseUTCTimestamp = (timeStr) => {
-                if (!timeStr) return NaN;
-                // If it's already a number (ms), use it
-                if (typeof timeStr === 'number') return timeStr < 1e12 ? timeStr * 1000 : timeStr;
-                // Parse ISO-8601 or other formats, treat as UTC
-                const d = new Date(timeStr);
-                return d.getTime(); // getTime() returns UTC milliseconds
-            };
-            
-            const tfMs = parseInt(timeframe) * 60 * 1000;
-            let bars = data.map(c => {
-                const timeMs = parseUTCTimestamp(c.time);
-                return {
-                    time: Math.floor(timeMs / tfMs) * tfMs,
-                    open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +(c.volume || 0)
-                };
-            }).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close)).sort((a,b)=>a.time-b.time);
 
-            let finalBars;
-            if (firstDataRequest) {
-                finalBars = bars.slice(-Math.min(100, bars.length));
-            } else {
-                const filtered = bars.filter(b => b.time >= from*1000 && b.time <= to*1000);
-                finalBars = filtered.length ? filtered : bars.slice(-Math.min(100,bars.length));
-            }
+        console.log('[CustomDatafeed] getBars:', {
+            symbol: symbolInfo.name,
+            apiSymbol,
+            resolution,
+            timeframe,
+            count,
+            firstDataRequest
+        });
 
-            // If TF > 1 and history appears stale, aggregate from 1m as fallback
-            const tfInt = parseInt(timeframe);
-            const newest = finalBars[finalBars.length-1]?.time || 0;
-            const needAgg = Number.isFinite(tfInt) && tfInt>1 && (Date.now()-newest > tfInt*60*1000*2);
-            if (needAgg) {
-                const need1m = Math.min(tfInt*105, 6000);
-                try {
-                    let one = null;
-                    // Use UTC timestamps for 1m aggregation request too
-                    const oneParams = [];
-                    oneParams.push('timeframe=1');
-                    if (startTimeISO && endTimeISO) {
-                        oneParams.push(`startTime=${encodeURIComponent(startTimeISO)}`);
-                        oneParams.push(`endTime=${encodeURIComponent(endTimeISO)}`);
-                    } else if (startTimeMs && endTimeMs) {
-                        oneParams.push(`startTime=${startTimeMs}`);
-                        oneParams.push(`endTime=${endTimeMs}`);
-                    } else {
-                        oneParams.push(`count=${need1m}`);
-                    }
-                    const oneQs = oneParams.join('&');
-                    
-                    for (const sym of candidatesSymbols) {
-                        const onePaths = [
-                            `/chart/candle/history/${sym}?${oneQs}`,
-                            `/chart/candle/history?symbol=${encodeURIComponent(sym)}&${oneQs}`,
-                            // Fallback to count
-                            `/chart/candle/history/${sym}?timeframe=1&count=${need1m}`,
-                            `/chart/candle/history?symbol=${encodeURIComponent(sym)}&timeframe=1&count=${need1m}`,
-                        ];
-                        for (const p of onePaths) { try { one = await this.fetchJsonWithFallback(p); break; } catch {} }
-                        if (one) break;
-                    }
-                    if (!one) throw new Error('1m fetch failed');
-                    
-                    const parseUTCTimestamp = (timeStr) => {
-                        if (!timeStr) return NaN;
-                        if (typeof timeStr === 'number') return timeStr < 1e12 ? timeStr * 1000 : timeStr;
-                        const d = new Date(timeStr);
-                        return d.getTime();
-                    };
-                    
-                    const oneBars = one.map(c => {
-                        const timeMs = parseUTCTimestamp(c.time);
+        for (const sym of candidates) {
+            try {
+                const apiUrl = `${this.apiUrl}/chart/candle/history/${sym}?timeframe=${timeframe}&count=${count}`;
+                console.log('[CustomDatafeed] Fetching:', apiUrl);
+                
+                const response = await fetch(apiUrl, { 
+                    headers: { 'Accept': 'application/json' },
+                    cache: 'no-cache' 
+                });
+
+                if (!response.ok) {
+                    console.warn('[CustomDatafeed] Response not OK:', response.status, response.statusText);
+                    continue;
+                }
+
+                const data = await response.json();
+                console.log('[CustomDatafeed] Received data:', Array.isArray(data) ? data.length + ' candles' : 'not an array', data);
+
+                if (!Array.isArray(data) || data.length === 0) {
+                    console.warn('[CustomDatafeed] Empty or invalid data for:', sym);
+                    continue;
+                }
+
+                // Transform API response to TradingView format
+                const tfMs = parseInt(timeframe) * 60 * 1000;
+                const bars = data
+                    .map(candle => {
+                        // Parse timestamp - handle ISO string or number
+                        let timeMs;
+                        if (typeof candle.time === 'string') {
+                            timeMs = new Date(candle.time).getTime();
+                        } else if (typeof candle.time === 'number') {
+                            // If seconds (10 digits), convert to ms
+                            timeMs = candle.time < 1e12 ? candle.time * 1000 : candle.time;
+                        } else {
+                            return null;
+                        }
+
+                        if (!Number.isFinite(timeMs)) return null;
+
+                        // Align to candle boundary
+                        const alignedTime = Math.floor(timeMs / tfMs) * tfMs;
+
                         return {
-                            time: Math.floor(timeMs / (60*1000)) * 60*1000,
-                            open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +(c.volume || 0)
+                            time: alignedTime,
+                            open: parseFloat(candle.open) || 0,
+                            high: parseFloat(candle.high) || 0,
+                            low: parseFloat(candle.low) || 0,
+                            close: parseFloat(candle.close) || 0,
+                            volume: parseFloat(candle.volume || candle.tickVolume || 0)
                         };
-                    }).filter(b => Number.isFinite(b.time) && Number.isFinite(b.close)).sort((a,b)=>a.time-b.time);
-                    const bucketMs = tfInt*60*1000; const map=new Map();
-                    for (const b of oneBars){
-                        const t=Math.floor(b.time/bucketMs)*bucketMs; const a=map.get(t);
-                        if(!a) map.set(t,{...b,time:t}); else {a.high=Math.max(a.high,b.high);a.low=Math.min(a.low,b.low);a.close=b.close;a.volume=(a.volume||0)+(b.volume||0);} }
-                    finalBars = Array.from(map.values()).sort((a,b)=>a.time-b.time).slice(-Math.min(100, map.size));
-                } catch {}
-            }
+                    })
+                    .filter(bar => bar && Number.isFinite(bar.time) && Number.isFinite(bar.close) && bar.close > 0)
+                    .sort((a, b) => a.time - b.time);
 
-            return onResult(finalBars, { noData: finalBars.length===0 });
-        } catch(e){
-            console.error('[CustomDatafeed]: getBars error', e);
-            onError(e.message);
+                if (bars.length === 0) {
+                    console.warn('[CustomDatafeed] No valid bars after transformation for:', sym);
+                    continue;
+                }
+
+                console.log('[CustomDatafeed] Transformed to', bars.length, 'bars');
+
+                // Filter by time range if needed
+                let finalBars;
+                if (firstDataRequest) {
+                    // For first request, take last 100 bars
+                    finalBars = bars.slice(-Math.min(100, bars.length));
+                } else if (from && to) {
+                    // Filter by time range (from/to are in seconds)
+                    const fromMs = from * 1000;
+                    const toMs = to * 1000;
+                    finalBars = bars.filter(bar => bar.time >= fromMs && bar.time <= toMs);
+                    if (finalBars.length === 0) {
+                        finalBars = bars.slice(-Math.min(100, bars.length));
+                    }
+                } else {
+                    finalBars = bars.slice(-Math.min(100, bars.length));
+                }
+
+                console.log('[CustomDatafeed] Returning', finalBars.length, 'bars');
+                return onResult(finalBars, { noData: finalBars.length === 0 });
+            } catch (error) {
+                console.error('[CustomDatafeed] Error fetching for', sym, ':', error);
+                continue;
+            }
         }
+
+        // If we get here, all attempts failed
+        console.error('[CustomDatafeed] getBars failed for all symbol variants');
+        onError('Failed to fetch historical data');
     }
 
     subscribeBars(symbolInfo, resolution, onTick, listenerGuid, onResetCacheNeededCallback) {
         const timeframe = this.getTimeframe(resolution);
         const tfInt = parseInt(timeframe);
-        const bucketMs = tfInt*60*1000;
+        const apiSymbol = this.normalizeSymbol(symbolInfo.name);
+        
+        console.log('[CustomDatafeed] subscribeBars:', {
+            symbol: symbolInfo.name,
+            apiSymbol,
+            resolution,
+            timeframe
+        });
+
         if (tfInt === 1) {
+            // Direct polling for 1-minute timeframe
             const poll = async () => {
                 try {
-                    const c = await this.fetchJsonWithFallback(`/chart/candle/current/${symbolInfo.name}?timeframe=1`);
-                    // Parse timestamp as UTC
-                    const timeMs = typeof c.time === 'number' ? (c.time < 1e12 ? c.time * 1000 : c.time) : new Date(c.time).getTime();
-                    const t = Math.floor(timeMs / (60*1000)) * 60*1000;
-                    const bar={ time:t, open:+(c.open??c.close), high:+(c.high??c.close), low:+(c.low??c.close), close:+c.close, volume:+(c.volume||0) };
-                    const last=this.lastBars[listenerGuid];
-                    if(!last || bar.time>last.time){ this.lastBars[listenerGuid]=bar; onTick(bar); return; }
-                    const merged={...last};
-                    merged.high=Math.max(merged.high, bar.high, bar.close);
-                    merged.low=Math.min(merged.low, bar.low, bar.close);
-                    merged.close=bar.close; merged.volume=Math.max(bar.volume, merged.volume||0);
-                    this.lastBars[listenerGuid]=merged; onTick(merged);
-                }catch(e){ console.error('[CustomDatafeed]: rt(1m) error',e.message);} };
-            poll(); this.subscribers[listenerGuid]=setInterval(poll,1000); return;
-        }
+                    const url = `${this.apiUrl}/chart/candle/current/${apiSymbol}?timeframe=1`;
+                    const response = await fetch(url, { 
+                        headers: { 'Accept': 'application/json' },
+                        cache: 'no-cache' 
+                    });
 
-        // Aggregate from 1m for TF>1
-        this.aggregators[listenerGuid]=this.aggregators[listenerGuid]||null;
-        const pollAgg = async () => {
-            try {
-                const c = await this.fetchJsonWithFallback(`/chart/candle/current/${symbolInfo.name}?timeframe=1`);
-                // Parse timestamp as UTC
-                const timeMs = typeof c.time === 'number' ? (c.time < 1e12 ? c.time * 1000 : c.time) : new Date(c.time).getTime();
-                const oneTime = Math.floor(timeMs / (60*1000)) * 60*1000;
-                const bucketTime=Math.floor(oneTime/bucketMs)*bucketMs;
-                const oneBar={ time:oneTime, open:+(c.open??c.close), high:+(c.high??c.close), low:+(c.low??c.close), close:+c.close, volume:+(c.volume||0) };
-                let agg=this.aggregators[listenerGuid];
-                if(!agg || bucketTime>agg.time){
-                    agg={ time:bucketTime, open:oneBar.open, high:oneBar.high, low:oneBar.low, close:oneBar.close, volume:oneBar.volume, _sumPrev:0, _currMinTime:oneBar.time, _prevMinVol:oneBar.volume };
-                    this.aggregators[listenerGuid]=agg;
-                    if (typeof onResetCacheNeededCallback==='function'){ try{ onResetCacheNeededCallback(); }catch{} }
-                    this.lastBars[listenerGuid]={...agg}; onTick({...agg}); return;
+                    if (!response.ok) return;
+
+                    const candle = await response.json();
+                    const candleData = Array.isArray(candle) ? candle[0] : candle;
+
+                    if (!candleData || !candleData.time) return;
+
+                    // Parse timestamp
+                    let timeMs;
+                    if (typeof candleData.time === 'string') {
+                        timeMs = new Date(candleData.time).getTime();
+                    } else if (typeof candleData.time === 'number') {
+                        timeMs = candleData.time < 1e12 ? candleData.time * 1000 : candleData.time;
+                    } else {
+                        return;
+                    }
+
+                    const timestamp = Math.floor(timeMs / (60 * 1000)) * 60 * 1000;
+
+                    const bar = {
+                        time: timestamp,
+                        open: parseFloat(candleData.open || candleData.close || 0),
+                        high: parseFloat(candleData.high || candleData.close || 0),
+                        low: parseFloat(candleData.low || candleData.close || 0),
+                        close: parseFloat(candleData.close || 0),
+                        volume: parseFloat(candleData.volume || candleData.tickVolume || 0)
+                    };
+
+                    if (!Number.isFinite(bar.time) || !Number.isFinite(bar.close) || bar.close <= 0) return;
+
+                    const last = this.lastBars[listenerGuid];
+
+                    if (!last || bar.time > last.time) {
+                        // New candle
+                        this.lastBars[listenerGuid] = bar;
+                        onTick(bar);
+                    } else if (bar.time === last.time) {
+                        // Update existing candle
+                        const merged = {
+                            time: last.time,
+                            open: last.open,
+                            high: Math.max(last.high, bar.high, bar.close),
+                            low: Math.min(last.low, bar.low, bar.close),
+                            close: bar.close,
+                            volume: Math.max(bar.volume, last.volume || 0)
+                        };
+                        this.lastBars[listenerGuid] = merged;
+                        onTick(merged);
+                    }
+                } catch (error) {
+                    console.error('[CustomDatafeed] Polling error:', error);
                 }
-                // extend
-                agg.high=Math.max(agg.high, oneBar.high, oneBar.close);
-                agg.low=Math.min(agg.low, oneBar.low, oneBar.close);
-                agg.close=oneBar.close;
-                if(agg._currMinTime===oneBar.time){ agg._prevMinVol=oneBar.volume; } else { agg._sumPrev+=agg._prevMinVol; agg._currMinTime=oneBar.time; agg._prevMinVol=oneBar.volume; }
-                agg.volume=agg._sumPrev+agg._prevMinVol;
-                this.lastBars[listenerGuid]={...agg}; onTick({...agg});
-            }catch(e){ console.error('[CustomDatafeed]: rt(agg) error',e.message); }
-        };
-        pollAgg(); this.subscribers[listenerGuid]=setInterval(pollAgg,1000);
+            };
+
+            poll();
+            this.subscribers[listenerGuid] = setInterval(poll, 1000); // Poll every 1 second
+        } else {
+            // Aggregate from 1-minute for higher timeframes
+            const bucketMs = tfInt * 60 * 1000;
+            const pollAgg = async () => {
+                try {
+                    const url = `${this.apiUrl}/chart/candle/current/${apiSymbol}?timeframe=1`;
+                    const response = await fetch(url, { 
+                        headers: { 'Accept': 'application/json' },
+                        cache: 'no-cache' 
+                    });
+
+                    if (!response.ok) return;
+
+                    const candle = await response.json();
+                    const candleData = Array.isArray(candle) ? candle[0] : candle;
+
+                    if (!candleData || !candleData.time) return;
+
+                    let timeMs;
+                    if (typeof candleData.time === 'string') {
+                        timeMs = new Date(candleData.time).getTime();
+                    } else if (typeof candleData.time === 'number') {
+                        timeMs = candleData.time < 1e12 ? candleData.time * 1000 : candleData.time;
+                    } else {
+                        return;
+                    }
+
+                    const oneTime = Math.floor(timeMs / (60 * 1000)) * 60 * 1000;
+                    const bucketTime = Math.floor(oneTime / bucketMs) * bucketMs;
+
+                    const oneBar = {
+                        time: oneTime,
+                        open: parseFloat(candleData.open || candleData.close || 0),
+                        high: parseFloat(candleData.high || candleData.close || 0),
+                        low: parseFloat(candleData.low || candleData.close || 0),
+                        close: parseFloat(candleData.close || 0),
+                        volume: parseFloat(candleData.volume || candleData.tickVolume || 0)
+                    };
+
+                    let agg = this.aggregators[listenerGuid];
+
+                    if (!agg || bucketTime > agg.time) {
+                        // New aggregated candle
+                        agg = {
+                            time: bucketTime,
+                            open: oneBar.open,
+                            high: oneBar.high,
+                            low: oneBar.low,
+                            close: oneBar.close,
+                            volume: oneBar.volume
+                        };
+                        this.aggregators[listenerGuid] = agg;
+                        this.lastBars[listenerGuid] = { ...agg };
+                        if (typeof onResetCacheNeededCallback === 'function') {
+                            try {
+                                onResetCacheNeededCallback();
+                            } catch {}
+                        }
+                        onTick({ ...agg });
+                    } else {
+                        // Update existing aggregated candle
+                        agg.high = Math.max(agg.high, oneBar.high, oneBar.close);
+                        agg.low = Math.min(agg.low, oneBar.low, oneBar.close);
+                        agg.close = oneBar.close;
+                        agg.volume = Math.max(agg.volume || 0, oneBar.volume || 0);
+                        this.aggregators[listenerGuid] = agg;
+                        this.lastBars[listenerGuid] = { ...agg };
+                        onTick({ ...agg });
+                    }
+                } catch (error) {
+                    console.error('[CustomDatafeed] Aggregation polling error:', error);
+                }
+            };
+
+            pollAgg();
+            this.subscribers[listenerGuid] = setInterval(pollAgg, 1000);
+        }
     }
 
-    unsubscribeBars(id){ if(this.subscribers[id]){ clearInterval(this.subscribers[id]); delete this.subscribers[id]; } delete this.lastBars[id]; delete this.aggregators[id]; }
+    unsubscribeBars(listenerGuid) {
+        if (this.subscribers[listenerGuid]) {
+            clearInterval(this.subscribers[listenerGuid]);
+            delete this.subscribers[listenerGuid];
+        }
+        delete this.lastBars[listenerGuid];
+        delete this.aggregators[listenerGuid];
+    }
 
-    getServerTime(cb){
-        // Use local time to avoid 404s if backend doesn't expose /time
-        try { cb(Math.floor(Date.now()/1000)); } catch { /* noop */ }
+    getServerTime(cb) {
+        try {
+            cb(Math.floor(Date.now() / 1000));
+        } catch {
+            // noop
+        }
     }
 }
 
@@ -356,6 +383,6 @@ if (typeof window !== 'undefined') {
 }
 
 // Export for Node.js
-if (typeof module !== 'undefined' && module.exports) { 
-    module.exports = CustomDatafeed; 
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = CustomDatafeed;
 }
