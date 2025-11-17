@@ -145,6 +145,8 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             "paneProperties.horzGridProperties.color": "#2a2e39",
             "scalesProperties.textColor": "#787b86",
             "scalesProperties.lineColor": "#2a2e39",
+            // Explicitly set chart type to candlesticks (style 1 = candles, 0 = line, 2 = area)
+            "mainSeriesProperties.style": 1,
             "mainSeriesProperties.candleStyle.upColor": "#16A34A",
             "mainSeriesProperties.candleStyle.downColor": "#EF4444",
             "mainSeriesProperties.candleStyle.borderUpColor": "#16A34A",
