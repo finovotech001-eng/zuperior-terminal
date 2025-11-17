@@ -280,7 +280,9 @@ class CustomDatafeed {
             onResult([], { noData: true });
         } catch (e) {
             console.error('[CustomDatafeed] getBars onResult error:', e);
-            onError && onError('Failed to fetch historical data');
+            if (onError) {
+                onError('Failed to fetch historical data');
+            }
         }
     }
 
@@ -373,47 +375,60 @@ class CustomDatafeed {
                     }
 
                     const timestamp = Math.floor(timeMs / (60 * 1000)) * 60 * 1000;
+                    const currentTime = Date.now();
+                    const currentCandleTime = Math.floor(currentTime / (60 * 1000)) * 60 * 1000;
 
-                    const lastBar = this.lastBars[listenerGuid];
-
-                    // Start with server OHLC
-                    let bar = {
-                        time: timestamp,
-                        open: candleOpen,
-                        high: candleHigh,
-                        low: candleLow,
-                        close: candleClose,
-                        volume: Number.isFinite(volume) ? volume : 0
-                    };
-
-                    // Refine with tick (if available) without touching open.
-                    if (tickPrice && Number.isFinite(tickPrice) && tickPrice > 0) {
-                        bar.high = Math.max(bar.high, tickPrice);
-                        bar.low = Math.min(bar.low, tickPrice);
-                        bar.close = tickPrice;
-                    }
-
-                    if (!Number.isFinite(bar.time) || !Number.isFinite(bar.close) || bar.close <= 0) {
+                    // Only update if this is the CURRENT (incomplete) candle
+                    // Completed candles should NEVER be updated
+                    if (timestamp < currentCandleTime) {
+                        // This is a completed candle - don't touch it, it's already in history
                         return;
                     }
 
-                    if (!lastBar || bar.time > lastBar.time) {
-                        // New candle
-                        this.lastBars[listenerGuid] = bar;
-                        onTick(bar);
-                    } else if (bar.time === lastBar.time) {
-                        // Update existing candle - preserve open, update H/L/C and volume
-                        const merged = {
-                            time: lastBar.time,
-                            open: lastBar.open,
-                            high: Math.max(lastBar.high, bar.high, bar.close),
-                            low: Math.min(lastBar.low, bar.low, bar.close),
-                            close: bar.close,
-                            volume: Math.max(lastBar.volume || 0, bar.volume || 0)
+                    const lastBar = this.lastBars[listenerGuid];
+
+                    if (!lastBar || timestamp > lastBar.time) {
+                        // NEW candle period starting - initialize from tick price (not API OHLC which might be old)
+                        // The API might return OHLC from a completed candle, so we start fresh with tick data
+                        if (!tickPrice || !Number.isFinite(tickPrice) || tickPrice <= 0) {
+                            return; // Need tick data to start new candle
+                        }
+
+                        // For new candle, use tick price as open (or API open if it's truly the start)
+                        const newOpen = (Number.isFinite(candleOpen) && timestamp === currentCandleTime) ? candleOpen : tickPrice;
+                        
+                        const newBar = {
+                            time: timestamp,
+                            open: newOpen,
+                            high: tickPrice,
+                            low: tickPrice,
+                            close: tickPrice,
+                            volume: Number.isFinite(volume) ? volume : 0
                         };
-                        this.lastBars[listenerGuid] = merged;
-                        onTick(merged);
+
+                        this.lastBars[listenerGuid] = newBar;
+                        onTick(newBar);
+                    } else if (timestamp === lastBar.time) {
+                        // CURRENT candle (same time period) - ONLY update high/low/close from tick
+                        // NEVER use API OHLC here as it might be from a completed candle
+                        if (!tickPrice || !Number.isFinite(tickPrice) || tickPrice <= 0) {
+                            return;
+                        }
+
+                        // Update only high, low, close from tick data - open NEVER changes
+                        const updatedBar = {
+                            time: lastBar.time,
+                            open: lastBar.open, // OPEN NEVER CHANGES once candle starts
+                            high: Math.max(lastBar.high, tickPrice), // Expand high if price goes up
+                            low: Math.min(lastBar.low, tickPrice),   // Expand low if price goes down
+                            close: tickPrice, // Always update close with latest tick
+                            volume: Math.max(lastBar.volume || 0, volume || 0)
+                        };
+
+                        this.lastBars[listenerGuid] = updatedBar;
+                        onTick(updatedBar);
                     }
+                    // If timestamp < lastBar.time, candle is already completed - ignore
                 } catch (error) {
                     console.error('[CustomDatafeed] Polling error:', error);
                 }
@@ -491,48 +506,88 @@ class CustomDatafeed {
 
                     const bucketMs = tfInt * 60 * 1000;
                     const bucketTime = Math.floor(timeMs / bucketMs) * bucketMs;
+                    const currentTime = Date.now();
+                    const currentBucketTime = Math.floor(currentTime / bucketMs) * bucketMs;
 
-                    let bar = {
-                        time: bucketTime,
-                        open,
-                        high,
-                        low,
-                        close,
-                        volume: Number.isFinite(volume) ? volume : 0
-                    };
-
-                    if (tickPrice && Number.isFinite(tickPrice) && tickPrice > 0) {
-                        bar.high = Math.max(bar.high, tickPrice);
-                        bar.low = Math.min(bar.low, tickPrice);
-                        bar.close = tickPrice;
+                    // Only update if this is the CURRENT (incomplete) candle
+                    // Completed candles should NEVER be updated
+                    if (bucketTime < currentBucketTime) {
+                        // This is a completed candle - don't touch it
+                        return;
                     }
 
                     const lastBar = this.lastBars[listenerGuid];
 
-                    if (!lastBar || bar.time > lastBar.time) {
-                        // New aggregated candle
-                        this.aggregators[listenerGuid] = { ...bar };
-                        this.lastBars[listenerGuid] = { ...bar };
+                    if (!lastBar || bucketTime > lastBar.time) {
+                        // NEW candle period starting - initialize from tick price
+                        // For higher timeframes, use API OHLC if available and it's the current bucket
+                        // Otherwise start fresh with tick data
+                        if (!tickPrice || !Number.isFinite(tickPrice) || tickPrice <= 0) {
+                            if (!Number.isFinite(close) || close <= 0) {
+                                return; // Need at least tick or candle data
+                            }
+                            // Fallback to candle close if no tick
+                            const newBar = {
+                                time: bucketTime,
+                                open: Number.isFinite(open) ? open : close,
+                                high: Number.isFinite(high) ? high : close,
+                                low: Number.isFinite(low) ? low : close,
+                                close: close,
+                                volume: Number.isFinite(volume) ? volume : 0
+                            };
+                            this.aggregators[listenerGuid] = { ...newBar };
+                            this.lastBars[listenerGuid] = { ...newBar };
+                            if (typeof onResetCacheNeededCallback === 'function') {
+                                try {
+                                    onResetCacheNeededCallback();
+                                } catch {}
+                            }
+                            onTick({ ...newBar });
+                            return;
+                        }
+
+                        // Use tick price to start new candle (or API open if current bucket)
+                        const newOpen = (Number.isFinite(open) && bucketTime === currentBucketTime) ? open : tickPrice;
+                        
+                        const newBar = {
+                            time: bucketTime,
+                            open: newOpen,
+                            high: tickPrice,
+                            low: tickPrice,
+                            close: tickPrice,
+                            volume: Number.isFinite(volume) ? volume : 0
+                        };
+
+                        this.aggregators[listenerGuid] = { ...newBar };
+                        this.lastBars[listenerGuid] = { ...newBar };
                         if (typeof onResetCacheNeededCallback === 'function') {
                             try {
                                 onResetCacheNeededCallback();
                             } catch {}
                         }
-                        onTick({ ...bar });
-                    } else if (bar.time === lastBar.time) {
-                        // Update existing aggregated candle
+                        onTick({ ...newBar });
+                    } else if (bucketTime === lastBar.time) {
+                        // CURRENT candle (same time period) - ONLY update high/low/close from tick
+                        // NEVER use API OHLC here as it might be from a completed candle
+                        if (!tickPrice || !Number.isFinite(tickPrice) || tickPrice <= 0) {
+                            return; // Need tick to update current candle
+                        }
+
+                        // Update only high, low, close from tick - open NEVER changes
                         const agg = {
                             time: lastBar.time,
-                            open: lastBar.open,
-                            high: Math.max(lastBar.high, bar.high, bar.close),
-                            low: Math.min(lastBar.low, bar.low, bar.close),
-                            close: bar.close,
-                            volume: Math.max(lastBar.volume || 0, bar.volume || 0)
+                            open: lastBar.open, // OPEN NEVER CHANGES once candle starts
+                            high: Math.max(lastBar.high, tickPrice), // Expand high if price goes up
+                            low: Math.min(lastBar.low, tickPrice),   // Expand low if price goes down
+                            close: tickPrice, // Always update close with latest tick
+                            volume: Math.max(lastBar.volume || 0, volume || 0)
                         };
+
                         this.aggregators[listenerGuid] = { ...agg };
                         this.lastBars[listenerGuid] = { ...agg };
                         onTick({ ...agg });
                     }
+                    // If bucketTime < lastBar.time, candle is already completed - ignore
                 } catch (error) {
                     console.error('[CustomDatafeed] Aggregation polling error:', error);
                 }

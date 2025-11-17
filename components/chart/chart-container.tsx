@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useAtom } from 'jotai'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 import { settingsAtom } from '@/lib/store'
 import type { Position } from '@/components/trading/positions-table'
 
@@ -307,6 +307,15 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           return s.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
         }
         const currentSymbol = normalizeSymbolForMatch(symbol)
+
+        const formatPositionPnl = (pos: Position) => {
+          const raw = typeof pos.pnl === 'number'
+            ? pos.pnl
+            : (pos.currentPrice - pos.openPrice) * (pos.volume ?? 1)
+          const formatted = formatCurrency(raw ?? 0, 2)
+          const sign = raw > 0 ? '+' : raw < 0 ? '' : ''
+          return `${sign}${formatted} USD`
+        }
         
         // Filter positions for current symbol
         const relevantPositions = positions.filter(p => {
@@ -318,15 +327,20 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         if (settings.showOpenPositions) {
           relevantPositions.forEach(pos => {
             const key = `pos_${pos.id}`
+            const qtyText = (pos.volume ?? 0).toFixed(2)
+            const pnlText = formatPositionPnl(pos)
             if (!positionLinesRef.current.has(key)) {
               try {
                 if (typeof chart.createOrderLine === 'function') {
                   const line = chart.createOrderLine()
                   if (line && typeof line.setPrice === 'function') {
                     line.setPrice(pos.openPrice)
-                    line.setText(`${pos.type} ${pos.volume} lot`)
-                    line.setLineColor(pos.type === 'Buy' ? '#16A34A' : '#EF4444')
-                    line.setBodyBackgroundColor('rgba(0,0,0,0)')
+                    if (typeof line.setText === 'function') line.setText(pnlText)
+                    if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
+                    if (typeof line.setLineColor === 'function') line.setLineColor('#2563EB')
+                    if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
+                    if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor('#2563EB')
+                    if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
                     positionLinesRef.current.set(key, line)
                   }
                 }
@@ -336,9 +350,11 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             } else {
               // Update existing line
               const line = positionLinesRef.current.get(key)
-              if (line && typeof line.setPrice === 'function') {
+              if (line) {
                 try {
-                  line.setPrice(pos.openPrice)
+                  if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
+                  if (typeof line.setText === 'function') line.setText(pnlText)
+                  if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
                 } catch {}
               }
             }
