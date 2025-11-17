@@ -72,6 +72,12 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
 
     const initChart = async () => {
       try {
+        // Guard: Only load in browser (not during SSR)
+        if (typeof window === 'undefined') {
+          console.warn('[Chart] Skipping chart initialization - not in browser')
+          return
+        }
+        
         console.log('[Chart] Loading scripts...')
         await loadScript('/charting_library/charting_library.standalone.js')
         await loadScript('https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js')

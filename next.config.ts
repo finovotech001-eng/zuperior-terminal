@@ -21,6 +21,7 @@ const nextConfig = {
       'node_modules/esbuild/**/*',
       'node_modules/webpack/**/*',
       'public/charting_library/**/*',
+      'public/datafeeds/**/*',
     ],
   },
   
@@ -31,22 +32,33 @@ const nextConfig = {
   
   // Improve chunk loading reliability and optimize production builds
   webpack: (config, { isServer, dev }) => {
-    // Exclude datafeed files from server-side bundling (browser-only)
+    // Exclude browser-only files from server-side bundling
     if (isServer) {
-      // Use IgnorePlugin to completely ignore datafeed files during server build
       const webpack = require('webpack');
       config.plugins = config.plugins || [];
+      
+      // Ignore datafeed files completely
       config.plugins.push(
         new webpack.IgnorePlugin({
           resourceRegExp: /datafeeds\/(custom-datafeed|signalr-datafeed)\.js$/,
         })
       );
       
-      // Also set alias to false to prevent any imports
+      // Ignore TradingView charting library bundles (they use 'self' which doesn't exist in Node.js)
+      config.plugins.push(
+        new webpack.IgnorePlugin({
+          resourceRegExp: /charting_library\/(bundles|charting_library\..*\.js)$/,
+        })
+      );
+      
+      // Set aliases to false to prevent imports
       config.resolve.alias = {
         ...config.resolve.alias,
         '@/datafeeds/custom-datafeed.js': false,
         '@/datafeeds/signalr-datafeed.js': false,
+        '/datafeeds/custom-datafeed.js': false,
+        '/datafeeds/signalr-datafeed.js': false,
+        '/charting_library': false,
       };
     }
     
