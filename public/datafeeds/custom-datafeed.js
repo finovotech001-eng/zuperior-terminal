@@ -205,7 +205,7 @@ class CustomDatafeed {
                             const validatedLow = Math.min(low, open, close);
 
                             // Return complete OHLC bar data for candlestick chart
-                            return {
+                return {
                                 time: alignedTime,
                                 open,
                                 high: validatedHigh,
@@ -388,14 +388,25 @@ class CustomDatafeed {
                     const lastBar = this.lastBars[listenerGuid];
 
                     if (!lastBar || timestamp > lastBar.time) {
-                        // NEW candle period starting - initialize from tick price (not API OHLC which might be old)
-                        // The API might return OHLC from a completed candle, so we start fresh with tick data
+                        // NEW candle period starting
+                        // CRITICAL: New candle's OPEN must equal previous candle's CLOSE for continuity
                         if (!tickPrice || !Number.isFinite(tickPrice) || tickPrice <= 0) {
                             return; // Need tick data to start new candle
                         }
 
-                        // For new candle, use tick price as open (or API open if it's truly the start)
-                        const newOpen = (Number.isFinite(candleOpen) && timestamp === currentCandleTime) ? candleOpen : tickPrice;
+                        // For new candle, open = previous candle's close (ensures continuity)
+                        // If no previous candle, use tick price or API open
+                        let newOpen;
+                        if (lastBar && Number.isFinite(lastBar.close)) {
+                            // New candle starts where previous one ended
+                            newOpen = lastBar.close;
+                        } else if (Number.isFinite(candleOpen) && timestamp === currentCandleTime) {
+                            // First candle or API provides open for current candle
+                            newOpen = candleOpen;
+                        } else {
+                            // Fallback: use tick price
+                            newOpen = tickPrice;
+                        }
                         
                         const newBar = {
                             time: timestamp,
@@ -440,8 +451,8 @@ class CustomDatafeed {
         } else {
             // Higher timeframes: poll the server for the proper aggregated OHLC candle
             // for the requested timeframe. We avoid building synthetic candles from ticks.
-            const pollAgg = async () => {
-                try {
+        const pollAgg = async () => {
+            try {
                     const [candleResponse, tickResponse] = await Promise.all([
                         fetch(`${this.apiUrl}/chart/candle/current/${apiSymbol}?timeframe=${tfInt}`, {
                             headers: { 'Accept': 'application/json' },
@@ -519,17 +530,24 @@ class CustomDatafeed {
                     const lastBar = this.lastBars[listenerGuid];
 
                     if (!lastBar || bucketTime > lastBar.time) {
-                        // NEW candle period starting - initialize from tick price
-                        // For higher timeframes, use API OHLC if available and it's the current bucket
-                        // Otherwise start fresh with tick data
+                        // NEW candle period starting
+                        // CRITICAL: New candle's OPEN must equal previous candle's CLOSE for continuity
                         if (!tickPrice || !Number.isFinite(tickPrice) || tickPrice <= 0) {
                             if (!Number.isFinite(close) || close <= 0) {
                                 return; // Need at least tick or candle data
                             }
-                            // Fallback to candle close if no tick
+                            // Fallback to candle data if no tick
+                            let newOpen;
+                            if (lastBar && Number.isFinite(lastBar.close)) {
+                                // New candle starts where previous one ended
+                                newOpen = lastBar.close;
+                            } else {
+                                newOpen = Number.isFinite(open) ? open : close;
+                            }
+                            
                             const newBar = {
                                 time: bucketTime,
-                                open: Number.isFinite(open) ? open : close,
+                                open: newOpen,
                                 high: Number.isFinite(high) ? high : close,
                                 low: Number.isFinite(low) ? low : close,
                                 close: close,
@@ -546,8 +564,18 @@ class CustomDatafeed {
                             return;
                         }
 
-                        // Use tick price to start new candle (or API open if current bucket)
-                        const newOpen = (Number.isFinite(open) && bucketTime === currentBucketTime) ? open : tickPrice;
+                        // For new candle, open = previous candle's close (ensures continuity)
+                        let newOpen;
+                        if (lastBar && Number.isFinite(lastBar.close)) {
+                            // New candle starts where previous one ended
+                            newOpen = lastBar.close;
+                        } else if (Number.isFinite(open) && bucketTime === currentBucketTime) {
+                            // First candle or API provides open for current candle
+                            newOpen = open;
+                        } else {
+                            // Fallback: use tick price
+                            newOpen = tickPrice;
+                        }
                         
                         const newBar = {
                             time: bucketTime,
