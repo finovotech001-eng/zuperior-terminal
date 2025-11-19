@@ -17,6 +17,7 @@ import {
   LifeBuoy, 
   Lightbulb,
   ChevronDown,
+  ChevronRight,
   Clock,
   Plus,
   Info,
@@ -2640,6 +2641,18 @@ function TerminalContent() {
           <div className="flex flex-1 overflow-hidden gap-1 min-h-0">
             {/* Center Column: Chart + Positions */}
             <div className="flex-1 flex flex-col overflow-hidden min-w-0 gap-1 relative">
+              {/* Order Panel Toggle Button - Top */}
+              {isRightPanelCollapsed && (
+                <div className="absolute top-2 right-2 z-50">
+                  <button
+                    onClick={() => setIsRightPanelCollapsed(false)}
+                    className="h-10 w-10 flex items-center justify-center rounded-md glass-card border border-white/10 hover:bg-white/5 hover:border-primary/50 cursor-pointer group"
+                    title="Open Order Panel"
+                  >
+                    <ChevronRight className="h-4 w-4 text-white/60 group-hover:text-primary" />
+                  </button>
+                </div>
+              )}
               {/* Chart Area */}
               <div className="flex-1 overflow-hidden min-h-0">
                 <ChartContainer 
@@ -2842,17 +2855,7 @@ function TerminalContent() {
                   className="w-full h-full"
                 />
               </div>
-            ) : (
-              <div className="shrink-0 flex items-center justify-center w-12 relative">
-                <button
-                  onClick={() => setIsRightPanelCollapsed(false)}
-                  className="h-10 w-10 flex items-center justify-center rounded-md glass-card border border-white/10 hover:bg-white/5 hover:border-primary/50 cursor-pointer group"
-                  title="Open Order Panel"
-                >
-                  <Plus className="h-5 w-5 text-white/60 group-hover:text-primary" />
-                </button>
-              </div>
-            )}
+            ) : null}
           </div>
 
           {/* Bottom Account Summary Bar */}
