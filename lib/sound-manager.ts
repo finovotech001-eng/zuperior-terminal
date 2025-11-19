@@ -165,6 +165,9 @@ class SoundManager {
 
   /**
    * Play price alert sound
+   * NOTE: Price alerts are currently a placeholder feature in the UI.
+   * This method is available but not yet called by any price alert implementation.
+   * When price alerts are implemented, call this method when an alert is triggered.
    */
   playPriceAlert() {
     return this.play('price-alert')

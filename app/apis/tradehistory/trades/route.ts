@@ -77,18 +77,31 @@ async function getClientToken(accountId: string): Promise<{ token: string | null
  * Get trade history from external API using AccountId and client bearer token
  */
 export async function GET(request: NextRequest) {
+  logger.info('Trade history API route called', { url: request.url })
+  
   try {
     // Extract query parameters - only accountId is needed
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get('accountId')
+    
+    logger.info('Trade history request params', {
+      accountId,
+      page: searchParams.get('page'),
+      pageSize: searchParams.get('pageSize'),
+      fromDate: searchParams.get('fromDate'),
+      toDate: searchParams.get('toDate')
+    })
 
     // Validate AccountId
     if (!accountId) {
+      logger.error('Trade history request missing accountId')
       return NextResponse.json(
         { success: false, message: 'AccountId is required' },
         { status: 400 }
       )
     }
+    
+    logger.info('Processing trade history request', { accountId })
 
     // Get pagination and filter parameters
     // Defaults can be overridden via env
@@ -108,7 +121,7 @@ export async function GET(request: NextRequest) {
       : DEFAULT_FILTER_ZERO_PROFIT
     const nonZeroProfit = (searchParams.get('nonZeroProfit') || '').toLowerCase() === 'true'
 
-    // Prepare base URL and query params
+    // Prepare base URL and query params - use direct API endpoint without authentication
     const baseUrl = `${EXTERNAL_API_BASE}/client/tradehistory/trades`
     const baseParams = new URLSearchParams({ accountId: String(accountId) })
     // Add duplicate casing for compatibility with different backends
@@ -118,14 +131,7 @@ export async function GET(request: NextRequest) {
     if (fromDate) { baseParams.set('fromDate', fromDate); baseParams.set('FromDate', fromDate) }
     if (toDate) { baseParams.set('toDate', toDate); baseParams.set('ToDate', toDate) }
 
-    // Get client access token using AccountId
-    const { token: accessToken, accountId: verifiedAccountId, error: tokenError } = await getClientToken(accountId)
-    if (!accessToken || !verifiedAccountId) {
-      return NextResponse.json(
-        { success: false, message: tokenError || 'Failed to get authentication token' },
-        { status: 503 }
-      )
-    }
+    logger.info('Using direct API endpoint without authentication', { accountId, baseUrl })
 
     // Fetch all pages of trade history
     let allTrades: any[] = []
@@ -142,23 +148,23 @@ export async function GET(request: NextRequest) {
       logger.info('Fetching trade history page from external API', { 
         url: pageUrl, 
         page: currentPage,
-        accountId: verifiedAccountId,
-        headers: {
-          Authorization: 'Bearer ***',
-          AccountId: verifiedAccountId,
-        }
+        accountId: accountId
       })
+      
+      console.log('[Trade History API] Calling external endpoint:', pageUrl)
+      console.log('[Trade History API] No authentication required')
       
       // Add timeout to prevent hanging requests
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 20000) // 20 second timeout per page
+      const timeoutId = setTimeout(() => {
+        console.warn('[Trade History API] Request timeout after 20 seconds')
+        controller.abort()
+      }, 20000) // 20 second timeout per page
       
       const tradesResponse = await fetch(pageUrl, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'AccountId': verifiedAccountId,
-          // Do not send Content-Type for GET to avoid 415
+          // No authentication headers needed
           'Accept': 'application/json',
         },
         cache: 'no-store',
@@ -167,8 +173,20 @@ export async function GET(request: NextRequest) {
         clearTimeout(timeoutId)
       })
       
+      console.log('[Trade History API] External API response:', {
+        status: tradesResponse.status,
+        statusText: tradesResponse.statusText,
+        ok: tradesResponse.ok,
+        headers: Object.fromEntries(tradesResponse.headers.entries())
+      })
+      
       if (!tradesResponse.ok) {
         const errorText = await tradesResponse.text().catch(() => 'No response body')
+        console.error('[Trade History API] External API error:', {
+          status: tradesResponse.status,
+          error: errorText.substring(0, 500),
+          url: pageUrl
+        })
         logger.error('Failed to fetch trade history page', { 
           status: tradesResponse.status,
           error: errorText.substring(0, 500),
@@ -197,12 +215,55 @@ export async function GET(request: NextRequest) {
         break
       }
       
-      // Extract trades from this page
+      // Log the raw response structure for debugging
+      logger.info('Raw API response structure', {
+        page: currentPage,
+        isArray: Array.isArray(pageData),
+        keys: pageData && typeof pageData === 'object' ? Object.keys(pageData) : [],
+        responsePreview: JSON.stringify(pageData).substring(0, 1000)
+      })
+      
+      // Extract trades from this page - try multiple possible response structures
       let pageTrades = []
       if (Array.isArray(pageData)) {
         pageTrades = pageData
+        logger.info('Response is direct array', { count: pageTrades.length })
       } else if (pageData && typeof pageData === 'object') {
-        pageTrades = pageData.Items || pageData.Data || pageData.data || pageData.trades || pageData.items || pageData.results || pageData.Results || []
+        // Try all possible property names for the trades array
+        pageTrades = pageData.Items || 
+                     pageData.Data || 
+                     pageData.data || 
+                     pageData.trades || 
+                     pageData.items || 
+                     pageData.results || 
+                     pageData.Results ||
+                     pageData.Trades ||
+                     pageData.closedTrades ||
+                     pageData.ClosedTrades ||
+                     pageData.tradeHistory ||
+                     pageData.TradeHistory ||
+                     []
+        
+        // If still empty, check if the entire object is the data
+        if (pageTrades.length === 0 && pageData.Success !== false) {
+          // Some APIs might return the data directly in the root
+          logger.warn('No trades found in expected properties, checking root object structure', {
+            hasSuccess: 'Success' in pageData,
+            hasMessage: 'Message' in pageData,
+            allKeys: Object.keys(pageData)
+          })
+        }
+        
+        logger.info('Extracted trades from object', { 
+          count: pageTrades.length,
+          source: pageData.Items ? 'Items' : 
+                  pageData.Data ? 'Data' :
+                  pageData.data ? 'data' :
+                  pageData.trades ? 'trades' :
+                  pageData.items ? 'items' :
+                  pageData.results ? 'results' :
+                  pageData.Results ? 'Results' : 'none'
+        })
       }
       
       // Add trades from this page to the collection
@@ -240,6 +301,20 @@ export async function GET(request: NextRequest) {
     }
     
     logger.info(`Fetched total ${allTrades.length} trades from ${currentPage - 1} pages`)
+    
+    // Log sample trade structure if available
+    if (allTrades.length > 0) {
+      logger.info('Sample trade structure', {
+        sample: allTrades[0],
+        keys: Object.keys(allTrades[0]),
+        totalTrades: allTrades.length
+      })
+    } else {
+      logger.warn('No trades found in response', {
+        pagesFetched: currentPage - 1,
+        endpoint: baseUrl
+      })
+    }
 
     // Filter non-zero P/L trades if enabled
     const finalTrades = filterZeroProfit

@@ -44,13 +44,16 @@ const EconomicCalendar: React.FC<EconomicCalendarProps> = ({
         // Map event impact to settings impact levels
         // Events use: high, medium, low
         // Settings use: high, middle, low, lowest
-        let matchesImpact = true
-        if (settings.economicCalendarHighImpact || 
+        let matchesImpact = false
+        
+        // Check if at least one impact level is enabled
+        const hasAnyImpactEnabled = settings.economicCalendarHighImpact || 
             settings.economicCalendarMiddleImpact || 
             settings.economicCalendarLowImpact || 
-            settings.economicCalendarLowestImpact) {
+            settings.economicCalendarLowestImpact
+        
+        if (hasAnyImpactEnabled) {
           // At least one impact level is enabled, check if this event matches
-          matchesImpact = false
           if (event.impact === 'high' && settings.economicCalendarHighImpact) {
             matchesImpact = true
           } else if (event.impact === 'medium' && settings.economicCalendarMiddleImpact) {
@@ -62,6 +65,7 @@ const EconomicCalendar: React.FC<EconomicCalendarProps> = ({
             }
           }
         }
+        // If no impact levels are enabled, matchesImpact remains false (show nothing)
         
         // Also respect the UI filter if showFilters is true
         const matchesUIFilter = impactFilter === "all" || event.impact === impactFilter

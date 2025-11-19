@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useAtomValue } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import { settingsAtom } from "@/lib/store"
 
 type Theme = "dark" | "light" | "system"
@@ -34,6 +34,7 @@ export function ThemeProvider({
   
   // Get appearance setting from global settings (client-side only)
   const settings = typeof window !== 'undefined' ? useAtomValue(settingsAtom) : null
+  const setSettings = useSetAtom(settingsAtom)
   const settingsTheme = settings?.appearance || defaultTheme
   
   // Update theme when settings change
@@ -63,9 +64,14 @@ export function ThemeProvider({
 
   const value = {
     theme,
-    setTheme: (theme: Theme) => {
-      localStorage.setItem(storageKey, theme)
-      setTheme(theme)
+    setTheme: (newTheme: Theme) => {
+      // Update localStorage (for backward compatibility)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(storageKey, newTheme)
+      }
+      // Update settings atom to keep them in sync
+      setSettings((prev) => ({ ...prev, appearance: newTheme }))
+      setTheme(newTheme)
     },
   }
 
