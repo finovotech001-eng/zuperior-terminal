@@ -328,13 +328,13 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           // Process positions sequentially to avoid race conditions
           const processPositions = async () => {
             for (const pos of relevantPositions) {
-              const key = `pos_${pos.id}`
-              const qtyText = (pos.volume ?? 0).toFixed(2)
-              const pnlText = formatPositionPnl(pos)
+            const key = `pos_${pos.id}`
+            const qtyText = (pos.volume ?? 0).toFixed(2)
+            const pnlText = formatPositionPnl(pos)
               const lineText = `${pos.type === 'Buy' ? 'Buy' : 'Sell'} ${qtyText} - ${pnlText}`
               
-              if (!positionLinesRef.current.has(key)) {
-                try {
+            if (!positionLinesRef.current.has(key)) {
+              try {
                   // Try createPositionLine first (preferred for positions)
                   let line: any = null
                   if (typeof chart.createPositionLine === 'function') {
@@ -359,33 +359,33 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                   // Fallback to createOrderLine if createPositionLine is not available
                   if (!line && typeof chart.createOrderLine === 'function') {
                     line = chart.createOrderLine()
-                    if (line && typeof line.setPrice === 'function') {
-                      line.setPrice(pos.openPrice)
+                  if (line && typeof line.setPrice === 'function') {
+                    line.setPrice(pos.openPrice)
                       if (typeof line.setText === 'function') line.setText(lineText)
-                      if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
+                    if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
                       if (typeof line.setLineColor === 'function') line.setLineColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
-                      if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
+                    if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
                       if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
-                      if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
-                      positionLinesRef.current.set(key, line)
+                    if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
+                    positionLinesRef.current.set(key, line)
                       console.log('[Chart] ✅ Created order line (fallback) for:', pos.symbol, 'at price:', pos.openPrice, 'type:', pos.type)
                     }
                   }
                   
                   if (!line) {
                     console.warn('[Chart] ⚠️ No line creation method available for position:', pos.id)
-                  }
-                } catch (e) {
-                  console.error('[Chart] ❌ Failed to create position line:', e, 'for position:', pos)
                 }
-              } else {
-                // Update existing line
-                const line = positionLinesRef.current.get(key)
-                if (line) {
-                  try {
-                    if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
+              } catch (e) {
+                  console.error('[Chart] ❌ Failed to create position line:', e, 'for position:', pos)
+              }
+            } else {
+              // Update existing line
+              const line = positionLinesRef.current.get(key)
+              if (line) {
+                try {
+                  if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
                     if (typeof line.setText === 'function') line.setText(lineText)
-                    if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
+                  if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
                   } catch (e) {
                     console.warn('[Chart] Failed to update position line:', e)
                   }
