@@ -83,12 +83,17 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           return
         }
         
-        console.log('[Chart] Loading scripts...')
-        await loadScript('/charting_library/charting_library.standalone.js')
-        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js')
-        await loadScript('/datafeeds/custom-datafeed.js')
-        await loadScript('/datafeeds/signalr-datafeed.js')
-        console.log('[Chart] Scripts loaded')
+        // OPTIMIZED: Load scripts in parallel for faster initialization
+        const scriptsToLoad = [
+          '/charting_library/charting_library.standalone.js',
+          '/datafeeds/custom-datafeed.js'
+        ]
+        
+        // Only load SignalR if needed (disabled for now)
+        // await loadScript('https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js')
+        // await loadScript('/datafeeds/signalr-datafeed.js')
+        
+        await Promise.all(scriptsToLoad.map(loadScript))
 
         if (!window.TradingView) {
           throw new Error('TradingView not loaded')
@@ -127,7 +132,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           datafeed: datafeed,
           library_path: '/charting_library/',
           locale: 'en',
-          debug: true,
+          debug: false, // Disabled for performance
           disabled_features: [
             'use_localstorage_for_settings',
             'save_chart_properties_to_local_storage',

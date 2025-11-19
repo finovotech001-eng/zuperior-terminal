@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { useAtom } from "jotai"
-import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { EconomicCalendarEvent, EconomicEvent } from "./economic-calendar-event"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -191,25 +190,22 @@ const EconomicCalendar: React.FC<EconomicCalendarProps> = ({
       )}
 
       {/* Top Fade Indicator */}
-      <motion.div
-        className="absolute top-0 left-0 right-0 h-12 pointer-events-none z-10"
-        style={{
-          background: "linear-gradient(to bottom, rgba(1, 4, 13, 0.9), transparent)",
-          marginTop: showHeaders ? "41px" : "0"
-        }}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: showTopFade ? 1 : 0 }}
-        transition={{ duration: 0.2 }}
-      />
+      {showTopFade && (
+        <div
+          className="absolute top-0 left-0 right-0 h-12 pointer-events-none z-10"
+          style={{
+            background: "linear-gradient(to bottom, rgba(1, 4, 13, 0.9), transparent)",
+            marginTop: showHeaders ? "41px" : "0",
+            opacity: showTopFade ? 1 : 0
+          }}
+        />
+      )}
 
       {/* Events grouped by date - Scrollable */}
       <div 
         ref={scrollContainerRef}
         className="flex flex-col overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent hover:scrollbar-thumb-white/20"
         onScroll={handleScroll}
-        style={{
-          scrollBehavior: "smooth"
-        }}
       >
         {filteredEventsByDate.length > 0 ? (
           filteredEventsByDate.map((dateGroup) => (
@@ -235,15 +231,15 @@ const EconomicCalendar: React.FC<EconomicCalendarProps> = ({
       </div>
 
       {/* Bottom Fade Indicator */}
-      <motion.div
-        className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none z-10"
-        style={{
-          background: "linear-gradient(to top, rgba(1, 4, 13, 0.9), transparent)"
-        }}
-        initial={{ opacity: 1 }}
-        animate={{ opacity: showBottomFade ? 1 : 0 }}
-        transition={{ duration: 0.2 }}
-      />
+      {showBottomFade && (
+        <div
+          className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none z-10"
+          style={{
+            background: "linear-gradient(to top, rgba(1, 4, 13, 0.9), transparent)",
+            opacity: showBottomFade ? 1 : 0
+          }}
+        />
+      )}
     </div>
   )
 }

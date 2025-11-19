@@ -123,6 +123,11 @@
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* Prevent scrollbar from expanding container width */
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
 /* Custom thin scrollbar for specific elements */
 .scrollbar-thin::-webkit-scrollbar {
   width: 6px;

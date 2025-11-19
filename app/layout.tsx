@@ -24,6 +24,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        {/* Preload chart scripts for faster loading */}
+        <link rel="preload" href="/charting_library/charting_library.standalone.js" as="script" />
+        <link rel="preload" href="/datafeeds/custom-datafeed.js" as="script" />
+      </head>
       <body className="antialiased" suppressHydrationWarning>
         <Provider>
           <ThemeProvider defaultTheme="dark" storageKey="zuperior-theme">

@@ -172,7 +172,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
         })}
-        className="rounded-md p-3 bg-[#FF5555] hover:bg-[#FF5555]/90 transition-colors cursor-pointer text-left"
+        className="rounded-md p-3 bg-[#FF5555] hover:bg-[#FF5555]/90  cursor-pointer text-left"
       >
         <div className="text-xs text-white/80 mb-1">Sell</div>
         <div className="price-font text-white font-bold text-sm leading-tight">
@@ -191,7 +191,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
         })}
-        className="rounded-md p-3 bg-[#4A9EFF] hover:bg-[#4A9EFF]/90 transition-colors cursor-pointer text-right"
+        className="rounded-md p-3 bg-[#4A9EFF] hover:bg-[#4A9EFF]/90  cursor-pointer text-right"
       >
         <div className="text-xs text-white/80 mb-1">Buy</div>
         <div className="price-font text-white font-bold text-sm leading-tight">
@@ -220,7 +220,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
         })}
-        className="rounded-md p-3 border-2 border-[#FF5555] bg-transparent hover:bg-[#FF5555]/10 transition-colors cursor-pointer text-left"
+        className="rounded-md p-3 border-2 border-[#FF5555] bg-transparent hover:bg-[#FF5555]/10  cursor-pointer text-left"
       >
         <div className="text-xs text-white/60 mb-1">Sell</div>
         <div className="price-font text-[#FF5555] font-bold text-sm leading-tight">
@@ -239,7 +239,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
           stopLoss: stopLoss ? parseFloat(stopLoss) : undefined,
           takeProfit: takeProfit ? parseFloat(takeProfit) : undefined,
         })}
-        className="rounded-md p-3 border-2 border-[#4A9EFF] bg-transparent hover:bg-[#4A9EFF]/10 transition-colors cursor-pointer text-right"
+        className="rounded-md p-3 border-2 border-[#4A9EFF] bg-transparent hover:bg-[#4A9EFF]/10  cursor-pointer text-right"
       >
         <div className="text-xs text-white/60 mb-1">Buy</div>
         <div className="price-font text-[#4A9EFF] font-bold text-sm leading-tight">
@@ -424,7 +424,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
       
       <button
         onClick={() => setShowMoreDetails(!showMoreDetails)}
-        className="w-full flex items-center justify-center gap-1 text-xs text-white/60 hover:text-white/80 transition-colors pt-1"
+        className="w-full flex items-center justify-center gap-1 text-xs text-white/60 hover:text-white/80  pt-1"
       >
         {showMoreDetails ? (
           <>
@@ -515,13 +515,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
         </Select>
         <button
           onClick={() => decrementField(value, onChange)}
-          className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+          className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
         >
           <Minus className="h-3.5 w-3.5 text-white/60" />
         </button>
         <button
           onClick={() => incrementField(value, onChange)}
-          className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+          className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
         >
           <Plus className="h-3.5 w-3.5 text-white/60" />
         </button>
@@ -541,7 +541,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="h-6 w-6 flex items-center justify-center rounded hover:bg-white/5 transition-colors cursor-pointer"
+            className="h-6 w-6 flex items-center justify-center rounded hover:bg-white/5  cursor-pointer"
           >
             <X className="h-4 w-4 text-white/60" />
           </button>
@@ -600,13 +600,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                     </div>
                     <button
                       onClick={() => decrementField(openPrice, setOpenPrice)}
-                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                     >
                       <Minus className="h-3.5 w-3.5 text-white/60" />
                     </button>
                     <button
                       onClick={() => incrementField(openPrice, setOpenPrice)}
-                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                     >
                       <Plus className="h-3.5 w-3.5 text-white/60" />
                     </button>
@@ -643,13 +643,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   </div>
                   <button
                     onClick={decrementVolume}
-                    className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                    className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                   >
                     <Minus className="h-3.5 w-3.5 text-white/60" />
                   </button>
                   <button
                     onClick={incrementVolume}
-                    className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                    className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5 text-white/60" />
                   </button>
@@ -713,13 +713,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                     </div>
                     <button
                       onClick={() => decrementField(openPrice, setOpenPrice)}
-                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                     >
                       <Minus className="h-3.5 w-3.5 text-white/60" />
                     </button>
                     <button
                       onClick={() => incrementField(openPrice, setOpenPrice)}
-                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                     >
                       <Plus className="h-3.5 w-3.5 text-white/60" />
                     </button>
@@ -756,13 +756,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   </div>
                   <button
                     onClick={decrementVolume}
-                    className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                    className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                   >
                     <Minus className="h-3.5 w-3.5 text-white/60" />
                   </button>
                   <button
                     onClick={incrementVolume}
-                    className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                    className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5 text-white/60" />
                   </button>
@@ -848,13 +848,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                     </div>
                     <button
                       onClick={() => decrementField(openPrice, setOpenPrice)}
-                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                     >
                       <Minus className="h-3.5 w-3.5 text-white/60" />
                     </button>
                     <button
                       onClick={() => incrementField(openPrice, setOpenPrice)}
-                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5 transition-colors cursor-pointer"
+                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
                     >
                       <Plus className="h-3.5 w-3.5 text-white/60" />
                     </button>
@@ -917,13 +917,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                       // Handle Set SL and Risk action
                       
                     }}
-                    className="w-full py-2.5 px-4 rounded-md text-sm font-medium bg-white/10 text-white border border-white/20 hover:bg-white/[0.15] transition-colors cursor-pointer"
+                    className="w-full py-2.5 px-4 rounded-md text-sm font-medium bg-white/10 text-white border border-white/20 hover:bg-white/[0.15]  cursor-pointer"
                   >
                     Set SL and Risk
                   </button>
                   <button
                     onClick={() => setOrderType("market")}
-                    className="w-full py-2.5 px-4 rounded-md text-sm font-medium bg-white/[0.02] text-white border border-white/10 hover:bg-white/5 transition-colors cursor-pointer"
+                    className="w-full py-2.5 px-4 rounded-md text-sm font-medium bg-white/[0.02] text-white border border-white/10 hover:bg-white/5  cursor-pointer"
                   >
                     Cancel
                   </button>

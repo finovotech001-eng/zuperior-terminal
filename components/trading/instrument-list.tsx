@@ -201,7 +201,7 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
                 "bg-white/5 border border-white/10",
                 "text-sm text-white placeholder:text-white/40",
                 "focus:outline-none focus:border-primary/50 focus:bg-white/[0.07]",
-                "transition-colors"
+                ""
               )}
             />
           </div>
@@ -255,7 +255,7 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-x-auto overflow-y-auto">
+      <div className="flex-1 overflow-x-auto overflow-y-auto scrollbar-gutter-stable min-w-0">
         <div className="inline-block min-w-full">
           {/* Header */}
           <div className="flex items-stretch border-b border-white/10">
@@ -281,7 +281,7 @@ const InstrumentList: React.FC<InstrumentListProps> = ({
                   {/* Resize Handle */}
                   <div
                     className={cn(
-                      "absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors",
+                      "absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 ",
                       resizingColumn === column.key && "bg-primary"
                     )}
                     onMouseDown={(e) => handleResizeStart(e, column.key)}

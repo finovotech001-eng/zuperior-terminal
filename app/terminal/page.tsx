@@ -3,7 +3,6 @@
 import * as React from "react"
 import { useMemo } from "react"
 import { useAtom, useAtomValue } from "jotai"
-import { motion, AnimatePresence } from "framer-motion"
 import { placeMarketOrder } from "@/components/trading/placeOrder";
 import { cn, formatCurrency } from "@/lib/utils"
 import Image from "next/image"
@@ -2133,7 +2132,7 @@ function TerminalContent() {
           {/* Account Dropdown */}
           <Popover>
               <PopoverTrigger asChild>
-                <button className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-white/5 transition-colors group">
+                <button className="flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-white/5 group">
                   <div className="flex flex-col items-start">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-white/60">
@@ -2317,7 +2316,7 @@ function TerminalContent() {
                             setCurrentAccountId(account.accountId);
                           }}
                           className={cn(
-                            "w-full flex items-center justify-between px-3 py-2.5 rounded-md transition-colors",
+                            "w-full flex items-center justify-between px-3 py-2.5 rounded-md ",
                             currentAccountId === account.accountId
                               ? "bg-primary/20 border border-primary/50"
                               : "bg-white/5 hover:bg-white/10"
@@ -2369,12 +2368,12 @@ function TerminalContent() {
                       href="https://dashboard.zuperior.com/"
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors group"
+                      className="flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded  group"
                     >
                       <span className="text-white/80 group-hover:text-white">Manage Accounts</span>
                       <ChevronDown className="h-4 w-4 text-white/40 -rotate-90" />
                     </a>
-                    <button className="flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors group">
+                    <button className="flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded  group">
                       <span className="text-white/80 group-hover:text-white">Download Trading Log</span>
                       <ChevronDown className="h-4 w-4 text-white/40 -rotate-90" />
                     </button>
@@ -2394,7 +2393,7 @@ function TerminalContent() {
               <div className="p-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-semibold text-white">Price alerts</h3>
-                  <button className="text-primary hover:text-primary/80 transition-colors">
+                  <button className="text-primary hover:text-primary/80 ">
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
@@ -2434,18 +2433,18 @@ function TerminalContent() {
                   href="https://dashboard.zuperior.com/support"
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded transition-colors group"
+                  className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded  group"
                 >
                   <LifeBuoy className="h-4 w-4 text-white/60 group-hover:text-white" />
                   <span className="text-white/80 group-hover:text-white">Support</span>
                 </a>
-                <button className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded transition-colors group">
+                <button className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded  group">
                   <Lightbulb className="h-4 w-4 text-white/60 group-hover:text-white" />
                   <span className="text-white/80 group-hover:text-white">Suggest a feature</span>
                 </button>
                 <Separator />
                 <button
-                  className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded transition-colors text-danger group"
+                  className="flex items-center gap-3 w-full px-3 py-2.5 text-sm text-left hover:bg-white/5 rounded  text-danger group"
                   onClick={handleSignOut}
                 >
                   <LogOut className="h-4 w-4" />
@@ -2473,13 +2472,8 @@ function TerminalContent() {
         {/* Left Sidebar */}
         <Sidebar items={sidebarItems} className="shrink-0" />
 
-        <AnimatePresence mode="wait">
-          {!isLeftPanelCollapsed && leftPanelView && (
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: leftPanelWidth, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: "easeInOut" }}
+        {!isLeftPanelCollapsed && leftPanelView && (
+            <div
               style={{ width: leftPanelWidth }}
               className="shrink-0 relative"
             >
@@ -2489,7 +2483,7 @@ function TerminalContent() {
                     <div className="px-4 py-3 border-b border-white/10 shrink-0">
                       <h2 className="text-sm font-semibold text-white">Instruments</h2>
                     </div>
-                    <div className="flex-1 overflow-hidden">
+                    <div className="flex-1 overflow-hidden min-w-0">
                       <InstrumentList 
                         onSelectInstrument={handleAddTab} 
                         showFilters={true}
@@ -2635,9 +2629,8 @@ function TerminalContent() {
                 }}
                 className="right-0"
               />
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
 
 
         {/* Main Content Area (Chart, Positions, Order Panel + Bottom Summary) */}
@@ -2659,7 +2652,7 @@ function TerminalContent() {
               {/* Positions Table */}
               <div 
                 className={cn(
-                  "shrink-0 transition-all duration-300 ease-out overflow-hidden relative",
+                  "shrink-0 overflow-hidden relative",
                   isPositionsCollapsed ? "h-[56px]" : ""
                 )}
                 style={{ height: isPositionsCollapsed ? '56px' : `${positionsHeight}px` }}
@@ -2898,7 +2891,7 @@ function TerminalContent() {
               </div>
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-white/5 hover:bg-white/10 text-white transition-colors">
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-white/5 hover:bg-white/10 text-white ">
                     Close all
                     <ChevronDown className="h-3.5 w-3.5" />
                   </button>
@@ -2987,7 +2980,7 @@ function TerminalContent() {
                           setTradeNotice({ type: 'error', message: 'Error closing positions' })
                         }
                       }}
-                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white"
+                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded  text-white"
                     >
                       Close all positions
                     </button>
@@ -3073,7 +3066,7 @@ function TerminalContent() {
                           setTradeNotice({ type: 'error', message: 'Error closing profitable positions' })
                         }
                       }}
-                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white"
+                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded  text-white"
                     >
                       Close all profitable
                     </button>
@@ -3156,7 +3149,7 @@ function TerminalContent() {
                           setTradeNotice({ type: 'error', message: 'Error closing losing positions' })
                         }
                       }}
-                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded transition-colors text-white"
+                      className="w-full px-3 py-2 text-sm text-left hover:bg-white/5 rounded  text-white"
                     >
                       Close all losing
                     </button>
