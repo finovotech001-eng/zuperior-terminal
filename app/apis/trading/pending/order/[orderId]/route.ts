@@ -6,12 +6,13 @@ const API_BASE = (process.env.LIVE_API_URL || 'https://metaapi.zuperior.com/api'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-export async function DELETE(req: NextRequest, { params }: { params: { orderId: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ orderId: string }> }) {
   try {
     const session = await getSession()
     if (!session?.userId) return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
 
-    const orderId = Number(params.orderId)
+    const { orderId: orderIdParam } = await params
+    const orderId = Number(orderIdParam)
     if (!Number.isFinite(orderId) || orderId <= 0) return NextResponse.json({ success: false, message: 'Invalid orderId' }, { status: 400 })
 
     const body = await req.json().catch(() => ({} as any))
