@@ -965,6 +965,7 @@ function TerminalContent() {
   // Resizable panel dimensions
   const [leftPanelWidth, setLeftPanelWidth] = React.useState(320)
   const [rightPanelWidth, setRightPanelWidth] = React.useState(300)
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = React.useState(false)
   const [positionsHeight, setPositionsHeight] = React.useState(300)
 
   const [openTabs] = useAtom(openTabsAtom)
@@ -2646,6 +2647,7 @@ function TerminalContent() {
                   accountId={currentAccountId}
                   className="h-full"
                   positions={formattedPositions.filter(p => p.type === 'Buy' || p.type === 'Sell')}
+                  onOpenOrderPanel={() => setIsRightPanelCollapsed(false)}
                 />
               </div>
 
@@ -2811,34 +2813,46 @@ function TerminalContent() {
             </div>
 
             {/* Right Column: Order Panel */}
-            <div 
-              style={{ width: `${rightPanelWidth}px` }}
-              className="shrink-0 overflow-y-auto relative"
-            >
-              {/* Resize Handle for Order Panel */}
-              <ResizeHandle
-                direction="horizontal"
-                onResize={(delta) => {
-                  setRightPanelWidth(prev => Math.max(250, Math.min(500, prev - delta)))
-                }}
-                className="left-0"
-              />
-              <OrderPanel
-                    symbol={activeTab?.symbol || "XAU/USD"}
-                    countryCode={activeTab?.countryCode || "US"}
-                    sellPrice={4354.896}
-                    buyPrice={4355.056}
-                    spread="0.16 USD"
-                    // ✅ PASS THE FUNCTION REFERENCE ONLY, IT WILL RECEIVE THE DATA FROM ORDER PANEL
-                    onBuy={handleBuySubmit}
-                    onSell={handleSellSubmit}
-                    balanceData={{
-                      credit: balanceData.credit || 0,
-                      leverage: balanceData.leverage || "1:400"
-                    }}
-                    className="w-full h-full"
+            {!isRightPanelCollapsed ? (
+              <div 
+                style={{ width: `${rightPanelWidth}px` }}
+                className="shrink-0 overflow-y-auto relative glass-card rounded-lg"
+              >
+                {/* Resize Handle for Order Panel */}
+                <ResizeHandle
+                  direction="horizontal"
+                  onResize={(delta) => {
+                    setRightPanelWidth(prev => Math.max(250, Math.min(500, prev - delta)))
+                  }}
+                  className="left-0"
                 />
-            </div>
+                <OrderPanel
+                  symbol={activeTab?.symbol || "XAU/USD"}
+                  countryCode={activeTab?.countryCode || "US"}
+                  sellPrice={4354.896}
+                  buyPrice={4355.056}
+                  spread="0.16 USD"
+                  onClose={() => setIsRightPanelCollapsed(true)}
+                  onBuy={handleBuySubmit}
+                  onSell={handleSellSubmit}
+                  balanceData={{
+                    credit: balanceData.credit || 0,
+                    leverage: balanceData.leverage || "1:400"
+                  }}
+                  className="w-full h-full"
+                />
+              </div>
+            ) : (
+              <div className="shrink-0 flex items-center justify-center w-12 relative">
+                <button
+                  onClick={() => setIsRightPanelCollapsed(false)}
+                  className="h-10 w-10 flex items-center justify-center rounded-md glass-card border border-white/10 hover:bg-white/5 hover:border-primary/50 cursor-pointer group"
+                  title="Open Order Panel"
+                >
+                  <Plus className="h-5 w-5 text-white/60 group-hover:text-primary" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Bottom Account Summary Bar */}

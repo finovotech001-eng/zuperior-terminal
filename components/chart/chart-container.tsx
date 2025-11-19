@@ -12,6 +12,7 @@ interface ChartContainerProps {
   className?: string
   accountId?: string | null
   positions?: Position[] // Open positions for chart overlays
+  onOpenOrderPanel?: () => void // Callback to open order panel
 }
 
 // TypeScript declarations only - no runtime code, safe for SSR
@@ -25,7 +26,7 @@ declare global {
   }
 }
 
-export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, accountId = null, positions = [] }: ChartContainerProps) {
+export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, accountId = null, positions = [], onOpenOrderPanel }: ChartContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetRef = useRef<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -83,6 +84,9 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           return
         }
         
+        // Clear any previous errors
+        setError(null)
+        
         // OPTIMIZED: Load scripts in parallel for faster initialization
         const scriptsToLoad = [
           '/charting_library/charting_library.standalone.js',
@@ -95,8 +99,15 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         
         await Promise.all(scriptsToLoad.map(loadScript))
 
+        // Wait a bit for TradingView to be fully available after script loads
+        let retries = 10
+        while (!window.TradingView && retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+          retries--
+        }
+
         if (!window.TradingView) {
-          throw new Error('TradingView not loaded')
+          throw new Error('TradingView not loaded - please refresh the page')
         }
 
         // Use local proxy routes to avoid CORS issues
@@ -163,11 +174,96 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
 
         widgetRef.current = widget
         // Lines will be created lazily after first successful tick in the updater
-        console.log('[Chart] Widget created')
+        console.log('[Chart] Widget created successfully')
+        
+        // Clear error on successful creation
+        setError(null)
+
+        // Hook into toolbar to intercept + button click
+        if (onOpenOrderPanel && widget.onChartReady) {
+          widget.onChartReady(() => {
+            try {
+              // Wait a bit for toolbar to be ready
+              setTimeout(() => {
+                const container = containerRef.current
+                if (!container) return
+
+                // Find the + button in TradingView toolbar (it has a specific class/selector)
+                // TradingView toolbar buttons are in the header widget area
+                const toolbar = container.querySelector('[data-name="header-toolbar"]') || 
+                               container.querySelector('.chart-widget-header') ||
+                               container.querySelector('[class*="toolbar"]')
+                
+                if (toolbar) {
+                  const attachHandler = (btn: Element) => {
+                    const htmlBtn = btn as HTMLElement
+                    if (htmlBtn.dataset?.customHandler) return
+
+                    // Check if this is the + button (usually contains a plus icon or specific aria-label)
+                    const hasPlusIcon = btn.querySelector('svg')?.innerHTML?.includes('M12 5v14M5 12h14') || // Plus path
+                                       btn.querySelector('svg')?.innerHTML?.includes('plus') ||
+                                       btn.getAttribute('aria-label')?.toLowerCase().includes('add') ||
+                                       btn.getAttribute('aria-label')?.toLowerCase().includes('new') ||
+                                       btn.getAttribute('title')?.toLowerCase().includes('add') ||
+                                       btn.getAttribute('title')?.toLowerCase().includes('new')
+                    
+                    // Also check for + text content
+                    const textContent = btn.textContent?.trim()
+                    const isPlusButton = textContent === '+' || textContent === 'Add' || hasPlusIcon
+                    
+                    if (isPlusButton) {
+                      htmlBtn.dataset.customHandler = 'true'
+                      
+                      // Add click handler
+                      btn.addEventListener('click', (e) => {
+                        // Prevent default TradingView behavior for + button
+                        e.stopPropagation()
+                        e.preventDefault()
+                        
+                        // Open order panel instead
+                        console.log('[Chart] + button clicked, opening order panel')
+                        onOpenOrderPanel()
+                      }, true) // Use capture phase to intercept early
+                    }
+                  }
+
+                  // Find all buttons with + icon or "add" functionality
+                  const buttons = toolbar.querySelectorAll('button, div[role="button"]')
+                  buttons.forEach(attachHandler)
+
+                  // Also listen for any click events on toolbar that might be the + button
+                  const observer = new MutationObserver(() => {
+                    const buttons = toolbar.querySelectorAll('button, div[role="button"]')
+                    buttons.forEach(attachHandler)
+                  })
+
+                  observer.observe(toolbar, { childList: true, subtree: true })
+                  
+                  // Store observer to cleanup later
+                  const htmlContainer = container as HTMLElement
+                  if (htmlContainer && !htmlContainer.dataset.observerAttached) {
+                    htmlContainer.dataset.observerAttached = 'true'
+                  }
+                }
+              }, 1000) // Wait 1 second for toolbar to fully render
+            } catch (err) {
+              console.warn('[Chart] Failed to hook toolbar button:', err)
+            }
+          })
+        }
 
       } catch (err) {
         console.error('[Chart] Error:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load chart')
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load chart'
+        setError(errorMessage)
+        
+        // Auto-retry once after 2 seconds if it's a loading error
+        if (errorMessage.includes('not loaded') || errorMessage.includes('Failed to load')) {
+          setTimeout(() => {
+            console.log('[Chart] Retrying initialization...')
+            initChart()
+          }, 2000)
+        }
       }
     }
 
@@ -576,12 +672,29 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     })
   }, [symbol, positions, settings])
 
-  if (error) {
+  // Clear error when widget successfully loads
+  useEffect(() => {
+    if (widgetRef.current && error) {
+      setError(null)
+    }
+  }, [error])
+
+  // Only show error if widget is not loaded
+  if (error && !widgetRef.current) {
     return (
       <div className={cn("w-full h-full bg-[#01040D] rounded-lg flex items-center justify-center", className)}>
-        <div className="text-center">
-          <p className="text-red-500 mb-2">Chart Error</p>
-          <p className="text-white/60 text-sm">{error}</p>
+        <div className="text-center p-4">
+          <p className="text-red-500 mb-2 text-sm font-medium">Chart Error</p>
+          <p className="text-white/60 text-xs mb-4">{error}</p>
+          <button 
+            onClick={() => {
+              setError(null)
+              window.location.reload()
+            }}
+            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary/80 text-xs"
+          >
+            Reload Page
+          </button>
         </div>
       </div>
     )

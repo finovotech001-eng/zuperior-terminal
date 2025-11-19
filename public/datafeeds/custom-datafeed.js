@@ -128,7 +128,7 @@ class CustomDatafeed {
                     headers: { 'Accept': 'application/json' },
                     cache: 'no-cache' 
                 });
-
+        
                 console.log('[CustomDatafeed] Response status:', response.status, response.statusText, 'for', sym);
 
                 if (!response.ok) {
@@ -167,11 +167,11 @@ class CustomDatafeed {
                             } else if (typeof candle.time === 'number') {
                                 // If seconds (10 digits), convert to ms
                                 timeMs = candle.time < 1e12 ? candle.time * 1000 : candle.time;
-                            } else {
+                } else {
                                 transformErrors++;
                                 return null;
-                            }
-
+                }
+                
                             if (!Number.isFinite(timeMs)) {
                                 transformErrors++;
                                 return null;
@@ -212,7 +212,7 @@ class CustomDatafeed {
                                 low: validatedLow,
                                 close: close,
                                 volume: Number.isFinite(volume) ? volume : 0
-                            };
+                };
                         } catch (e) {
                             transformErrors++;
                             console.warn('[CustomDatafeed] Error transforming candle', idx, ':', e);
@@ -619,7 +619,7 @@ class CustomDatafeed {
                 } catch (error) {
                     console.error('[CustomDatafeed] Aggregation polling error:', error);
                 }
-            };
+        };
 
             pollAgg();
             // Poll every 200ms for smoother updates even for aggregated timeframes

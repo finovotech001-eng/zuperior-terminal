@@ -3,7 +3,6 @@
 import * as React from "react"
 import { useAtomValue } from "jotai"
 import { X, Plus, Minus, HelpCircle } from "lucide-react"
-import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -449,17 +448,13 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
   const renderPercentageSlider = () => (
     <div className="relative">
       <div className="h-1 bg-white/5 rounded-full overflow-hidden flex">
-        <motion.div
+        <div
           className="h-full bg-[#FF5555]"
-          initial={{ width: `${volumePercentage}%` }}
-          animate={{ width: `${volumePercentage}%` }}
-          transition={{ duration: 0.2 }}
+          style={{ width: `${volumePercentage}%` }}
         />
-        <motion.div
+        <div
           className="h-full bg-[#4A9EFF]"
-          initial={{ width: `${100 - volumePercentage}%` }}
-          animate={{ width: `${100 - volumePercentage}%` }}
-          transition={{ duration: 0.2 }}
+          style={{ width: `${100 - volumePercentage}%` }}
         />
       </div>
       <div className="flex items-center justify-between mt-1.5">
@@ -532,22 +527,25 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
 
   return (
     <TooltipProvider>
-      <div className={cn("w-[280px] glass-card border border-white/10 rounded-md overflow-hidden", className)} {...props}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <div className="flex items-center gap-2">
+      <div className={cn("w-full h-full flex flex-col glass-card border border-white/10 rounded-lg overflow-hidden", className)} {...props}>
+        {/* Header - Improved Design */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+          <div className="flex items-center gap-2.5">
             <FlagIcon countryCode={countryCode} size="sm" />
             <span className="text-sm font-semibold text-white">{symbol}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="h-6 w-6 flex items-center justify-center rounded hover:bg-white/5  cursor-pointer"
-          >
-            <X className="h-4 w-4 text-white/60" />
-          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 hover:border border-transparent hover:border-white/20 cursor-pointer group"
+              title="Close Order Panel"
+            >
+              <X className="h-4 w-4 text-white/60 group-hover:text-white" />
+            </button>
+          )}
         </div>
 
-        <div className="p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
           {/* Form Type Selector */}
           <Select value={formType} onValueChange={(value: string) => setFormType(value as FormType)}>
             <SelectTrigger className="w-full bg-white/[0.02] border-white/10 h-9">
