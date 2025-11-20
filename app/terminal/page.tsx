@@ -2661,6 +2661,90 @@ function TerminalContent() {
                   className="h-full"
                   positions={formattedPositions.filter(p => p.type === 'Buy' || p.type === 'Sell')}
                   onOpenOrderPanel={() => setIsRightPanelCollapsed(false)}
+                  onClosePosition={async (id) => {
+                    try {
+                      console.log('[Chart] Closing position:', id);
+                      if (!currentAccountId) { 
+                        console.error('[Chart] No account selected'); 
+                        setTradeNotice({ type: 'error', message: 'No account selected' });
+                        return; 
+                      }
+
+                      // Extract position or pending by id
+                      let position = formattedPositions.find(p => p.id === id)
+                      const isPending = !position ? pendingOrders.some(p => p.id === id) : false
+                      if (!position && isPending) { 
+                        position = pendingOrders.find(p => p.id === id)! 
+                      }
+
+                      if (!position) { 
+                        console.error('[Chart] Position not found:', id);
+                        setTradeNotice({ type: 'error', message: 'Position not found' });
+                        return; 
+                      }
+
+                      // Try to get positionId from ticket, position string, or id
+                      let positionId: number | null = null;
+                      
+                      if (position.ticket && position.ticket > 0) {
+                        positionId = position.ticket;
+                      } else if (position.position) {
+                        // Extract number from position string (e.g., "ticket-12345" -> 12345)
+                        const match = position.position.match(/\d+/);
+                        if (match) {
+                          positionId = parseInt(match[0], 10);
+                        }
+                      } else if (id.startsWith('ticket-')) {
+                        // Extract from id format "ticket-12345"
+                        const match = id.match(/ticket-(\d+)/);
+                        if (match) {
+                          positionId = parseInt(match[1], 10);
+                        }
+                      }
+
+                      if (!positionId || positionId === 0) { 
+                        console.error('[Chart] No valid position ID found. Position:', {
+                          id: position.id,
+                          ticket: position.ticket,
+                          position: position.position,
+                        });
+                        setTradeNotice({ type: 'error', message: 'Invalid position ID' });
+                        return; 
+                      }
+
+                      const positionSymbol = position.symbol || ''
+
+                      // Call close API
+                      console.log('[Chart] Calling close API with position ID:', positionId, 'accountId:', currentAccountId, 'symbol:', positionSymbol)
+                      const res = await fetch('/apis/trading/close', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ accountId: currentAccountId, positionId, symbol: positionSymbol }),
+                      })
+                      
+                      if (!res.ok) {
+                        const errorText = await res.text().catch(() => 'Unknown error');
+                        console.error('[Chart] HTTP error:', res.status, errorText);
+                        setTradeNotice({ type: 'error', message: `Failed to close: ${res.status}` });
+                        return;
+                      }
+
+                      const json = await res.json().catch(() => ({} as any))
+                      console.log('[Chart] API response:', json)
+                      
+                      if (json.success || json.Success) { 
+                        console.log('[Chart] Position closed successfully'); 
+                        setTradeNotice({ type: 'success', title: 'Position closed', message: `Ticket ${positionId}` });
+                      } else {
+                        const errorMsg = json?.message || json?.error || `Failed to close position`
+                        console.error('[Chart] Close failed:', errorMsg);
+                        setTradeNotice({ type: 'error', message: errorMsg });
+                      }
+                    } catch (e) {
+                      console.error('[Chart] Error closing position:', e);
+                      setTradeNotice({ type: 'error', message: e instanceof Error ? e.message : 'Unknown error' });
+                    }
+                  }}
                 />
               </div>
 

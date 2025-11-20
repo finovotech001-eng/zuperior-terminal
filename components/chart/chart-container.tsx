@@ -13,6 +13,7 @@ interface ChartContainerProps {
   accountId?: string | null
   positions?: Position[] // Open positions for chart overlays
   onOpenOrderPanel?: () => void // Callback to open order panel
+  onClosePosition?: (positionId: string) => Promise<void> // Callback to close position
 }
 
 // TypeScript declarations only - no runtime code, safe for SSR
@@ -26,7 +27,7 @@ declare global {
   }
 }
 
-export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, accountId = null, positions = [], onOpenOrderPanel }: ChartContainerProps) {
+export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, accountId = null, positions = [], onOpenOrderPanel, onClosePosition }: ChartContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetRef = useRef<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -413,9 +414,27 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           const raw = typeof pos.pnl === 'number'
             ? pos.pnl
             : (pos.currentPrice - pos.openPrice) * (pos.volume ?? 1)
-          const formatted = formatCurrency(raw ?? 0, 2)
-          const sign = raw > 0 ? '+' : raw < 0 ? '' : ''
+          const formatted = formatCurrency(Math.abs(raw ?? 0), 2)
+          const sign = raw >= 0 ? '+' : '-'
           return `${sign}${formatted} USD`
+        }
+        
+        // Helper to extract position ID for closing
+        const extractPositionId = (pos: Position): number | null => {
+          if (pos.ticket && pos.ticket > 0) {
+            return pos.ticket
+          } else if (pos.position) {
+            const match = pos.position.match(/\d+/)
+            if (match) {
+              return parseInt(match[0], 10)
+            }
+          } else if (pos.id && pos.id.startsWith('ticket-')) {
+            const match = pos.id.match(/ticket-(\d+)/)
+            if (match) {
+              return parseInt(match[1], 10)
+            }
+          }
+          return null
         }
         
         // Filter positions for current symbol
@@ -432,7 +451,8 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             const key = `pos_${pos.id}`
             const qtyText = (pos.volume ?? 0).toFixed(2)
             const pnlText = formatPositionPnl(pos)
-              const lineText = `${pos.type === 'Buy' ? 'Buy' : 'Sell'} ${qtyText} - ${pnlText}`
+            // Format: volume +P/L USD X
+            const lineText = `${qtyText} ${pnlText} X`
               
             if (!positionLinesRef.current.has(key)) {
               try {
@@ -445,12 +465,40 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                         line.setPrice(pos.openPrice)
                         if (typeof line.setText === 'function') line.setText(lineText)
                         if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
-                        if (typeof line.setLineColor === 'function') line.setLineColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
+                        // Blue color for entry lines
+                        if (typeof line.setLineColor === 'function') line.setLineColor('#4A9EFF')
                         if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
-                        if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
+                        if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor('#4A9EFF')
                         if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
+                        // Set line style to solid and thin if available
+                        if (typeof line.setLineStyle === 'function') {
+                          try { line.setLineStyle(0) } catch {} // 0 = solid
+                        }
+                        if (typeof line.setLineWidth === 'function') {
+                          try { line.setLineWidth(1) } catch {} // 1 = thin
+                        }
+                        // Add click handler for close
+                        // TradingView lines may not support onClick directly, but we try it first
+                        if (onClosePosition) {
+                          if (typeof line.onClick === 'function') {
+                            try {
+                              line.onClick(() => {
+                                const positionId = extractPositionId(pos)
+                                if (positionId) {
+                                  onClosePosition(pos.id).catch(e => {
+                                    console.error('[Chart] Failed to close position:', e)
+                                  })
+                                }
+                              })
+                            } catch {}
+                          }
+                          // Also try setCancellable/setEditable if available
+                          if (typeof line.setCancellable === 'function') {
+                            try { line.setCancellable(true) } catch {}
+                          }
+                        }
                         positionLinesRef.current.set(key, line)
-                        console.log('[Chart] ✅ Created position line for:', pos.symbol, 'at price:', pos.openPrice, 'type:', pos.type)
+                        console.log('[Chart] ✅ Created position line for:', pos.symbol, 'at price:', pos.openPrice)
                       }
                     } catch (e) {
                       console.warn('[Chart] createPositionLine failed, trying createOrderLine:', e)
@@ -464,12 +512,38 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                     line.setPrice(pos.openPrice)
                       if (typeof line.setText === 'function') line.setText(lineText)
                     if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
-                      if (typeof line.setLineColor === 'function') line.setLineColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
+                      // Blue color for entry lines
+                      if (typeof line.setLineColor === 'function') line.setLineColor('#4A9EFF')
                     if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
-                      if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor(pos.type === 'Buy' ? '#10B981' : '#EF4444')
+                      if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor('#4A9EFF')
                     if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
+                      // Set line style to solid and thin if available
+                      if (typeof line.setLineStyle === 'function') {
+                        try { line.setLineStyle(0) } catch {} // 0 = solid
+                      }
+                      if (typeof line.setLineWidth === 'function') {
+                        try { line.setLineWidth(1) } catch {} // 1 = thin
+                      }
+                      // Add click handler for close
+                      if (onClosePosition) {
+                        if (typeof line.onClick === 'function') {
+                          try {
+                            line.onClick(() => {
+                              const positionId = extractPositionId(pos)
+                              if (positionId) {
+                                onClosePosition(pos.id).catch(e => {
+                                  console.error('[Chart] Failed to close position:', e)
+                                })
+                              }
+                            })
+                          } catch {}
+                        }
+                        if (typeof line.setCancellable === 'function') {
+                          try { line.setCancellable(true) } catch {}
+                        }
+                      }
                     positionLinesRef.current.set(key, line)
-                      console.log('[Chart] ✅ Created order line (fallback) for:', pos.symbol, 'at price:', pos.openPrice, 'type:', pos.type)
+                      console.log('[Chart] ✅ Created order line (fallback) for:', pos.symbol, 'at price:', pos.openPrice)
                     }
                   }
                   
@@ -487,6 +561,9 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                   if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
                     if (typeof line.setText === 'function') line.setText(lineText)
                   if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
+                  // Update color to blue
+                  if (typeof line.setLineColor === 'function') line.setLineColor('#4A9EFF')
+                  if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor('#4A9EFF')
                   } catch (e) {
                     console.warn('[Chart] Failed to update position line:', e)
                   }
@@ -530,15 +607,46 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             
             // Take Profit line
             if (pos.takeProfit && pos.takeProfit > 0) {
+              const qtyText = (pos.volume ?? 0).toFixed(2)
+              const pnlText = formatPositionPnl(pos)
+              // Format: TP volume +P/L USD X
+              const tpText = `TP ${qtyText} ${pnlText} X`
+              
               if (!tpslRefs.tp) {
                 try {
                   if (typeof chart.createOrderLine === 'function') {
                     const tpLine = chart.createOrderLine()
                     if (tpLine && typeof tpLine.setPrice === 'function') {
                       tpLine.setPrice(pos.takeProfit)
-                      tpLine.setText('TP')
+                      tpLine.setText(tpText)
+                      // Green color for TP lines
                       tpLine.setLineColor('#10B981')
                       tpLine.setBodyBackgroundColor('rgba(0,0,0,0)')
+                      // Set line style to solid and thin if available
+                      if (typeof tpLine.setLineStyle === 'function') {
+                        try { tpLine.setLineStyle(0) } catch {} // 0 = solid
+                      }
+                      if (typeof tpLine.setLineWidth === 'function') {
+                        try { tpLine.setLineWidth(1) } catch {} // 1 = thin
+                      }
+                      // Add click handler for close
+                      if (onClosePosition) {
+                        if (typeof tpLine.onClick === 'function') {
+                          try {
+                            tpLine.onClick(() => {
+                              const positionId = extractPositionId(pos)
+                              if (positionId) {
+                                onClosePosition(pos.id).catch(e => {
+                                  console.error('[Chart] Failed to close position:', e)
+                                })
+                              }
+                            })
+                          } catch {}
+                        }
+                        if (typeof tpLine.setCancellable === 'function') {
+                          try { tpLine.setCancellable(true) } catch {}
+                        }
+                      }
                       tpslRefs.tp = tpLine
                     }
                   }
@@ -549,6 +657,9 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                 try {
                   if (tpslRefs.tp && typeof tpslRefs.tp.setPrice === 'function') {
                     tpslRefs.tp.setPrice(pos.takeProfit)
+                    if (typeof tpslRefs.tp.setText === 'function') {
+                      tpslRefs.tp.setText(tpText)
+                    }
                   }
                 } catch {}
               }
@@ -563,15 +674,50 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
 
             // Stop Loss line
             if (pos.stopLoss && pos.stopLoss > 0) {
+              const qtyText = (pos.volume ?? 0).toFixed(2)
+              // For SL, calculate potential loss: (openPrice - stopLoss) * volume
+              const slLoss = pos.type === 'Buy' 
+                ? (pos.openPrice - pos.stopLoss) * (pos.volume ?? 1)
+                : (pos.stopLoss - pos.openPrice) * (pos.volume ?? 1)
+              const slLossFormatted = formatCurrency(Math.abs(slLoss), 2)
+              // Format: SL volume -P/L USD X (always negative for SL)
+              const slText = `SL ${qtyText} -${slLossFormatted} USD X`
+              
               if (!tpslRefs.sl) {
                 try {
                   if (typeof chart.createOrderLine === 'function') {
                     const slLine = chart.createOrderLine()
                     if (slLine && typeof slLine.setPrice === 'function') {
                       slLine.setPrice(pos.stopLoss)
-                      slLine.setText('SL')
+                      slLine.setText(slText)
+                      // Red color for SL lines
                       slLine.setLineColor('#EF4444')
                       slLine.setBodyBackgroundColor('rgba(0,0,0,0)')
+                      // Set line style to solid and thin if available
+                      if (typeof slLine.setLineStyle === 'function') {
+                        try { slLine.setLineStyle(0) } catch {} // 0 = solid
+                      }
+                      if (typeof slLine.setLineWidth === 'function') {
+                        try { slLine.setLineWidth(1) } catch {} // 1 = thin
+                      }
+                      // Add click handler for close
+                      if (onClosePosition) {
+                        if (typeof slLine.onClick === 'function') {
+                          try {
+                            slLine.onClick(() => {
+                              const positionId = extractPositionId(pos)
+                              if (positionId) {
+                                onClosePosition(pos.id).catch(e => {
+                                  console.error('[Chart] Failed to close position:', e)
+                                })
+                              }
+                            })
+                          } catch {}
+                        }
+                        if (typeof slLine.setCancellable === 'function') {
+                          try { slLine.setCancellable(true) } catch {}
+                        }
+                      }
                       tpslRefs.sl = slLine
                     }
                   }
@@ -582,6 +728,9 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                 try {
                   if (tpslRefs.sl && typeof tpslRefs.sl.setPrice === 'function') {
                     tpslRefs.sl.setPrice(pos.stopLoss)
+                    if (typeof tpslRefs.sl.setText === 'function') {
+                      tpslRefs.sl.setText(slText)
+                    }
                   }
                 } catch {}
               }
