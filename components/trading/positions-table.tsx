@@ -285,22 +285,41 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     return [null, null]
   }, [])
 
+  // Helper function to generate grid template based on visible columns
+  const getGridTemplate = React.useCallback((isClosedPosition: boolean) => {
+    const visibleColumns: string[] = []
+    
+    if (columns.find(c => c.key === "symbol")?.visible) visibleColumns.push("minmax(180px,1fr)")
+    if (columns.find(c => c.key === "type")?.visible) visibleColumns.push("65px")
+    if (columns.find(c => c.key === "volume")?.visible) visibleColumns.push("90px")
+    if (columns.find(c => c.key === "openPrice")?.visible) visibleColumns.push("100px")
+    if (columns.find(c => c.key === "currentPrice")?.visible) visibleColumns.push("100px")
+    if (!isClosedPosition && columns.find(c => c.key === "tp")?.visible) visibleColumns.push("90px")
+    if (!isClosedPosition && columns.find(c => c.key === "sl")?.visible) visibleColumns.push("90px")
+    if (columns.find(c => c.key === "position")?.visible) visibleColumns.push("100px")
+    if (columns.find(c => c.key === "openTime")?.visible) visibleColumns.push("150px")
+    if (columns.find(c => c.key === "swap")?.visible) visibleColumns.push("90px")
+    
+    return visibleColumns.length > 0 ? visibleColumns.join(" ") : "1fr"
+  }, [columns])
+
   const renderPositionRow = React.useCallback((position: Position, index?: number) => {
     
     // For closed positions, hide T/P, S/L, and Actions columns
     const isClosedPosition = position.id?.startsWith('hist-')
+    const gridTemplate = getGridTemplate(isClosedPosition)
     
     return (
     <TooltipProvider key={position.id} delayDuration={300}>
-      <div className="flex border-b border-white/5 hover:bg-white/5 transition-colors relative">
+      <div className="flex items-stretch border-b border-white/5 hover:bg-white/5 transition-colors relative">
         {/* Left Section - No individual scrolling, will scroll with table */}
-        <div className="flex-1 overflow-x-auto">
-          <div className={`grid gap-2 px-4 py-3 text-sm ${
-          isClosedPosition
-              ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px]" // Without T/P, S/L, Actions, P/L
-              : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px]" // Full columns without P/L and Actions
-        }`}
-          style={{ minWidth: 'max-content' }}
+        <div className="flex-1 overflow-x-auto flex items-stretch">
+          <div 
+            className="grid gap-2 px-4 py-3 text-sm w-full"
+            style={{ 
+              minWidth: 'max-content',
+              gridTemplateColumns: gridTemplate
+            }}
       >
       {/* Symbol */}
       {columns.find(c => c.key === "symbol")?.visible && (
@@ -844,19 +863,24 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
       </div>
     </TooltipProvider>
     )
-  }, [columns, formatPrice, onClose, activeTab, accountId, openModifyPopover, setOpenModifyPopover, onNotify]) // Dependencies must include everything used inside this function
+  }, [columns, formatPrice, onClose, activeTab, accountId, openModifyPopover, setOpenModifyPopover, onNotify, getGridTemplate]) // Dependencies must include everything used inside this function
 
   // Renderer for grouped parent row (collapsed/expanded control)
   const renderGroupRow = React.useCallback((group: PositionGroup) => {
     const isExpanded = !!expandedGroups[group.key]
     const pnlPositive = (group.pnl ?? 0) >= 0
+    const gridTemplate = getGridTemplate(false) // Groups are always open positions
     return (
       <div key={`group-${group.key}`} className="border-b border-white/5">
-        <div className="flex hover:bg-white/5 transition-colors cursor-pointer" onClick={() => toggleGroupExpanded(group.key)}>
+        <div className="flex items-stretch hover:bg-white/5 transition-colors cursor-pointer" onClick={() => toggleGroupExpanded(group.key)}>
           {/* Left Section - No individual scrolling, will scroll with table */}
-          <div className="flex-1">
-            <div className="grid gap-2 px-4 py-3 text-sm grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px]"
-            style={{ minWidth: 'max-content' }}
+          <div className="flex-1 flex items-stretch">
+            <div 
+              className="grid gap-2 px-4 py-3 text-sm w-full"
+              style={{ 
+                minWidth: 'max-content',
+                gridTemplateColumns: gridTemplate
+              }}
         >
           {/* Symbol with count badge and chevron */}
           {columns.find(c => c.key === "symbol")?.visible && (
@@ -1005,7 +1029,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
         {isExpanded && group.positions.map(p => renderPositionRow(p))}
       </div>
     )
-  }, [columns, expandedGroups, formatPrice, renderPositionRow, toggleGroupExpanded, onClose])
+  }, [columns, expandedGroups, formatPrice, renderPositionRow, toggleGroupExpanded, onClose, getGridTemplate])
 
   return (
     <div className="flex flex-col glass-card rounded-lg overflow-hidden h-full">
@@ -1179,12 +1203,12 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 className="flex-1 overflow-x-auto scrollbar-thin"
             style={{ scrollBehavior: "smooth" }}
           >
-                <div className={`grid gap-2 px-4 py-2 text-xs font-medium text-white/60 ${
-                activeTab === "closed" 
-                    ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px]" // Without T/P, S/L, Actions, P/L
-                    : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px]" // Full columns without P/L and Actions
-                }`}
-                style={{ minWidth: 'max-content' }}
+                <div 
+                  className="grid gap-2 px-4 py-2 text-xs font-medium text-white/60"
+                  style={{ 
+                    minWidth: 'max-content',
+                    gridTemplateColumns: getGridTemplate(activeTab === "closed")
+                  }}
                 >
                 {columns.find(c => c.key === "symbol")?.visible && <div>Symbol</div>}
                 {columns.find(c => c.key === "type")?.visible && <div>Type</div>}
@@ -1243,171 +1267,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   <div className="flex-1">
                     <div>
               {/* Table Rows */}
-                    {activeTab === "open" && !shouldGroupOpen && openPositions.length > 0 && openPositions.map((position) => {
-                      const isClosedPosition = position.id?.startsWith('hist-')
-                      return (
-                        <div key={position.id} className={`grid gap-2 px-4 py-3 text-sm border-b border-white/5 hover:bg-white/5 transition-colors ${
-                          isClosedPosition
-                            ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px]"
-                            : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px]"
-                        }`}
-                        style={{ minWidth: 'max-content' }}
-                        >
-                          {columns.find(c => c.key === "symbol")?.visible && (
-                            <div className="flex items-center gap-2">
-                              <CurrencyPairFlags 
-                                symbol={position.symbol} 
-                                size="sm" 
-                                fallbackCountryCode={position.countryCode || undefined}
-                                fallbackIcon={position.icon || undefined}
-                              />
-                              <span className="font-medium text-white">{position.symbol}</span>
-                            </div>
-                          )}
-                          {columns.find(c => c.key === "type")?.visible && (
-                            <div className="flex items-center">
-                              <span className={cn("px-2 py-0.5 rounded text-xs font-medium", position.type === "Buy" ? "bg-success/20 text-success" : "bg-danger/20 text-danger")}>
-                                ● {position.type}
-                              </span>
-                            </div>
-                          )}
-                          {columns.find(c => c.key === "volume")?.visible && (
-                            <div className="flex items-center price-font text-white/80">{position.volume.toFixed(2)}</div>
-                          )}
-                          {columns.find(c => c.key === "openPrice")?.visible && (
-                            <div className="flex items-center price-font text-white/80">{formatPrice(position.openPrice)}</div>
-                          )}
-                          {columns.find(c => c.key === "currentPrice")?.visible && (
-                            <div className="flex items-center price-font font-medium text-white">{formatPrice(position.currentPrice)}</div>
-                          )}
-                          {columns.find(c => c.key === "tp")?.visible && !isClosedPosition && (
-                            <div className="flex items-center">
-                              <Popover open={openModifyPopover === `${position.id}_tp`} onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_tp` : null)}>
-                                <PopoverTrigger asChild>
-                                  {position.takeProfit !== undefined && position.takeProfit !== null && Number(position.takeProfit) > 0 ? (
-                                    <button className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted" title={`Take Profit: ${formatPrice(position.takeProfit)}`}>
-                                      {formatPrice(position.takeProfit)}
-                                    </button>
-                                  ) : (
-                                    <button className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted" title="Click to set Take Profit">
-                                      Modify
-                                    </button>
-                                  )}
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start" side="bottom">
-                                  <PositionManagementPanel
-                                    position={{ id: position.id, symbol: position.symbol, countryCode: position.countryCode, icon: position.icon, type: position.type, lots: position.volume, openPrice: position.openPrice, currentPrice: position.currentPrice, takeProfit: position.takeProfit, stopLoss: position.stopLoss, pnl: position.pnl }}
-                                    onClose={() => setOpenModifyPopover(null)}
-                                    onModify={async (data) => {
-                                      try {
-                                        const direct = Number(position.ticket)
-                                        const ticketStr = position.position || position.id
-                                        const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
-                                        const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
-                                        if (!accountId || !Number.isFinite(ticket)) return
-                                        let accessToken: string | undefined = undefined
-                                        try {
-                                          const authRes = await fetch('/apis/auth/mt5-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId }) })
-                                          const authJson = await authRes.json().catch(() => ({} as any))
-                                          if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
-                                        } catch {}
-                                        const payload: any = { accountId, positionId: ticket, comment: `Modify TP/SL via table for ${position.symbol}`, ...(accessToken ? { accessToken } : {}) }
-                                        if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
-                                        if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
-                                        const res = await fetch('/apis/trading/position/modify', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-                                        const text = await res.text().catch(() => '')
-                                        let json: any = null
-                                        try { json = text ? JSON.parse(text) : null } catch (e) { json = text }
-                                        const isSuccess = res.ok && (json?.status === true || json?.success === true || json?.data?.status === true || json?.data?.success === true || (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error')))
-                                        if (isSuccess) {
-                                          const modifiedParts: string[] = []
-                                          if (data.takeProfit !== undefined) modifiedParts.push(`TP: ${data.takeProfit.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
-                                          if (data.stopLoss !== undefined) modifiedParts.push(`SL: ${data.stopLoss.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
-                                          const detailMsg = modifiedParts.length > 0 ? `${position.symbol} - ${modifiedParts.join(', ')}` : `${position.symbol} position modified`
-                                          try { onNotify?.({ type: 'success', title: 'Position modified', message: detailMsg }) } catch {}
-                                          setTimeout(() => { setOpenModifyPopover(null) }, 2000)
-                                        } else {
-                                          const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                                          try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
-                                        }
-                                      } catch (e) {
-                                        try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
-                                      }
-                                    }}
-                                    onPartialClose={() => {}}
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                          )}
-                          {columns.find(c => c.key === "sl")?.visible && !isClosedPosition && (
-                            <div className="flex items-center">
-                              <Popover open={openModifyPopover === `${position.id}_sl`} onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_sl` : null)}>
-                                <PopoverTrigger asChild>
-                                  {position.stopLoss !== undefined && position.stopLoss !== null && Number(position.stopLoss) > 0 ? (
-                                    <button className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted" title={`Stop Loss: ${formatPrice(position.stopLoss)}`}>
-                                      {formatPrice(position.stopLoss)}
-                                    </button>
-                                  ) : (
-                                    <button className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted" title="Click to set Stop Loss">
-                                      Modify
-                                    </button>
-                                  )}
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start" side="bottom">
-                                  <PositionManagementPanel
-                                    position={{ id: position.id, symbol: position.symbol, countryCode: position.countryCode, icon: position.icon, type: position.type, lots: position.volume, openPrice: position.openPrice, currentPrice: position.currentPrice, takeProfit: position.takeProfit, stopLoss: position.stopLoss, pnl: position.pnl }}
-                                    onClose={() => setOpenModifyPopover(null)}
-                                    onModify={async (data) => {
-                                      try {
-                                        const direct = Number(position.ticket)
-                                        const ticketStr = position.position || position.id
-                                        const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
-                                        const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
-                                        if (!accountId || !Number.isFinite(ticket)) return
-                                        let accessToken: string | undefined = undefined
-                                        try {
-                                          const authRes = await fetch('/apis/auth/mt5-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId }) })
-                                          const authJson = await authRes.json().catch(() => ({} as any))
-                                          if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
-                                        } catch {}
-                                        const payload: any = { accountId, positionId: ticket, comment: `Modify TP/SL via table for ${position.symbol}`, ...(accessToken ? { accessToken } : {}) }
-                                        if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
-                                        if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
-                                        const res = await fetch('/apis/trading/position/modify', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-                                        const text = await res.text().catch(() => '')
-                                        let json: any = null
-                                        try { json = text ? JSON.parse(text) : null } catch (e) { json = text }
-                                        const isSuccess = res.ok && (json?.status === true || json?.success === true || json?.data?.status === true || json?.data?.success === true || (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error')))
-                                        if (isSuccess) {
-                                          try { onNotify?.({ type: 'success', title: 'Position modified', message: `Updated TP/SL for ${position.symbol}` }) } catch {}
-                                          setTimeout(() => { setOpenModifyPopover(null) }, 2000)
-                                        } else {
-                                          const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
-                                          try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
-                                        }
-                                      } catch (e) {
-                                        try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
-                                      }
-                                    }}
-                                    onPartialClose={() => {}}
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                            </div>
-                          )}
-                          {columns.find(c => c.key === "position")?.visible && (
-                            <div className="flex items-center price-font text-white/80">{position.position}</div>
-                          )}
-                          {columns.find(c => c.key === "openTime")?.visible && (
-                            <div className="flex items-center text-white/60 text-xs">{position.openTime}</div>
-                          )}
-                          {columns.find(c => c.key === "swap")?.visible && (
-                            <div className="flex items-center price-font text-white/80">{position.swap}</div>
-                          )}
-                        </div>
-                      )
-                    })}
+                    {activeTab === "open" && !shouldGroupOpen && openPositions.length > 0 && openPositions.map(renderPositionRow)}
                 {activeTab === "open" && shouldGroupOpen && groupedOpenPositions.length > 0 && groupedOpenPositions.map(renderGroupRow)}
                 {activeTab === "pending" && pendingPositions.length > 0 && pendingPositions.map(renderPositionRow)}
                       {activeTab === "closed" && closedPositions.length > 0 && closedPositions.map(renderPositionRow)}
@@ -1415,11 +1275,13 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                   </div>
                   
                   {/* Right Section - Fixed P/L and Actions for all rows */}
+                  {/* Note: For ungrouped open positions, the right section is already included in renderPositionRow */}
                   <div className="shrink-0 border-l border-white/10 sticky right-0 bg-[#01040D] z-20">
-                  {activeTab === "open" && !shouldGroupOpen && openPositions.length > 0 && openPositions.map((position) => {
+                  {/* Ungrouped open positions are handled by renderPositionRow which includes the right section */}
+                  {false && activeTab === "open" && !shouldGroupOpen && openPositions.length > 0 && openPositions.map((position) => {
                     const isClosedPosition = position.id?.startsWith('hist-')
                     return (
-                      <div key={position.id} className="flex items-center border-b border-white/5 hover:bg-white/5 transition-colors bg-[#01040D]">
+                      <div key={position.id} className="flex items-center border-b border-white/5 hover:bg-white/5 transition-colors bg-[#01040D] min-h-full">
                         {columns.find(c => c.key === "pnl")?.visible && (
                           <div className={cn("flex items-center justify-end price-font font-medium px-4 py-3 min-w-[140px]", position.pnl >= 0 ? "text-success" : "text-danger")}>
                             {position.pnl >= 0 ? "+" : ""}{position.pnl.toFixed(2)}

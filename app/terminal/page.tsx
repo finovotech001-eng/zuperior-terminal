@@ -2712,23 +2712,23 @@ function TerminalContent() {
 
 
         {/* Main Content Area (Chart, Positions, Order Panel + Bottom Summary) */}
-        <div className="flex-1 flex flex-col overflow-hidden min-w-0 gap-1">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0 gap-1 relative">
+          {/* Order Panel Toggle Button - Outside Chart Section */}
+          {isRightPanelCollapsed && (
+            <div className="absolute top-2 right-2 z-50">
+              <button
+                onClick={() => setIsRightPanelCollapsed(false)}
+                className="h-10 w-10 flex items-center justify-center rounded-md glass-card border border-white/10 hover:bg-white/5 hover:border-primary/50 cursor-pointer group"
+                title="Open Order Panel"
+              >
+                <ChevronRight className="h-4 w-4 text-white/60 group-hover:text-primary" />
+              </button>
+            </div>
+          )}
           {/* Top Row: Chart + Positions and Order Panel */}
           <div className="flex flex-1 overflow-hidden gap-1 min-h-0">
             {/* Center Column: Chart + Positions */}
-            <div className="flex-1 flex flex-col overflow-hidden min-w-0 gap-1 relative">
-              {/* Order Panel Toggle Button - Top */}
-              {isRightPanelCollapsed && (
-                <div className="absolute top-2 right-2 z-50">
-                  <button
-                    onClick={() => setIsRightPanelCollapsed(false)}
-                    className="h-10 w-10 flex items-center justify-center rounded-md glass-card border border-white/10 hover:bg-white/5 hover:border-primary/50 cursor-pointer group"
-                    title="Open Order Panel"
-                  >
-                    <ChevronRight className="h-4 w-4 text-white/60 group-hover:text-primary" />
-                  </button>
-                </div>
-              )}
+            <div className="flex-1 flex flex-col overflow-hidden min-w-0 gap-1">
               {/* Chart Area */}
               <div className="flex-1 overflow-hidden min-h-0">
                 {(() => {

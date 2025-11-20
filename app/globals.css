@@ -260,3 +260,21 @@
 .tradingview-widget-container__widget {
   font-family: var(--font-sans) !important;
 }
+
+/* Add gap between > and fullscreen icon in chart toolbar */
+/* Target TradingView chart header buttons */
+.tv-chart-container [data-name="header-toolbar"] button + button,
+.tv-chart-container .chart-widget-header button + button,
+.tv-chart-container [class*="toolbar"] button + button {
+  margin-left: 0.5rem;
+}
+
+/* Specifically target spacing between chevron and fullscreen buttons */
+.tv-chart-container button[aria-label*="chevron"] + button[aria-label*="fullscreen"],
+.tv-chart-container button[aria-label*="chevron"] + button[aria-label*="maximize"],
+.tv-chart-container button[aria-label*="chevron"] + button[aria-label*="expand"],
+.tv-chart-container button[title*="chevron"] + button[title*="fullscreen"],
+.tv-chart-container button[title*="chevron"] + button[title*="maximize"],
+.tv-chart-container button[title*="chevron"] + button[title*="expand"] {
+  margin-left: 0.75rem !important;
+}

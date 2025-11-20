@@ -51,18 +51,11 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     positionsRef.current = positions
   }, [positions])
   
-  // Helper function to create position lines - uses positions from props
+  // Helper function to create position lines - uses positions from props.
+  // This version uses the Drawings API (createShape) only, so it works with the plain Charting Library.
   const createPositionLines = useCallback((chart: any, positionsForLines: Position[], chartSymbol: string) => {
-    if (!chart || typeof chart.createOrderLine !== 'function') return
-
-    // Remove any lingering lines if no positions are available
-    if (!positionsForLines.length) {
-      positionLinesRef.current.forEach(line => {
-        try {
-          if (line && typeof line.remove === 'function') line.remove()
-        } catch {}
-      })
-      positionLinesRef.current.clear()
+    if (!chart || typeof chart.createShape !== 'function') {
+      console.warn('[Chart] createPositionLines: chart or createShape unavailable')
       return
     }
 
@@ -76,64 +69,50 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
       return `${sign}${formatted} USD`
     }
 
-    // Filter positions matching current symbol (ignore trailing micro suffix)
-    const relevantPositions = positionsForLines.filter(p => {
+    // Filter positions matching current symbol
+    let relevantPositions = positionsForLines.filter(p => {
       if (!p.symbol) return false
       const posSymbol = normalizeSymbolForMatch(p.symbol)
       return posSymbol === currentSymbol
     })
 
-    // Remove lines for other symbols or old positions
-    const relevantKeys = new Set(relevantPositions.map(p => `pos_${p.id}`))
-    positionLinesRef.current.forEach((line, key) => {
-      if (!relevantKeys.has(key)) {
-        try {
-          if (line && typeof line.remove === 'function') line.remove()
-        } catch {}
-        positionLinesRef.current.delete(key)
+    // Fallback: if nothing matched, allow all positions
+    if (!relevantPositions.length) {
+      relevantPositions = positionsForLines
+    }
+
+    // Clear previous shapes we created
+    try {
+      if (typeof chart.removeAllShapes === 'function') {
+        chart.removeAllShapes()
       }
-    })
+    } catch {}
+    positionLinesRef.current.clear()
 
     if (!relevantPositions.length) return
 
-    // Create or update lines for each matching position
     relevantPositions.forEach(pos => {
-      if (!pos.openPrice || !Number.isFinite(pos.openPrice) || pos.openPrice <= 0) return
+      const price =
+        (Number.isFinite(pos.openPrice) && pos.openPrice > 0 ? pos.openPrice :
+        (Number.isFinite(pos.currentPrice) && pos.currentPrice > 0 ? pos.currentPrice : null))
 
-      const key = `pos_${pos.id}`
+      if (price == null) return
+
       const qtyText = (pos.volume ?? 0).toFixed(2)
       const pnlText = formatPositionPnl(pos)
       const positionType = pos.type || 'Buy'
       const lineText = `${positionType} ${qtyText} ${pnlText}`
-      const lineColor = positionType === 'Buy' ? '#10B981' : '#EF4444'
-
-      const updateLine = (line: any) => {
-        if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
-        if (typeof line.setText === 'function') line.setText(lineText)
-        if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
-        if (typeof line.setLineColor === 'function') line.setLineColor(lineColor)
-        if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor(lineColor)
-        if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
-        if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
-        if (typeof line.setLineStyle === 'function') line.setLineStyle(0)
-        if (typeof line.setLineWidth === 'function') line.setLineWidth(2)
-        if (typeof line.setVisible === 'function') line.setVisible(true)
-        if (typeof line.show === 'function') line.show()
-      }
-
-      if (positionLinesRef.current.has(key)) {
-        const existingLine = positionLinesRef.current.get(key)
-        if (existingLine) updateLine(existingLine)
-        return
-      }
 
       try {
-        const line = chart.createOrderLine()
-        if (!line) return
-        updateLine(line)
-        positionLinesRef.current.set(key, line)
+        void chart.createShape(
+          { price },
+          {
+            shape: 'horizontal_line',
+            text: lineText,
+          }
+        )
       } catch (err) {
-        console.error('[Chart] Error creating line:', err)
+        console.error('[Chart] Error creating position shape:', err)
       }
     })
   }, [])
@@ -438,7 +417,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           setTimeout(() => {
             try {
               const chart = widget.activeChart?.()
-              if (chart && typeof chart.createOrderLine === 'function') {
+              if (chart) {
                 createPositionLines(chart, positionsRef.current, symbol)
               }
             } catch (err) {
@@ -617,10 +596,43 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             const chart = w.activeChart?.()
             if (!chart) return
 
-            // Only support order lines; never attempt createShape
-            if (typeof chart.createOrderLine !== 'function') {
+            const canOrderLine = typeof chart.createOrderLine === 'function'
+            const canShapeLine = typeof chart.createShape === 'function'
+            if (!canOrderLine && !canShapeLine) {
+              // Neither trading lines nor horizontal shapes are available
               setPriceLinesDisabled(true)
               return
+            }
+
+            // Helper to create a Bid/Ask line (order line if available, otherwise a horizontal drawing)
+            const createPriceLine = async (price: number, isBid: boolean) => {
+              if (canOrderLine && typeof chart.createOrderLine === 'function') {
+                try {
+                  const orderLine = await chart.createOrderLine()
+                  if (orderLine) return orderLine
+                } catch (e) {
+                  console.warn('[Chart] createOrderLine failed for price line, falling back to shape:', e)
+                }
+              }
+
+              if (canShapeLine && typeof chart.createShape === 'function' && typeof chart.getShapeById === 'function') {
+                try {
+                  const id = await chart.createShape(
+                    { price },
+                    {
+                      shape: 'horizontal_line',
+                      text: isBid ? 'Bid' : 'Ask',
+                    }
+                  )
+                  if (!id) return null
+                  const shapeLine = chart.getShapeById(id)
+                  return shapeLine || null
+                } catch (e) {
+                  console.warn('[Chart] createShape/getShapeById failed for price line:', e)
+                  return null
+                }
+              }
+              return null
             }
 
             const updateOrderLine = (ref: any, price: number, isBid: boolean) => {
@@ -628,16 +640,24 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
               if (ref && typeof ref.setPrice === 'function') {
                 try { ref.setPrice(price); return ref } catch {}
               }
-              // Create new
-              const ol = chart.createOrderLine()
-              try {
-                if (typeof ol.setPrice === 'function') ol.setPrice(price)
-                if (typeof ol.setText === 'function') ol.setText(isBid ? 'Bid' : 'Ask')
-                if (typeof ol.setLineColor === 'function') ol.setLineColor(isBid ? '#60A5FA' : '#F59E0B')
-                if (typeof ol.setBodyBackgroundColor === 'function') ol.setBodyBackgroundColor('rgba(0,0,0,0)')
-                if (typeof ol.setQuantity === 'function') ol.setQuantity('')
-              } catch {}
-              return ol
+              // Create new asynchronously and then configure/update it
+              void createPriceLine(price, isBid)
+                .then(ol => {
+                  if (!ol) return null
+                  try {
+                    if (typeof ol.setPrice === 'function') ol.setPrice(price)
+                    if (typeof ol.setText === 'function') ol.setText(isBid ? 'Bid' : 'Ask')
+                    if (typeof ol.setLineColor === 'function') ol.setLineColor(isBid ? '#60A5FA' : '#F59E0B')
+                    if (typeof ol.setBodyBackgroundColor === 'function') ol.setBodyBackgroundColor('rgba(0,0,0,0)')
+                    if (typeof ol.setQuantity === 'function') ol.setQuantity('')
+                  } catch {}
+                  return ol
+                })
+                .catch(err => {
+                  console.error('[Chart] Error creating price line:', err)
+                  return null
+                })
+              return null
             }
 
             const newBid = updateOrderLine(bidLineRef.current, bid, true)
@@ -662,6 +682,19 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     const widget = widgetRef.current
     if (!widget) return
 
+    console.log('[Chart] Overlay effect: symbol & positions', {
+      symbol,
+      positionsCount: positions?.length ?? 0,
+      sample: positions?.slice(0, 3).map(p => ({
+        id: p.id,
+        symbol: p.symbol,
+        openPrice: p.openPrice,
+        currentPrice: p.currentPrice,
+        type: p.type,
+      })),
+      showOnChart: settings.showOnChart,
+    })
+
     if (!settings.showOnChart) {
       priceAlertLinesRef.current.clear()
       signalMarkersRef.current.clear()
@@ -672,7 +705,11 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     const applyPositionLines = () => {
       try {
         const chart = widget.activeChart?.()
-        if (chart && typeof chart.createOrderLine === 'function') {
+        if (chart) {
+          console.log('[Chart] applyPositionLines: calling createPositionLines', {
+            symbol,
+            positionsCount: positions?.length ?? 0,
+          })
           createPositionLines(chart, positions, symbol)
         }
       } catch (error) {
