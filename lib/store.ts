@@ -283,7 +283,7 @@ const defaultSettings: Settings = {
   showHMR: true,
   showPriceAlerts: true,
   showOpenPositions: true,
-  showTPSL: false,
+  showTPSL: true,
   showEconomicCalendar: true,
   economicCalendarHighImpact: true,
   economicCalendarMiddleImpact: false,

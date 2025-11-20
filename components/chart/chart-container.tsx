@@ -389,16 +389,24 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     if (typeof window === 'undefined') return
     
     const w = widgetRef.current
-    if (!w || !settings.showOnChart) {
-      // Clear all overlays if showOnChart is disabled
-      positionLinesRef.current.clear()
-      tpSlLinesRef.current.clear()
+    if (!w) {
+      console.log('[Chart] Widget not ready, skipping overlay update')
+      return
+    }
+    
+    // Position lines (Entry, TP, SL) are ALWAYS shown - not dependent on settings.showOnChart
+    // Only other overlays respect showOnChart setting
+    if (!settings.showOnChart) {
+      console.log('[Chart] showOnChart is disabled, clearing non-position overlays')
+      // Clear other overlays but keep position lines
       priceAlertLinesRef.current.clear()
       signalMarkersRef.current.clear()
       hmrZonesRef.current.clear()
       economicCalendarMarkersRef.current.clear()
-      return
+      // Don't clear position lines - they should always show
     }
+
+    console.log('[Chart] Updating overlays - positions:', positions.length, 'showOpenPositions:', settings.showOpenPositions, 'showTPSL:', settings.showTPSL)
 
     w.onChartReady(() => {
       try {
@@ -440,14 +448,23 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         // Filter positions for current symbol
         const relevantPositions = positions.filter(p => {
           const posSymbol = normalizeSymbolForMatch(p.symbol)
-          return posSymbol === currentSymbol || posSymbol.replace('M', '') === currentSymbol.replace('M', '')
+          const matches = posSymbol === currentSymbol || 
+                         posSymbol.replace('M', '') === currentSymbol.replace('M', '') ||
+                         posSymbol === currentSymbol.replace('M', '') ||
+                         currentSymbol === posSymbol.replace('M', '')
+          if (matches) {
+            console.log('[Chart] Position matches symbol:', p.symbol, '->', posSymbol, 'matches', currentSymbol)
+          }
+          return matches
         })
+        
+        console.log('[Chart] Relevant positions for', currentSymbol, ':', relevantPositions.length, 'positions:', relevantPositions.map(p => ({ symbol: p.symbol, price: p.openPrice, tp: p.takeProfit, sl: p.stopLoss })))
 
-        // Show/Hide Open Positions
-        if (settings.showOpenPositions) {
-          // Process positions sequentially to avoid race conditions
-          const processPositions = async () => {
-            for (const pos of relevantPositions) {
+        // Show Open Positions - ALWAYS show for open positions (automatic)
+        console.log('[Chart] Processing', relevantPositions.length, 'positions for automatic line display')
+        // Process positions sequentially to avoid race conditions
+        const processPositions = async () => {
+          for (const pos of relevantPositions) {
             const key = `pos_${pos.id}`
             const qtyText = (pos.volume ?? 0).toFixed(2)
             const pnlText = formatPositionPnl(pos)
@@ -476,6 +493,13 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                         }
                         if (typeof line.setLineWidth === 'function') {
                           try { line.setLineWidth(1) } catch {} // 1 = thin
+                        }
+                        // Make line visible
+                        if (typeof line.setVisible === 'function') {
+                          try { line.setVisible(true) } catch {}
+                        }
+                        if (typeof line.show === 'function') {
+                          try { line.show() } catch {}
                         }
                         // Add click handler for close
                         // TradingView lines may not support onClick directly, but we try it first
@@ -523,6 +547,13 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                       }
                       if (typeof line.setLineWidth === 'function') {
                         try { line.setLineWidth(1) } catch {} // 1 = thin
+                      }
+                      // Make line visible
+                      if (typeof line.setVisible === 'function') {
+                        try { line.setVisible(true) } catch {}
+                      }
+                      if (typeof line.show === 'function') {
+                        try { line.show() } catch {}
                       }
                       // Add click handler for close
                       if (onClosePosition) {
@@ -572,36 +603,25 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             }
           }
           
-          processPositions().catch(e => {
-            console.error('[Chart] Error processing positions:', e)
-          })
-          
-          // Remove lines for positions that no longer exist
-          positionLinesRef.current.forEach((line, key) => {
-            if (!relevantPositions.some(p => `pos_${p.id}` === key)) {
-              try {
-                if (line && typeof line.remove === 'function') {
-                  line.remove()
-                }
-              } catch {}
-              positionLinesRef.current.delete(key)
-            }
-          })
-        } else {
-          // Remove all position lines
-          positionLinesRef.current.forEach((line) => {
+        processPositions().catch(e => {
+          console.error('[Chart] Error processing positions:', e)
+        })
+        
+        // Remove lines for positions that no longer exist
+        positionLinesRef.current.forEach((line, key) => {
+          if (!relevantPositions.some(p => `pos_${p.id}` === key)) {
             try {
               if (line && typeof line.remove === 'function') {
                 line.remove()
               }
             } catch {}
-          })
-          positionLinesRef.current.clear()
-        }
+            positionLinesRef.current.delete(key)
+          }
+        })
 
-        // Show/Hide TP/SL Lines
-        if (settings.showTPSL) {
-          relevantPositions.forEach(pos => {
+        // Show TP/SL Lines - ALWAYS show for open positions (automatic)
+        console.log('[Chart] Processing TP/SL lines for', relevantPositions.length, 'positions')
+        relevantPositions.forEach(pos => {
             const key = `tpsl_${pos.id}`
             const tpslRefs = tpSlLinesRef.current.get(key) || {}
             
@@ -628,6 +648,13 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                       }
                       if (typeof tpLine.setLineWidth === 'function') {
                         try { tpLine.setLineWidth(1) } catch {} // 1 = thin
+                      }
+                      // Make line visible
+                      if (typeof tpLine.setVisible === 'function') {
+                        try { tpLine.setVisible(true) } catch {}
+                      }
+                      if (typeof tpLine.show === 'function') {
+                        try { tpLine.show() } catch {}
                       }
                       // Add click handler for close
                       if (onClosePosition) {
@@ -700,6 +727,13 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
                       if (typeof slLine.setLineWidth === 'function') {
                         try { slLine.setLineWidth(1) } catch {} // 1 = thin
                       }
+                      // Make line visible
+                      if (typeof slLine.setVisible === 'function') {
+                        try { slLine.setVisible(true) } catch {}
+                      }
+                      if (typeof slLine.show === 'function') {
+                        try { slLine.show() } catch {}
+                      }
                       // Add click handler for close
                       if (onClosePosition) {
                         if (typeof slLine.onClick === 'function') {
@@ -743,29 +777,19 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
               tpslRefs.sl = undefined
             }
 
-            tpSlLinesRef.current.set(key, tpslRefs)
-          })
-          
-          // Remove TP/SL lines for positions that no longer exist
-          tpSlLinesRef.current.forEach((refs, key) => {
-            if (!relevantPositions.some(p => `tpsl_${p.id}` === key)) {
-              try {
-                if (refs.tp && typeof refs.tp.remove === 'function') refs.tp.remove()
-                if (refs.sl && typeof refs.sl.remove === 'function') refs.sl.remove()
-              } catch {}
-              tpSlLinesRef.current.delete(key)
-            }
-          })
-        } else {
-          // Remove all TP/SL lines
-          tpSlLinesRef.current.forEach((refs) => {
+          tpSlLinesRef.current.set(key, tpslRefs)
+        })
+        
+        // Remove TP/SL lines for positions that no longer exist
+        tpSlLinesRef.current.forEach((refs, key) => {
+          if (!relevantPositions.some(p => `tpsl_${p.id}` === key)) {
             try {
               if (refs.tp && typeof refs.tp.remove === 'function') refs.tp.remove()
               if (refs.sl && typeof refs.sl.remove === 'function') refs.sl.remove()
             } catch {}
-          })
-          tpSlLinesRef.current.clear()
-        }
+            tpSlLinesRef.current.delete(key)
+          }
+        })
 
         // Price Alerts - placeholder (would need price alert data)
         if (!settings.showPriceAlerts) {
