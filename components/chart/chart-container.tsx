@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAtom } from 'jotai'
 import { cn, formatCurrency } from '@/lib/utils'
 import { settingsAtom } from '@/lib/store'
@@ -27,7 +27,13 @@ declare global {
   }
 }
 
+const normalizeSymbolForMatch = (value?: string) => {
+  if (!value) return ''
+  return value.replace(/[^A-Za-z0-9]/g, '').replace(/m$/i, '').toUpperCase()
+}
+
 export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, accountId = null, positions = [], onOpenOrderPanel, onClosePosition }: ChartContainerProps) {
+  
   const containerRef = useRef<HTMLDivElement>(null)
   const widgetRef = useRef<any>(null)
   const [error, setError] = useState<string | null>(null)
@@ -36,15 +42,130 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
   const [priceLinesDisabled, setPriceLinesDisabled] = useState(false)
   const [settings] = useAtom(settingsAtom)
   
-  // Refs for chart overlays
+  // Track if chart is ready
+  const chartReadyRef = useRef(false)
+  const waitingForReadyRef = useRef(false)
   const positionLinesRef = useRef<Map<string, any>>(new Map())
+  const positionsRef = useRef<Position[]>(positions)
+  useEffect(() => {
+    positionsRef.current = positions
+  }, [positions])
+  
+  // Helper function to create position lines - uses positions from props
+  const createPositionLines = useCallback((chart: any, positionsForLines: Position[], chartSymbol: string) => {
+    if (!chart || typeof chart.createOrderLine !== 'function') return
+
+    // Remove any lingering lines if no positions are available
+    if (!positionsForLines.length) {
+      positionLinesRef.current.forEach(line => {
+        try {
+          if (line && typeof line.remove === 'function') line.remove()
+        } catch {}
+      })
+      positionLinesRef.current.clear()
+      return
+    }
+
+    const currentSymbol = normalizeSymbolForMatch(chartSymbol)
+    const formatPositionPnl = (pos: Position) => {
+      const raw = typeof pos.pnl === 'number'
+        ? pos.pnl
+        : (pos.currentPrice - pos.openPrice) * (pos.volume ?? 1)
+      const formatted = formatCurrency(Math.abs(raw ?? 0), 2)
+      const sign = raw >= 0 ? '+' : '-'
+      return `${sign}${formatted} USD`
+    }
+
+    // Filter positions matching current symbol (ignore trailing micro suffix)
+    const relevantPositions = positionsForLines.filter(p => {
+      if (!p.symbol) return false
+      const posSymbol = normalizeSymbolForMatch(p.symbol)
+      return posSymbol === currentSymbol
+    })
+
+    // Remove lines for other symbols or old positions
+    const relevantKeys = new Set(relevantPositions.map(p => `pos_${p.id}`))
+    positionLinesRef.current.forEach((line, key) => {
+      if (!relevantKeys.has(key)) {
+        try {
+          if (line && typeof line.remove === 'function') line.remove()
+        } catch {}
+        positionLinesRef.current.delete(key)
+      }
+    })
+
+    if (!relevantPositions.length) return
+
+    // Create or update lines for each matching position
+    relevantPositions.forEach(pos => {
+      if (!pos.openPrice || !Number.isFinite(pos.openPrice) || pos.openPrice <= 0) return
+
+      const key = `pos_${pos.id}`
+      const qtyText = (pos.volume ?? 0).toFixed(2)
+      const pnlText = formatPositionPnl(pos)
+      const positionType = pos.type || 'Buy'
+      const lineText = `${positionType} ${qtyText} ${pnlText}`
+      const lineColor = positionType === 'Buy' ? '#10B981' : '#EF4444'
+
+      const updateLine = (line: any) => {
+        if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
+        if (typeof line.setText === 'function') line.setText(lineText)
+        if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
+        if (typeof line.setLineColor === 'function') line.setLineColor(lineColor)
+        if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor(lineColor)
+        if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
+        if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
+        if (typeof line.setLineStyle === 'function') line.setLineStyle(0)
+        if (typeof line.setLineWidth === 'function') line.setLineWidth(2)
+        if (typeof line.setVisible === 'function') line.setVisible(true)
+        if (typeof line.show === 'function') line.show()
+      }
+
+      if (positionLinesRef.current.has(key)) {
+        const existingLine = positionLinesRef.current.get(key)
+        if (existingLine) updateLine(existingLine)
+        return
+      }
+
+      try {
+        const line = chart.createOrderLine()
+        if (!line) return
+        updateLine(line)
+        positionLinesRef.current.set(key, line)
+      } catch (err) {
+        console.error('[Chart] Error creating line:', err)
+      }
+    })
+  }, [])
+  
+  // Clear lines when symbol changes (before creating new ones)
+  const prevSymbolRef = useRef<string>(symbol)
+  useEffect(() => {
+    if (prevSymbolRef.current !== symbol) {
+      console.log('[Chart] 🔄 Symbol changed from', prevSymbolRef.current, 'to', symbol, '- clearing old lines')
+      // Clear all position lines when symbol changes
+      positionLinesRef.current.forEach((line, key) => {
+        try {
+          if (line && typeof line.remove === 'function') {
+            line.remove()
+          }
+        } catch (e) {
+          console.warn('[Chart] Error removing line on symbol change:', e)
+        }
+      })
+      positionLinesRef.current.clear()
+      prevSymbolRef.current = symbol
+    }
+  }, [symbol])
+  
+  // Refs for chart overlays
   const tpSlLinesRef = useRef<Map<string, { tp?: any; sl?: any }>>(new Map())
   const priceAlertLinesRef = useRef<Map<string, any>>(new Map())
   const signalMarkersRef = useRef<Map<string, any>>(new Map())
   const hmrZonesRef = useRef<Map<string, any>>(new Map())
   const economicCalendarMarkersRef = useRef<Map<string, any>>(new Map())
 
-  // Normalize symbols while preserving trailing micro suffix 'm' in lowercase
+  // Normalize symbols for display/matching - preserves trailing micro suffix 'm' in lowercase
   // Safe: Pure function, no browser globals
   const normalizeSymbol = (s: string) => {
     if (typeof s !== 'string') return 'BTCUSD'
@@ -52,6 +173,16 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     const hasMicro = /m$/i.test(raw)
     const core = hasMicro ? raw.slice(0, -1) : raw
     return core.toUpperCase() + (hasMicro ? 'm' : '')
+  }
+
+  // Normalize symbol for chart loading - removes micro suffix to match datafeed
+  // This ensures XAUUSDM loads as XAUUSD chart (they're the same instrument)
+  const normalizeSymbolForChart = (s: string) => {
+    if (typeof s !== 'string') return 'BTCUSD'
+    const raw = (s || '').replace(/[^A-Za-z0-9]/g, '')
+    // Remove trailing 'm' if present (e.g., XAUUSDM -> XAUUSD, BTCUSDm -> BTCUSD)
+    const withoutMicro = raw.replace(/m$/i, '')
+    return withoutMicro.toUpperCase()
   }
 
   useEffect(() => {
@@ -197,6 +328,16 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         }
         
         console.log('[Chart] TradingView ready, initializing chart...')
+        chartReadyRef.current = false
+        waitingForReadyRef.current = false
+        positionLinesRef.current.forEach((line) => {
+          try {
+            if (line && typeof line.remove === 'function') {
+              line.remove()
+            }
+          } catch {}
+        })
+        positionLinesRef.current.clear()
 
         // Use local proxy routes to avoid CORS issues
         // Proxy routes will forward to https://metaapi.zuperior.com/api with correct case
@@ -222,11 +363,14 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           datafeed = httpFallback
         }
 
-        const normalizedSymbol = normalizeSymbol(symbol)
-        console.log('[Chart] Creating widget with symbol:', normalizedSymbol, 'interval:', interval)
+        // Use chart-normalized symbol (removes 'm' suffix) for widget initialization
+        // This ensures XAUUSDM loads as XAUUSD chart since they're the same instrument
+        const chartSymbol = normalizeSymbolForChart(symbol)
+        const displaySymbol = normalizeSymbol(symbol)
+        console.log('[Chart] Creating widget - original:', symbol, 'chart symbol:', chartSymbol, 'display:', displaySymbol, 'interval:', interval)
         const widgetStartTime = performance.now()
         const widget = new window.TradingView.widget({
-          symbol: normalizedSymbol,
+          symbol: chartSymbol,
           interval: interval,
           container: containerRef.current,
           datafeed: datafeed,
@@ -236,7 +380,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           disabled_features: [
             'use_localstorage_for_settings',
             'save_chart_properties_to_local_storage',
-            'study_templates',
+            'study_templates', // Disable to prevent 404 errors with undefined client/user
             'header_symbol_search', // Disable for faster load
             'header_compare', // Disable for faster load
             'header_screenshot', // Disable if not needed
@@ -244,7 +388,6 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             'display_market_status', // Disable for faster load
           ],
           enabled_features: [
-            'study_templates',
             'side_toolbar_in_fullscreen_mode',
           ],
           theme: 'dark',
@@ -287,14 +430,22 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           } catch {}
         }
         
-        // Preload datafeed to warm cache
-        if (typeof datafeed.onReady === 'function') {
-          try {
-            datafeed.onReady(() => {
-              console.log('[Chart] Datafeed ready, chart fully initialized')
-            })
-          } catch {}
-        }
+        // Register onChartReady callback IMMEDIATELY after widget creation
+        widget.onChartReady(() => {
+          waitingForReadyRef.current = false
+          chartReadyRef.current = true
+          
+          setTimeout(() => {
+            try {
+              const chart = widget.activeChart?.()
+              if (chart && typeof chart.createOrderLine === 'function') {
+                createPositionLines(chart, positionsRef.current, symbol)
+              }
+            } catch (err) {
+              console.error('[Chart] Error creating position lines on chart ready:', err)
+            }
+          }, 300)
+        })
 
         // Hook into toolbar to intercept + button click
         if (onOpenOrderPanel && widget.onChartReady) {
@@ -405,15 +556,18 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     const w = widgetRef.current
     if (!w) return
     try {
-      const newSymbol = normalizeSymbol(symbol)
+      // Use chart-normalized symbol (removes 'm' suffix) for chart updates
+      const newChartSymbol = normalizeSymbolForChart(symbol)
+      const displaySymbol = normalizeSymbol(symbol)
+      console.log('[Chart] Updating symbol - original:', symbol, 'chart symbol:', newChartSymbol, 'display:', displaySymbol)
       w.onChartReady(() => {
         const chart = w.activeChart()
         if (!chart) return
         const current = (typeof chart.symbol === 'function' ? chart.symbol() : '') || ''
         const currentInterval = (typeof chart.resolution === 'function' ? chart.resolution() : '') || ''
-        if (current !== newSymbol) {
-          chart.setSymbol(newSymbol, currentInterval, () => {
-            console.log('[Chart] setSymbol (preserve interval) ->', newSymbol, currentInterval)
+        if (current !== newChartSymbol) {
+          chart.setSymbol(newChartSymbol, currentInterval, () => {
+            console.log('[Chart] setSymbol (preserve interval) ->', newChartSymbol, currentInterval)
           })
         }
       })
@@ -431,11 +585,14 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
     const run = async () => {
       try {
         const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://metaapi.zuperior.com'
-        const sym = normalizeSymbol(symbol)
-        // Try primary symbol, then fallback by toggling micro suffix
-        const candidates: string[] = [sym]
-        if (/m$/.test(sym)) candidates.push(sym.replace(/m$/, ''))
-        else candidates.push(sym + 'm')
+        // Use chart-normalized symbol (without 'm') as primary, then try with 'm' suffix
+        const chartSym = normalizeSymbolForChart(symbol)
+        const displaySym = normalizeSymbol(symbol)
+        // Try chart symbol first (without 'm'), then display symbol (with 'm' if applicable)
+        const candidates: string[] = [chartSym]
+        if (chartSym !== displaySym) {
+          candidates.push(displaySym)
+        }
 
         let d: any = null
         for (const candidate of candidates) {
@@ -501,465 +658,42 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
 
   // Update chart overlays based on settings and positions
   useEffect(() => {
-    // Guard: Only run in browser
     if (typeof window === 'undefined') return
-    
-    const w = widgetRef.current
-    if (!w) {
-      console.log('[Chart] Widget not ready, skipping overlay update')
-      return
-    }
-    
-    // Position lines (Entry, TP, SL) are ALWAYS shown - not dependent on settings.showOnChart
-    // Only other overlays respect showOnChart setting
+    const widget = widgetRef.current
+    if (!widget) return
+
     if (!settings.showOnChart) {
-      console.log('[Chart] showOnChart is disabled, clearing non-position overlays')
-      // Clear other overlays but keep position lines
       priceAlertLinesRef.current.clear()
       signalMarkersRef.current.clear()
       hmrZonesRef.current.clear()
       economicCalendarMarkersRef.current.clear()
-      // Don't clear position lines - they should always show
     }
 
-    console.log('[Chart] Updating overlays - positions:', positions.length, 'showOpenPositions:', settings.showOpenPositions, 'showTPSL:', settings.showTPSL)
-
-    w.onChartReady(() => {
+    const applyPositionLines = () => {
       try {
-        const chart = w.activeChart?.()
-        if (!chart) return
-
-        const normalizeSymbolForMatch = (s: string) => {
-          return s.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+        const chart = widget.activeChart?.()
+        if (chart && typeof chart.createOrderLine === 'function') {
+          createPositionLines(chart, positions, symbol)
         }
-        const currentSymbol = normalizeSymbolForMatch(symbol)
-
-        const formatPositionPnl = (pos: Position) => {
-          const raw = typeof pos.pnl === 'number'
-            ? pos.pnl
-            : (pos.currentPrice - pos.openPrice) * (pos.volume ?? 1)
-          const formatted = formatCurrency(Math.abs(raw ?? 0), 2)
-          const sign = raw >= 0 ? '+' : '-'
-          return `${sign}${formatted} USD`
-        }
-        
-        // Helper to extract position ID for closing
-        const extractPositionId = (pos: Position): number | null => {
-          if (pos.ticket && pos.ticket > 0) {
-            return pos.ticket
-          } else if (pos.position) {
-            const match = pos.position.match(/\d+/)
-            if (match) {
-              return parseInt(match[0], 10)
-            }
-          } else if (pos.id && pos.id.startsWith('ticket-')) {
-            const match = pos.id.match(/ticket-(\d+)/)
-            if (match) {
-              return parseInt(match[1], 10)
-            }
-          }
-          return null
-        }
-        
-        // Filter positions for current symbol
-        const relevantPositions = positions.filter(p => {
-          const posSymbol = normalizeSymbolForMatch(p.symbol)
-          const matches = posSymbol === currentSymbol || 
-                         posSymbol.replace('M', '') === currentSymbol.replace('M', '') ||
-                         posSymbol === currentSymbol.replace('M', '') ||
-                         currentSymbol === posSymbol.replace('M', '')
-          if (matches) {
-            console.log('[Chart] Position matches symbol:', p.symbol, '->', posSymbol, 'matches', currentSymbol)
-          }
-          return matches
-        })
-        
-        console.log('[Chart] Relevant positions for', currentSymbol, ':', relevantPositions.length, 'positions:', relevantPositions.map(p => ({ symbol: p.symbol, price: p.openPrice, tp: p.takeProfit, sl: p.stopLoss })))
-
-        // Show Open Positions - ALWAYS show for open positions (automatic)
-        console.log('[Chart] Processing', relevantPositions.length, 'positions for automatic line display')
-        // Process positions sequentially to avoid race conditions
-        const processPositions = async () => {
-          for (const pos of relevantPositions) {
-            const key = `pos_${pos.id}`
-            const qtyText = (pos.volume ?? 0).toFixed(2)
-            const pnlText = formatPositionPnl(pos)
-            // Format: volume +P/L USD X
-            const lineText = `${qtyText} ${pnlText} X`
-              
-            if (!positionLinesRef.current.has(key)) {
-              try {
-                  // Try createPositionLine first (preferred for positions)
-                  let line: any = null
-                  if (typeof chart.createPositionLine === 'function') {
-                    try {
-                      line = await chart.createPositionLine()
-                      if (line && typeof line.setPrice === 'function') {
-                        line.setPrice(pos.openPrice)
-                        if (typeof line.setText === 'function') line.setText(lineText)
-                        if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
-                        // Blue color for entry lines
-                        if (typeof line.setLineColor === 'function') line.setLineColor('#4A9EFF')
-                        if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
-                        if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor('#4A9EFF')
-                        if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
-                        // Set line style to solid and thin if available
-                        if (typeof line.setLineStyle === 'function') {
-                          try { line.setLineStyle(0) } catch {} // 0 = solid
-                        }
-                        if (typeof line.setLineWidth === 'function') {
-                          try { line.setLineWidth(1) } catch {} // 1 = thin
-                        }
-                        // Make line visible
-                        if (typeof line.setVisible === 'function') {
-                          try { line.setVisible(true) } catch {}
-                        }
-                        if (typeof line.show === 'function') {
-                          try { line.show() } catch {}
-                        }
-                        // Add click handler for close
-                        // TradingView lines may not support onClick directly, but we try it first
-                        if (onClosePosition) {
-                          if (typeof line.onClick === 'function') {
-                            try {
-                              line.onClick(() => {
-                                const positionId = extractPositionId(pos)
-                                if (positionId) {
-                                  onClosePosition(pos.id).catch(e => {
-                                    console.error('[Chart] Failed to close position:', e)
-                                  })
-                                }
-                              })
-                            } catch {}
-                          }
-                          // Also try setCancellable/setEditable if available
-                          if (typeof line.setCancellable === 'function') {
-                            try { line.setCancellable(true) } catch {}
-                          }
-                        }
-                        positionLinesRef.current.set(key, line)
-                        console.log('[Chart] ✅ Created position line for:', pos.symbol, 'at price:', pos.openPrice)
-                      }
-                    } catch (e) {
-                      console.warn('[Chart] createPositionLine failed, trying createOrderLine:', e)
-                    }
-                  }
-                  
-                  // Fallback to createOrderLine if createPositionLine is not available
-                  if (!line && typeof chart.createOrderLine === 'function') {
-                    line = chart.createOrderLine()
-                  if (line && typeof line.setPrice === 'function') {
-                    line.setPrice(pos.openPrice)
-                      if (typeof line.setText === 'function') line.setText(lineText)
-                    if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
-                      // Blue color for entry lines
-                      if (typeof line.setLineColor === 'function') line.setLineColor('#4A9EFF')
-                    if (typeof line.setBodyBackgroundColor === 'function') line.setBodyBackgroundColor('rgba(0,0,0,0)')
-                      if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor('#4A9EFF')
-                    if (typeof line.setQuantityTextColor === 'function') line.setQuantityTextColor('#FFFFFF')
-                      // Set line style to solid and thin if available
-                      if (typeof line.setLineStyle === 'function') {
-                        try { line.setLineStyle(0) } catch {} // 0 = solid
-                      }
-                      if (typeof line.setLineWidth === 'function') {
-                        try { line.setLineWidth(1) } catch {} // 1 = thin
-                      }
-                      // Make line visible
-                      if (typeof line.setVisible === 'function') {
-                        try { line.setVisible(true) } catch {}
-                      }
-                      if (typeof line.show === 'function') {
-                        try { line.show() } catch {}
-                      }
-                      // Add click handler for close
-                      if (onClosePosition) {
-                        if (typeof line.onClick === 'function') {
-                          try {
-                            line.onClick(() => {
-                              const positionId = extractPositionId(pos)
-                              if (positionId) {
-                                onClosePosition(pos.id).catch(e => {
-                                  console.error('[Chart] Failed to close position:', e)
-                                })
-                              }
-                            })
-                          } catch {}
-                        }
-                        if (typeof line.setCancellable === 'function') {
-                          try { line.setCancellable(true) } catch {}
-                        }
-                      }
-                    positionLinesRef.current.set(key, line)
-                      console.log('[Chart] ✅ Created order line (fallback) for:', pos.symbol, 'at price:', pos.openPrice)
-                    }
-                  }
-                  
-                  if (!line) {
-                    console.warn('[Chart] ⚠️ No line creation method available for position:', pos.id)
-                }
-              } catch (e) {
-                  console.error('[Chart] ❌ Failed to create position line:', e, 'for position:', pos)
-              }
-            } else {
-              // Update existing line
-              const line = positionLinesRef.current.get(key)
-              if (line) {
-                try {
-                  if (typeof line.setPrice === 'function') line.setPrice(pos.openPrice)
-                    if (typeof line.setText === 'function') line.setText(lineText)
-                  if (typeof line.setQuantity === 'function') line.setQuantity(qtyText)
-                  // Update color to blue
-                  if (typeof line.setLineColor === 'function') line.setLineColor('#4A9EFF')
-                  if (typeof line.setQuantityBackgroundColor === 'function') line.setQuantityBackgroundColor('#4A9EFF')
-                  } catch (e) {
-                    console.warn('[Chart] Failed to update position line:', e)
-                  }
-                }
-              }
-            }
-          }
-          
-        processPositions().catch(e => {
-          console.error('[Chart] Error processing positions:', e)
-        })
-        
-        // Remove lines for positions that no longer exist
-        positionLinesRef.current.forEach((line, key) => {
-          if (!relevantPositions.some(p => `pos_${p.id}` === key)) {
-            try {
-              if (line && typeof line.remove === 'function') {
-                line.remove()
-              }
-            } catch {}
-            positionLinesRef.current.delete(key)
-          }
-        })
-
-        // Show TP/SL Lines - ALWAYS show for open positions (automatic)
-        console.log('[Chart] Processing TP/SL lines for', relevantPositions.length, 'positions')
-        relevantPositions.forEach(pos => {
-            const key = `tpsl_${pos.id}`
-            const tpslRefs = tpSlLinesRef.current.get(key) || {}
-            
-            // Take Profit line
-            if (pos.takeProfit && pos.takeProfit > 0) {
-              const qtyText = (pos.volume ?? 0).toFixed(2)
-              const pnlText = formatPositionPnl(pos)
-              // Format: TP volume +P/L USD X
-              const tpText = `TP ${qtyText} ${pnlText} X`
-              
-              if (!tpslRefs.tp) {
-                try {
-                  if (typeof chart.createOrderLine === 'function') {
-                    const tpLine = chart.createOrderLine()
-                    if (tpLine && typeof tpLine.setPrice === 'function') {
-                      tpLine.setPrice(pos.takeProfit)
-                      tpLine.setText(tpText)
-                      // Green color for TP lines
-                      tpLine.setLineColor('#10B981')
-                      tpLine.setBodyBackgroundColor('rgba(0,0,0,0)')
-                      // Set line style to solid and thin if available
-                      if (typeof tpLine.setLineStyle === 'function') {
-                        try { tpLine.setLineStyle(0) } catch {} // 0 = solid
-                      }
-                      if (typeof tpLine.setLineWidth === 'function') {
-                        try { tpLine.setLineWidth(1) } catch {} // 1 = thin
-                      }
-                      // Make line visible
-                      if (typeof tpLine.setVisible === 'function') {
-                        try { tpLine.setVisible(true) } catch {}
-                      }
-                      if (typeof tpLine.show === 'function') {
-                        try { tpLine.show() } catch {}
-                      }
-                      // Add click handler for close
-                      if (onClosePosition) {
-                        if (typeof tpLine.onClick === 'function') {
-                          try {
-                            tpLine.onClick(() => {
-                              const positionId = extractPositionId(pos)
-                              if (positionId) {
-                                onClosePosition(pos.id).catch(e => {
-                                  console.error('[Chart] Failed to close position:', e)
-                                })
-                              }
-                            })
-                          } catch {}
-                        }
-                        if (typeof tpLine.setCancellable === 'function') {
-                          try { tpLine.setCancellable(true) } catch {}
-                        }
-                      }
-                      tpslRefs.tp = tpLine
-                    }
-                  }
-                } catch (e) {
-                  console.warn('[Chart] Failed to create TP line:', e)
-                }
-              } else {
-                try {
-                  if (tpslRefs.tp && typeof tpslRefs.tp.setPrice === 'function') {
-                    tpslRefs.tp.setPrice(pos.takeProfit)
-                    if (typeof tpslRefs.tp.setText === 'function') {
-                      tpslRefs.tp.setText(tpText)
-                    }
-                  }
-                } catch {}
-              }
-            } else if (tpslRefs.tp) {
-              try {
-                if (tpslRefs.tp && typeof tpslRefs.tp.remove === 'function') {
-                  tpslRefs.tp.remove()
-                }
-              } catch {}
-              tpslRefs.tp = undefined
-            }
-
-            // Stop Loss line
-            if (pos.stopLoss && pos.stopLoss > 0) {
-              const qtyText = (pos.volume ?? 0).toFixed(2)
-              // For SL, calculate potential loss: (openPrice - stopLoss) * volume
-              const slLoss = pos.type === 'Buy' 
-                ? (pos.openPrice - pos.stopLoss) * (pos.volume ?? 1)
-                : (pos.stopLoss - pos.openPrice) * (pos.volume ?? 1)
-              const slLossFormatted = formatCurrency(Math.abs(slLoss), 2)
-              // Format: SL volume -P/L USD X (always negative for SL)
-              const slText = `SL ${qtyText} -${slLossFormatted} USD X`
-              
-              if (!tpslRefs.sl) {
-                try {
-                  if (typeof chart.createOrderLine === 'function') {
-                    const slLine = chart.createOrderLine()
-                    if (slLine && typeof slLine.setPrice === 'function') {
-                      slLine.setPrice(pos.stopLoss)
-                      slLine.setText(slText)
-                      // Red color for SL lines
-                      slLine.setLineColor('#EF4444')
-                      slLine.setBodyBackgroundColor('rgba(0,0,0,0)')
-                      // Set line style to solid and thin if available
-                      if (typeof slLine.setLineStyle === 'function') {
-                        try { slLine.setLineStyle(0) } catch {} // 0 = solid
-                      }
-                      if (typeof slLine.setLineWidth === 'function') {
-                        try { slLine.setLineWidth(1) } catch {} // 1 = thin
-                      }
-                      // Make line visible
-                      if (typeof slLine.setVisible === 'function') {
-                        try { slLine.setVisible(true) } catch {}
-                      }
-                      if (typeof slLine.show === 'function') {
-                        try { slLine.show() } catch {}
-                      }
-                      // Add click handler for close
-                      if (onClosePosition) {
-                        if (typeof slLine.onClick === 'function') {
-                          try {
-                            slLine.onClick(() => {
-                              const positionId = extractPositionId(pos)
-                              if (positionId) {
-                                onClosePosition(pos.id).catch(e => {
-                                  console.error('[Chart] Failed to close position:', e)
-                                })
-                              }
-                            })
-                          } catch {}
-                        }
-                        if (typeof slLine.setCancellable === 'function') {
-                          try { slLine.setCancellable(true) } catch {}
-                        }
-                      }
-                      tpslRefs.sl = slLine
-                    }
-                  }
-                } catch (e) {
-                  console.warn('[Chart] Failed to create SL line:', e)
-                }
-              } else {
-                try {
-                  if (tpslRefs.sl && typeof tpslRefs.sl.setPrice === 'function') {
-                    tpslRefs.sl.setPrice(pos.stopLoss)
-                    if (typeof tpslRefs.sl.setText === 'function') {
-                      tpslRefs.sl.setText(slText)
-                    }
-                  }
-                } catch {}
-              }
-            } else if (tpslRefs.sl) {
-              try {
-                if (tpslRefs.sl && typeof tpslRefs.sl.remove === 'function') {
-                  tpslRefs.sl.remove()
-                }
-              } catch {}
-              tpslRefs.sl = undefined
-            }
-
-          tpSlLinesRef.current.set(key, tpslRefs)
-        })
-        
-        // Remove TP/SL lines for positions that no longer exist
-        tpSlLinesRef.current.forEach((refs, key) => {
-          if (!relevantPositions.some(p => `tpsl_${p.id}` === key)) {
-            try {
-              if (refs.tp && typeof refs.tp.remove === 'function') refs.tp.remove()
-              if (refs.sl && typeof refs.sl.remove === 'function') refs.sl.remove()
-            } catch {}
-            tpSlLinesRef.current.delete(key)
-          }
-        })
-
-        // Price Alerts - placeholder (would need price alert data)
-        if (!settings.showPriceAlerts) {
-          priceAlertLinesRef.current.forEach((line) => {
-            try {
-              if (line && typeof line.remove === 'function') {
-                line.remove()
-              }
-            } catch {}
-          })
-          priceAlertLinesRef.current.clear()
-        }
-
-        // Signals - placeholder (would need signals data)
-        if (!settings.showSignals) {
-          signalMarkersRef.current.forEach((marker) => {
-            try {
-              if (marker && typeof marker.remove === 'function') {
-                marker.remove()
-              }
-            } catch {}
-          })
-          signalMarkersRef.current.clear()
-        }
-
-        // HMR Periods - placeholder (would need HMR data)
-        if (!settings.showHMR) {
-          hmrZonesRef.current.forEach((zone) => {
-            try {
-              if (zone && typeof zone.remove === 'function') {
-                zone.remove()
-              }
-            } catch {}
-          })
-          hmrZonesRef.current.clear()
-        }
-
-        // Economic Calendar - placeholder (would need calendar data)
-        if (!settings.showEconomicCalendar) {
-          economicCalendarMarkersRef.current.forEach((marker) => {
-            try {
-              if (marker && typeof marker.remove === 'function') {
-                marker.remove()
-              }
-            } catch {}
-          })
-          economicCalendarMarkersRef.current.clear()
-        }
-
-      } catch (e) {
-        console.warn('[Chart] Error updating overlays:', e)
+      } catch (error) {
+        console.error('[Chart] Error creating lines on chart ready:', error)
       }
+    }
+
+    if (chartReadyRef.current) {
+      applyPositionLines()
+      return
+    }
+
+    if (waitingForReadyRef.current) return
+    waitingForReadyRef.current = true
+
+    widget.onChartReady(() => {
+      waitingForReadyRef.current = false
+      chartReadyRef.current = true
+      applyPositionLines()
     })
-  }, [symbol, positions, settings])
+  }, [symbol, positions, settings.showOnChart, createPositionLines])
 
   // Clear error when widget successfully loads
   useEffect(() => {

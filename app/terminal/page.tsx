@@ -65,13 +65,25 @@ const ChartContainer = dynamic(
     if (typeof window === 'undefined') {
       return Promise.resolve({ default: () => null })
     }
-    return import("@/components/chart/chart-container").then(mod => ({ default: mod.ChartContainer }))
+    console.log('[Terminal] Loading ChartContainer component...')
+    return import("@/components/chart/chart-container")
+      .then(mod => {
+        console.log('[Terminal] ✅ ChartContainer loaded successfully')
+        return { default: mod.ChartContainer }
+      })
+      .catch(err => {
+        console.error('[Terminal] ❌ Failed to load ChartContainer:', err)
+        return { default: () => <div className="text-red-500">Chart failed to load</div> }
+      })
   },
   {
     ssr: false,
-    loading: () => <div className="w-full h-full bg-[#01040D] rounded-lg flex items-center justify-center">
-      <div className="text-white/60">Loading chart...</div>
-    </div>
+    loading: () => {
+      console.log('[Terminal] ChartContainer is loading...')
+      return <div className="w-full h-full bg-[#01040D] rounded-lg flex items-center justify-center">
+        <div className="text-white/60">Loading chart...</div>
+      </div>
+    }
   }
 )
 import { soundManager } from "@/lib/sound-manager"
@@ -633,11 +645,34 @@ function TerminalContent() {
     isConnected: positionsConnected, 
     isConnecting: positionsConnecting,
     error: positionsError,
-    reconnect: positionsReconnect, // available if needed, but not auto-called
+    reconnect: positionsReconnect,
   } = usePositionsSignalR({
     accountId: currentAccountId,
     enabled: true
-  });
+  })
+  
+  // Essential logging for positions
+  React.useEffect(() => {
+    if (!currentAccountId) {
+      console.warn('[Positions] ⚠️ No accountId - positions will not load')
+      return
+    }
+    
+    if (positionsError) {
+      console.error('[Positions] ❌ Error:', positionsError)
+    }
+    
+    if (positionsConnecting) {
+      console.log('[Positions] 🔄 Connecting... accountId:', currentAccountId)
+    }
+    
+    if (positionsConnected) {
+      console.log('[Positions] ✅ Connected - Count:', signalRPositions.length, 'accountId:', currentAccountId)
+      if (signalRPositions.length > 0) {
+        console.log('[Positions] 📋 Positions:', signalRPositions.map(p => ({ symbol: p.symbol, type: p.type, price: p.openPrice })))
+      }
+    }
+  }, [currentAccountId, positionsConnected, positionsConnecting, positionsError, signalRPositions.length])
 
   // Chart interval state (TradingView resolution)
   const [chartInterval, setChartInterval] = React.useState<string>('1')
@@ -1473,6 +1508,28 @@ function TerminalContent() {
       console.log('ðŸ"„ Positions Connecting...');
     }
   }, [positionsConnected, positionsConnecting, positionsError, formattedPositions.length]);
+
+  // Enhanced debug logging for positions
+  React.useEffect(() => {
+    console.log('[Terminal] 🔍 Positions Status:', {
+      accountId: currentAccountId,
+      isConnected: positionsConnected,
+      isConnecting: positionsConnecting,
+      error: positionsError,
+      signalRPositionsCount: signalRPositions.length,
+      formattedPositionsCount: formattedPositions.length,
+      hasAccountId: !!currentAccountId
+    })
+    if (!currentAccountId) {
+      console.warn('⚠️ No accountId provided to positions hook - positions will not load')
+    }
+    if (positionsConnected && formattedPositions.length === 0 && signalRPositions.length === 0) {
+      console.warn('⚠️ Positions connected but no positions received. This could mean:')
+      console.warn('   1. Account has no open positions')
+      console.warn('   2. Positions API returned empty array')
+      console.warn('   3. Connection established but data not received yet')
+    }
+  }, [positionsConnected, positionsConnecting, positionsError, formattedPositions.length, signalRPositions.length, currentAccountId])
 
   // When a new balance (for the selected id) loads, clear pending type:
   React.useEffect(() => {
@@ -2674,12 +2731,18 @@ function TerminalContent() {
               )}
               {/* Chart Area */}
               <div className="flex-1 overflow-hidden min-h-0">
-                <ChartContainer 
-                  symbol={activeTab?.symbol || "BTCUSD"}
-                  accountId={currentAccountId}
-                  className="h-full"
-                  positions={formattedPositions.filter(p => p.type === 'Buy' || p.type === 'Sell')}
-                  onOpenOrderPanel={() => setIsRightPanelCollapsed(false)}
+                {(() => {
+                  const chartSymbol = activeTab?.symbol || "BTCUSD"
+                  const chartPositions = formattedPositions.filter(p => p.type === 'Buy' || p.type === 'Sell')
+                  
+                  return (
+                    <ChartContainer 
+                      key={`chart-${chartSymbol}-${currentAccountId}-${chartPositions.length}`}
+                      symbol={chartSymbol}
+                      accountId={currentAccountId}
+                      className="h-full"
+                      positions={chartPositions}
+                      onOpenOrderPanel={() => setIsRightPanelCollapsed(false)}
                   onClosePosition={async (id) => {
                     try {
                       console.log('[Chart] Closing position:', id);
@@ -2765,6 +2828,8 @@ function TerminalContent() {
                     }
                   }}
                 />
+                  )
+                })()}
               </div>
 
               {/* Positions Table */}

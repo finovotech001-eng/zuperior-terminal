@@ -101,9 +101,16 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
+    console.error('[Positions List API] ❌ CRITICAL ERROR:', error)
+    console.error('[Positions List API] Error details:', error instanceof Error ? {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    } : error)
     return NextResponse.json({ 
       success: false, 
-      message: error instanceof Error ? error.message : 'Internal server error' 
+      message: error instanceof Error ? error.message : 'Internal server error',
+      details: error instanceof Error ? error.message : String(error)
     }, { status: 500 })
   }
 }

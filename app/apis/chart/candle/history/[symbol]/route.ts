@@ -122,9 +122,17 @@ export async function GET(
       }
     })
   } catch (error) {
-    console.error('Chart history API error:', error)
+    console.error('[Chart History API] ❌ CRITICAL ERROR:', error)
+    console.error('[Chart History API] Error details:', error instanceof Error ? {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    } : error)
     return NextResponse.json(
-      { error: 'Failed to fetch chart history' },
+      { 
+        error: 'Failed to fetch chart history',
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     )
   }

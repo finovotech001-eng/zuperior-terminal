@@ -101,9 +101,17 @@ export async function GET(
       }
     })
   } catch (error) {
-    console.error('Chart current API error:', error)
+    console.error('[Chart Current API] ❌ CRITICAL ERROR:', error)
+    console.error('[Chart Current API] Error details:', error instanceof Error ? {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    } : error)
     return NextResponse.json(
-      { error: 'Failed to fetch current candle' },
+      { 
+        error: 'Failed to fetch current candle',
+        details: error instanceof Error ? error.message : String(error)
+      },
       { status: 500 }
     )
   }

@@ -705,7 +705,7 @@ export function usePositionsSignalR({ accountId, enabled = true }: UsePositionsP
     }
 
     // IMPORTANT: Clean up existing connection BEFORE starting new one
-    console.log(`🔄 [Positions] Account changed to: ${accountId}`)
+    console.log(`[Positions] 🔄 Connecting to account: ${accountId}`)
     
     // Close old connection immediately
     if (sseRef.current) {
