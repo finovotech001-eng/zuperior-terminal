@@ -85,12 +85,15 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
   const tabRefs = React.useRef<(HTMLButtonElement | null)[]>([])
   const [indicatorStyle, setIndicatorStyle] = React.useState({ left: 0, width: 0 })
 
-  // Single scroll container
-  const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+  // Scroll containers for header and body (to sync scrolling)
+  const headerScrollRef = React.useRef<HTMLDivElement>(null)
+  const bodyScrollRef = React.useRef<HTMLDivElement>(null)
   const [showLeftFade, setShowLeftFade] = React.useState(false)
   const [showRightFade, setShowRightFade] = React.useState(false)
+  const isScrollingRef = React.useRef(false)
 
-  const handleScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
+  const handleHeaderScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (isScrollingRef.current) return
     const target = e.currentTarget
     const scrollLeft = target.scrollLeft
     const scrollWidth = target.scrollWidth
@@ -99,12 +102,42 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     // Update fade indicators
     setShowLeftFade(scrollLeft > 20)
     setShowRightFade(scrollLeft + clientWidth < scrollWidth - 20)
+    
+    // Sync body scrolling with header
+    if (bodyScrollRef.current) {
+      isScrollingRef.current = true
+      bodyScrollRef.current.scrollLeft = scrollLeft
+      requestAnimationFrame(() => {
+        isScrollingRef.current = false
+      })
+    }
+  }, [])
+  
+  const handleBodyScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (isScrollingRef.current) return
+    const target = e.currentTarget
+    const scrollLeft = target.scrollLeft
+    const scrollWidth = target.scrollWidth
+    const clientWidth = target.clientWidth
+
+    // Update fade indicators
+    setShowLeftFade(scrollLeft > 20)
+    setShowRightFade(scrollLeft + clientWidth < scrollWidth - 20)
+    
+    // Sync header scrolling with body
+    if (headerScrollRef.current) {
+      isScrollingRef.current = true
+      headerScrollRef.current.scrollLeft = scrollLeft
+      requestAnimationFrame(() => {
+        isScrollingRef.current = false
+      })
+    }
   }, [])
 
   // Check for overflow on mount/data change
   React.useEffect(() => {
-    if (scrollContainerRef.current) {
-      const { scrollWidth, clientWidth } = scrollContainerRef.current
+    if (bodyScrollRef.current) {
+      const { scrollWidth, clientWidth } = bodyScrollRef.current
       setShowRightFade(scrollWidth > clientWidth)
     }
   }, [openPositions, pendingPositions, closedPositions, activeTab, columns])
@@ -259,12 +292,15 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     
     return (
     <TooltipProvider key={position.id} delayDuration={300}>
-      <div
-        className={`grid gap-1 px-4 py-3 hover:bg-white/5 transition-colors border-b border-white/5 text-sm min-w-max ${
+      <div className="flex border-b border-white/5 hover:bg-white/5 transition-colors relative">
+        {/* Left Section - No individual scrolling, will scroll with table */}
+        <div className="flex-1 overflow-x-auto">
+          <div className={`grid gap-2 px-4 py-3 text-sm ${
           isClosedPosition
-            ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px_100px]" // Without T/P, S/L, Actions - P/L at end
-            : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]" // Full columns
+              ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px]" // Without T/P, S/L, Actions, P/L
+              : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px]" // Full columns without P/L and Actions
         }`}
+          style={{ minWidth: 'max-content' }}
       >
       {/* Symbol */}
       {columns.find(c => c.key === "symbol")?.visible && (
@@ -649,10 +685,15 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
         <div className="flex items-center price-font text-white/80">{position.swap}</div>
       )}
 
+          </div>
+        </div>
+        
+        {/* Right Section - Fixed P/L and Actions */}
+        <div className="flex items-center shrink-0 border-l border-white/10 bg-[#01040D] sticky right-0 z-10">
       {/* P/L */}
       {columns.find(c => c.key === "pnl")?.visible && (
         <div className={cn(
-          "flex items-center gap-2 price-font font-medium",
+              "flex items-center justify-end price-font font-medium px-4 py-3 min-w-[140px]",
           position.pnl >= 0 ? "text-success" : "text-danger"
         )}>
           {position.pnl >= 0 ? "+" : ""}{position.pnl.toFixed(2)}
@@ -661,7 +702,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
 
       {/* Actions - Hidden for closed positions */}
       {!isClosedPosition && (
-      <div className="flex items-center justify-center gap-1" style={{ position: 'relative', zIndex: 10 }}>
+          <div className="flex items-center justify-center gap-1 px-4 py-3 min-w-[100px]">
         <Popover 
           open={openModifyPopover === `${position.id}_actions`} 
           onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_actions` : null)}
@@ -799,10 +840,11 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
         </button>
       </div>
       )}
+        </div>
       </div>
     </TooltipProvider>
     )
-  }, [columns, formatPrice, onClose, activeTab]) // Dependencies must include everything used inside this function
+  }, [columns, formatPrice, onClose, activeTab, accountId, openModifyPopover, setOpenModifyPopover, onNotify]) // Dependencies must include everything used inside this function
 
   // Renderer for grouped parent row (collapsed/expanded control)
   const renderGroupRow = React.useCallback((group: PositionGroup) => {
@@ -810,13 +852,11 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
     const pnlPositive = (group.pnl ?? 0) >= 0
     return (
       <div key={`group-${group.key}`} className="border-b border-white/5">
-        <div
-          className={cn(
-            "grid gap-1 px-4 py-3 hover:bg-white/5 transition-colors text-sm min-w-max cursor-pointer",
-            // Use the open tab columns layout (full columns)
-            "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]"
-          )}
-          onClick={() => toggleGroupExpanded(group.key)}
+        <div className="flex hover:bg-white/5 transition-colors cursor-pointer" onClick={() => toggleGroupExpanded(group.key)}>
+          {/* Left Section - No individual scrolling, will scroll with table */}
+          <div className="flex-1">
+            <div className="grid gap-2 px-4 py-3 text-sm grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px]"
+            style={{ minWidth: 'max-content' }}
         >
           {/* Symbol with count badge and chevron */}
           {columns.find(c => c.key === "symbol")?.visible && (
@@ -890,13 +930,20 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
             <div className="flex items-center price-font text-white/80">{formatPrice(group.swap ?? 0)}</div>
           )}
 
+            </div>
+          </div>
+          
+          {/* Right Section - Fixed P/L and Actions */}
+          <div className="flex items-center shrink-0 border-l border-white/10 bg-[#01040D] sticky right-0 z-10">
           {/* P/L (sum) */}
           {columns.find(c => c.key === "pnl")?.visible && (
-            <div className={cn("flex items-center price-font font-medium", pnlPositive ? "text-success" : "text-danger")}>{pnlPositive ? "+" : ""}{formatPrice(group.pnl ?? 0)}</div>
+              <div className={cn("flex items-center justify-end price-font font-medium px-4 py-3 min-w-[140px]", pnlPositive ? "text-success" : "text-danger")}>
+                {pnlPositive ? "+" : ""}{formatPrice(group.pnl ?? 0)}
+              </div>
           )}
 
           {/* Actions column: Close all in group */}
-          <div className="flex items-center justify-end">
+            <div className="flex items-center justify-end px-4 py-3 min-w-[100px]">
             <Popover
               open={confirmGroup?.key === group.key}
               onOpenChange={(open) => {
@@ -950,6 +997,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 </div>
               </PopoverContent>
             </Popover>
+          </div>
           </div>
         </div>
 
@@ -1119,20 +1167,24 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
             transition={{ duration: 0.2 }}
           />
 
-          {/* Single Scrollable Container */}
-          <div
-            ref={scrollContainerRef}
-            onScroll={handleScroll}
-            className="flex-1 overflow-auto scrollbar-thin"
+          {/* Table Container with Two Sections */}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            {/* Table Header */}
+            <div className="flex border-b border-white/10 bg-white/5 sticky top-0 z-10 backdrop-blur-xl">
+              {/* Left Section - Scrollable header */}
+              <div
+                ref={headerScrollRef}
+                onScroll={handleHeaderScroll}
+                className="flex-1 overflow-x-auto scrollbar-thin"
             style={{ scrollBehavior: "smooth" }}
           >
-            <div className="inline-block min-w-full">
-              {/* Table Header */}
-              <div className={`grid gap-1 px-4 py-2 bg-white/5 text-xs font-medium text-white/60 border-b border-white/10 sticky top-0 z-10 min-w-max backdrop-blur-xl ${
+                <div className={`grid gap-2 px-4 py-2 text-xs font-medium text-white/60 ${
                 activeTab === "closed" 
-                  ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px_100px]" // Without T/P, S/L, Actions - P/L at end
-                  : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px_100px_90px]" // Full columns
-              }`}>
+                    ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px]" // Without T/P, S/L, Actions, P/L
+                    : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px]" // Full columns without P/L and Actions
+                }`}
+                style={{ minWidth: 'max-content' }}
+                >
                 {columns.find(c => c.key === "symbol")?.visible && <div>Symbol</div>}
                 {columns.find(c => c.key === "type")?.visible && <div>Type</div>}
                 {columns.find(c => c.key === "volume")?.visible && <div>Volume</div>}
@@ -1145,18 +1197,400 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 {columns.find(c => c.key === "position")?.visible && <div>Position</div>}
                 {columns.find(c => c.key === "openTime")?.visible && <div>Open time</div>}
                 {columns.find(c => c.key === "swap")?.visible && <div>Swap, USD</div>}
-                {columns.find(c => c.key === "pnl")?.visible && <div>P/L, USD</div>}
-                {activeTab !== "closed" && <div></div>}
+                </div>
               </div>
 
+              {/* Right Section - Fixed P/L and Actions header */}
+              <div className="flex items-center shrink-0 border-l border-white/10 bg-white/5 sticky right-0 z-20">
+                {columns.find(c => c.key === "pnl")?.visible && (
+                  <div className="text-xs font-medium text-white/60 px-4 py-2 min-w-[140px] text-right">
+                    P/L, USD
+                  </div>
+                )}
+                {activeTab !== "closed" && (
+                  <div className="px-4 py-2 min-w-[100px]"></div>
+                )}
+              </div>
+            </div>
+
+            {/* Table Rows Container */}
+            <div className="flex-1 overflow-hidden flex flex-col">
+              {/* Scrollable container for entire table */}
+              <div 
+                ref={bodyScrollRef}
+                onScroll={handleBodyScroll}
+                className="flex-1 overflow-y-auto overflow-x-auto scrollbar-thin"
+                style={{ scrollBehavior: "smooth" }}
+              >
+                <div className="flex min-w-max">
+                  {/* Left Section - All rows scroll together */}
+                  <div className="flex-1">
+                    <div>
               {/* Table Rows */}
-              <div className="min-w-max">
-                {activeTab === "open" && !shouldGroupOpen && openPositions.length > 0 && openPositions.map(renderPositionRow)}
+                    {activeTab === "open" && !shouldGroupOpen && openPositions.length > 0 && openPositions.map((position) => {
+                      const isClosedPosition = position.id?.startsWith('hist-')
+                      return (
+                        <div key={position.id} className={`grid gap-2 px-4 py-3 text-sm border-b border-white/5 hover:bg-white/5 transition-colors ${
+                          isClosedPosition
+                            ? "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_150px_90px_100px]"
+                            : "grid-cols-[minmax(180px,1fr)_65px_90px_100px_100px_90px_90px_100px_150px_90px]"
+                        }`}
+                        style={{ minWidth: 'max-content' }}
+                        >
+                          {columns.find(c => c.key === "symbol")?.visible && (
+                            <div className="flex items-center gap-2">
+                              <CurrencyPairFlags 
+                                symbol={position.symbol} 
+                                size="sm" 
+                                fallbackCountryCode={position.countryCode || undefined}
+                                fallbackIcon={position.icon || undefined}
+                              />
+                              <span className="font-medium text-white">{position.symbol}</span>
+                            </div>
+                          )}
+                          {columns.find(c => c.key === "type")?.visible && (
+                            <div className="flex items-center">
+                              <span className={cn("px-2 py-0.5 rounded text-xs font-medium", position.type === "Buy" ? "bg-success/20 text-success" : "bg-danger/20 text-danger")}>
+                                ● {position.type}
+                              </span>
+                            </div>
+                          )}
+                          {columns.find(c => c.key === "volume")?.visible && (
+                            <div className="flex items-center price-font text-white/80">{position.volume.toFixed(2)}</div>
+                          )}
+                          {columns.find(c => c.key === "openPrice")?.visible && (
+                            <div className="flex items-center price-font text-white/80">{formatPrice(position.openPrice)}</div>
+                          )}
+                          {columns.find(c => c.key === "currentPrice")?.visible && (
+                            <div className="flex items-center price-font font-medium text-white">{formatPrice(position.currentPrice)}</div>
+                          )}
+                          {columns.find(c => c.key === "tp")?.visible && !isClosedPosition && (
+                            <div className="flex items-center">
+                              <Popover open={openModifyPopover === `${position.id}_tp`} onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_tp` : null)}>
+                                <PopoverTrigger asChild>
+                                  {position.takeProfit !== undefined && position.takeProfit !== null && Number(position.takeProfit) > 0 ? (
+                                    <button className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted" title={`Take Profit: ${formatPrice(position.takeProfit)}`}>
+                                      {formatPrice(position.takeProfit)}
+                                    </button>
+                                  ) : (
+                                    <button className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted" title="Click to set Take Profit">
+                                      Modify
+                                    </button>
+                                  )}
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start" side="bottom">
+                                  <PositionManagementPanel
+                                    position={{ id: position.id, symbol: position.symbol, countryCode: position.countryCode, icon: position.icon, type: position.type, lots: position.volume, openPrice: position.openPrice, currentPrice: position.currentPrice, takeProfit: position.takeProfit, stopLoss: position.stopLoss, pnl: position.pnl }}
+                                    onClose={() => setOpenModifyPopover(null)}
+                                    onModify={async (data) => {
+                                      try {
+                                        const direct = Number(position.ticket)
+                                        const ticketStr = position.position || position.id
+                                        const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
+                                        const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                                        if (!accountId || !Number.isFinite(ticket)) return
+                                        let accessToken: string | undefined = undefined
+                                        try {
+                                          const authRes = await fetch('/apis/auth/mt5-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId }) })
+                                          const authJson = await authRes.json().catch(() => ({} as any))
+                                          if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                                        } catch {}
+                                        const payload: any = { accountId, positionId: ticket, comment: `Modify TP/SL via table for ${position.symbol}`, ...(accessToken ? { accessToken } : {}) }
+                                        if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                                        if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                                        const res = await fetch('/apis/trading/position/modify', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                                        const text = await res.text().catch(() => '')
+                                        let json: any = null
+                                        try { json = text ? JSON.parse(text) : null } catch (e) { json = text }
+                                        const isSuccess = res.ok && (json?.status === true || json?.success === true || json?.data?.status === true || json?.data?.success === true || (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error')))
+                                        if (isSuccess) {
+                                          const modifiedParts: string[] = []
+                                          if (data.takeProfit !== undefined) modifiedParts.push(`TP: ${data.takeProfit.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                                          if (data.stopLoss !== undefined) modifiedParts.push(`SL: ${data.stopLoss.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                                          const detailMsg = modifiedParts.length > 0 ? `${position.symbol} - ${modifiedParts.join(', ')}` : `${position.symbol} position modified`
+                                          try { onNotify?.({ type: 'success', title: 'Position modified', message: detailMsg }) } catch {}
+                                          setTimeout(() => { setOpenModifyPopover(null) }, 2000)
+                                        } else {
+                                          const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                                          try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
+                                        }
+                                      } catch (e) {
+                                        try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
+                                      }
+                                    }}
+                                    onPartialClose={() => {}}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          )}
+                          {columns.find(c => c.key === "sl")?.visible && !isClosedPosition && (
+                            <div className="flex items-center">
+                              <Popover open={openModifyPopover === `${position.id}_sl`} onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_sl` : null)}>
+                                <PopoverTrigger asChild>
+                                  {position.stopLoss !== undefined && position.stopLoss !== null && Number(position.stopLoss) > 0 ? (
+                                    <button className="price-font text-xs text-white/60 hover:text-primary transition-colors underline decoration-dotted" title={`Stop Loss: ${formatPrice(position.stopLoss)}`}>
+                                      {formatPrice(position.stopLoss)}
+                                    </button>
+                                  ) : (
+                                    <button className="text-xs text-primary hover:text-primary/80 transition-colors underline decoration-dotted" title="Click to set Stop Loss">
+                                      Modify
+                                    </button>
+                                  )}
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start" side="bottom">
+                                  <PositionManagementPanel
+                                    position={{ id: position.id, symbol: position.symbol, countryCode: position.countryCode, icon: position.icon, type: position.type, lots: position.volume, openPrice: position.openPrice, currentPrice: position.currentPrice, takeProfit: position.takeProfit, stopLoss: position.stopLoss, pnl: position.pnl }}
+                                    onClose={() => setOpenModifyPopover(null)}
+                                    onModify={async (data) => {
+                                      try {
+                                        const direct = Number(position.ticket)
+                                        const ticketStr = position.position || position.id
+                                        const ticketFromText = parseInt(ticketStr.replace(/[^0-9]/g, ''), 10)
+                                        const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                                        if (!accountId || !Number.isFinite(ticket)) return
+                                        let accessToken: string | undefined = undefined
+                                        try {
+                                          const authRes = await fetch('/apis/auth/mt5-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId }) })
+                                          const authJson = await authRes.json().catch(() => ({} as any))
+                                          if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                                        } catch {}
+                                        const payload: any = { accountId, positionId: ticket, comment: `Modify TP/SL via table for ${position.symbol}`, ...(accessToken ? { accessToken } : {}) }
+                                        if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                                        if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                                        const res = await fetch('/apis/trading/position/modify', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                                        const text = await res.text().catch(() => '')
+                                        let json: any = null
+                                        try { json = text ? JSON.parse(text) : null } catch (e) { json = text }
+                                        const isSuccess = res.ok && (json?.status === true || json?.success === true || json?.data?.status === true || json?.data?.success === true || (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error')))
+                                        if (isSuccess) {
+                                          try { onNotify?.({ type: 'success', title: 'Position modified', message: `Updated TP/SL for ${position.symbol}` }) } catch {}
+                                          setTimeout(() => { setOpenModifyPopover(null) }, 2000)
+                                        } else {
+                                          const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                                          try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
+                                        }
+                                      } catch (e) {
+                                        try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
+                                      }
+                                    }}
+                                    onPartialClose={() => {}}
+                                  />
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          )}
+                          {columns.find(c => c.key === "position")?.visible && (
+                            <div className="flex items-center price-font text-white/80">{position.position}</div>
+                          )}
+                          {columns.find(c => c.key === "openTime")?.visible && (
+                            <div className="flex items-center text-white/60 text-xs">{position.openTime}</div>
+                          )}
+                          {columns.find(c => c.key === "swap")?.visible && (
+                            <div className="flex items-center price-font text-white/80">{position.swap}</div>
+                          )}
+                        </div>
+                      )
+                    })}
                 {activeTab === "open" && shouldGroupOpen && groupedOpenPositions.length > 0 && groupedOpenPositions.map(renderGroupRow)}
                 {activeTab === "pending" && pendingPositions.length > 0 && pendingPositions.map(renderPositionRow)}
-                {activeTab === "closed" && closedPositions.length > 0 && closedPositions.map((pos, idx) => {
-                  return renderPositionRow(pos, idx)
-                })}
+                      {activeTab === "closed" && closedPositions.length > 0 && closedPositions.map(renderPositionRow)}
+                    </div>
+                  </div>
+                  
+                  {/* Right Section - Fixed P/L and Actions for all rows */}
+                  <div className="shrink-0 border-l border-white/10 sticky right-0 bg-[#01040D] z-20">
+                  {activeTab === "open" && !shouldGroupOpen && openPositions.length > 0 && openPositions.map((position) => {
+                    const isClosedPosition = position.id?.startsWith('hist-')
+                    return (
+                      <div key={position.id} className="flex items-center border-b border-white/5 hover:bg-white/5 transition-colors bg-[#01040D]">
+                        {columns.find(c => c.key === "pnl")?.visible && (
+                          <div className={cn("flex items-center justify-end price-font font-medium px-4 py-3 min-w-[140px]", position.pnl >= 0 ? "text-success" : "text-danger")}>
+                            {position.pnl >= 0 ? "+" : ""}{position.pnl.toFixed(2)}
+                          </div>
+                        )}
+                        {!isClosedPosition && (
+                          <div className="flex items-center justify-center gap-1 px-4 py-3 min-w-[100px]">
+                            <Popover open={openModifyPopover === `${position.id}_actions`} onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_actions` : null)}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <PopoverTrigger asChild>
+                                    <IconButton size="sm" variant="ghost">
+                                      <Edit2 className="h-3.5 w-3.5" />
+                                    </IconButton>
+                                  </PopoverTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                  <p>Modify position</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              <PopoverContent className="w-auto p-0" align="end" side="bottom">
+                                <PositionManagementPanel
+                                  position={{ id: position.id, symbol: position.symbol, countryCode: position.countryCode, icon: position.icon, type: position.type, lots: position.volume, openPrice: position.openPrice, currentPrice: position.currentPrice, takeProfit: position.takeProfit, stopLoss: position.stopLoss, pnl: position.pnl }}
+                                  onClose={() => setOpenModifyPopover(null)}
+                                  onModify={async (data) => {
+                                    try {
+                                      const direct = Number(position.ticket)
+                                      const ticketStr = position.position || position.id
+                                      const ticketFromText = parseInt((ticketStr || '').replace(/[^0-9]/g, ''), 10)
+                                      const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                                      if (!accountId || !Number.isFinite(ticket)) return
+                                      let accessToken: string | undefined = undefined
+                                      try {
+                                        const authRes = await fetch('/apis/auth/mt5-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId }) })
+                                        const authJson = await authRes.json().catch(() => ({} as any))
+                                        if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                                      } catch {}
+                                      const payload: any = { accountId, positionId: ticket, comment: `Modify TP/SL via actions for ${position.symbol}`, ...(accessToken ? { accessToken } : {}) }
+                                      if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                                      if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                                      const res = await fetch('/apis/trading/position/modify', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                                      const text = await res.text().catch(() => '')
+                                      let json: any = null
+                                      try { json = text ? JSON.parse(text) : null } catch (e) { json = text }
+                                      const isSuccess = res.ok && (json?.status === true || json?.success === true || json?.data?.status === true || json?.data?.success === true || (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error')))
+                                      if (isSuccess) {
+                                        const modifiedParts: string[] = []
+                                        if (data.takeProfit !== undefined) modifiedParts.push(`TP: ${data.takeProfit.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                                        if (data.stopLoss !== undefined) modifiedParts.push(`SL: ${data.stopLoss.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                                        const detailMsg = modifiedParts.length > 0 ? `${position.symbol} - ${modifiedParts.join(', ')}` : `${position.symbol} position modified`
+                                        try { onNotify?.({ type: 'success', title: 'Position modified', message: detailMsg }) } catch {}
+                                        setTimeout(() => { setOpenModifyPopover(null) }, 2000)
+                                      } else {
+                                        const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                                        try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
+                                      }
+                                    } catch (e) {
+                                      try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
+                                    }
+                                  }}
+                                  onPartialClose={() => {}}
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <button type="button" title="Close position" onClick={() => { if (onClose) onClose(position.id) }} className="inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 h-7 w-7 hover:bg-white/5 text-danger hover:text-danger/80 cursor-pointer border-0 bg-transparent" style={{ position: 'relative', zIndex: 9999 }}>
+                              <X className="h-3.5 w-3.5 pointer-events-none" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  )}
+                  {activeTab === "open" && shouldGroupOpen && groupedOpenPositions.length > 0 && groupedOpenPositions.map((group) => {
+                    const pnlPositive = (group.pnl ?? 0) >= 0
+                    return (
+                      <div key={`group-right-${group.key}`} className="flex items-center border-b border-white/5 hover:bg-white/5 transition-colors bg-[#01040D]">
+                        {columns.find(c => c.key === "pnl")?.visible && (
+                          <div className={cn("flex items-center justify-end price-font font-medium px-4 py-3 min-w-[140px]", pnlPositive ? "text-success" : "text-danger")}>
+                            {pnlPositive ? "+" : ""}{formatPrice(group.pnl ?? 0)}
+                          </div>
+                        )}
+                        <div className="flex items-center justify-end px-4 py-3 min-w-[100px]">
+                          <Popover open={confirmGroup?.key === group.key} onOpenChange={(open) => setConfirmGroup(open ? group : null)}>
+                            <PopoverTrigger asChild>
+                              <button type="button" title="Close all positions in this group" onClick={(e) => { e.stopPropagation(); if (!onClose) return; setConfirmGroup(group) }} disabled={!!closingGroups[group.key]} className={cn("inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 h-7 w-7 border-0 bg-transparent", closingGroups[group.key] ? "opacity-50 cursor-not-allowed text-danger" : "hover:bg-white/5 text-danger hover:text-danger/80 cursor-pointer")}>
+                                <X className={cn("h-3.5 w-3.5 pointer-events-none", closingGroups[group.key] ? "animate-pulse" : undefined)} />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent side="bottom" align="end" alignOffset={4} className="w-[360px] p-4 bg-[#1b1f2a] border-white/10 shadow-xl">
+                              <div className="text-white font-medium mb-3">Close all {group.symbol} positions at the market price?</div>
+                              <div className="flex gap-2 justify-end">
+                                <Button variant="outline" onClick={() => setConfirmGroup(null)}>Cancel</Button>
+                                <Button variant="default" className="bg-primary hover:bg-primary/90 text-white" onClick={async () => {
+                                  if (!onClose) return
+                                  const key = group.key
+                                  setClosingGroups(prev => ({ ...prev, [key]: true }))
+                                  setConfirmGroup(null)
+                                  const results = await Promise.allSettled(group.positions.map(p => Promise.resolve(onClose(p.id))))
+                                  const ok = results.filter(r => r.status === 'fulfilled').length
+                                  const failed = results.length - ok
+                                  try { onNotify?.({ type: failed > 0 ? 'error' : 'success', title: failed > 0 ? 'Close all finished' : 'Positions closed', message: `${ok} of ${results.length} positions closed${failed>0?` (${failed} failed)`:''}` }) } catch {}
+                                  setClosingGroups(prev => ({ ...prev, [key]: false }))
+                                }}>Confirm</Button>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {activeTab === "pending" && pendingPositions.length > 0 && pendingPositions.map((position) => {
+                    const isClosedPosition = position.id?.startsWith('hist-')
+                    return (
+                      <div key={position.id} className="flex items-center border-b border-white/5 hover:bg-white/5 transition-colors bg-[#01040D]">
+                        {columns.find(c => c.key === "pnl")?.visible && (
+                          <div className={cn("flex items-center justify-end price-font font-medium px-4 py-3 min-w-[140px]", position.pnl >= 0 ? "text-success" : "text-danger")}>
+                            {position.pnl >= 0 ? "+" : ""}{position.pnl.toFixed(2)}
+                          </div>
+                        )}
+                        {!isClosedPosition && (
+                          <div className="flex items-center justify-center gap-1 px-4 py-3 min-w-[100px]">
+                            <Popover open={openModifyPopover === `${position.id}_actions`} onOpenChange={(open) => setOpenModifyPopover(open ? `${position.id}_actions` : null)}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <PopoverTrigger asChild>
+                                    <IconButton size="sm" variant="ghost">
+                                      <Edit2 className="h-3.5 w-3.5" />
+                                    </IconButton>
+                                  </PopoverTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                  <p>Modify position</p>
+                                </TooltipContent>
+                              </Tooltip>
+                              <PopoverContent className="w-auto p-0" align="end" side="bottom">
+                                <PositionManagementPanel
+                                  position={{ id: position.id, symbol: position.symbol, countryCode: position.countryCode, icon: position.icon, type: position.type, lots: position.volume, openPrice: position.openPrice, currentPrice: position.currentPrice, takeProfit: position.takeProfit, stopLoss: position.stopLoss, pnl: position.pnl }}
+                                  onClose={() => setOpenModifyPopover(null)}
+                                  onModify={async (data) => {
+                                    try {
+                                      const direct = Number(position.ticket)
+                                      const ticketStr = position.position || position.id
+                                      const ticketFromText = parseInt((ticketStr || '').replace(/[^0-9]/g, ''), 10)
+                                      const ticket = Number.isFinite(direct) && direct > 0 ? direct : (Number.isFinite(ticketFromText) && ticketFromText > 0 ? ticketFromText : NaN)
+                                      if (!accountId || !Number.isFinite(ticket)) return
+                                      let accessToken: string | undefined = undefined
+                                      try {
+                                        const authRes = await fetch('/apis/auth/mt5-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId }) })
+                                        const authJson = await authRes.json().catch(() => ({} as any))
+                                        if (authRes.ok && authJson?.data?.accessToken) accessToken = authJson.data.accessToken
+                                      } catch {}
+                                      const payload: any = { accountId, positionId: ticket, comment: `Modify TP/SL via actions for ${position.symbol}`, ...(accessToken ? { accessToken } : {}) }
+                                      if (data.stopLoss !== undefined) payload.stopLoss = data.stopLoss
+                                      if (data.takeProfit !== undefined) payload.takeProfit = data.takeProfit
+                                      const res = await fetch('/apis/trading/position/modify', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                                      const text = await res.text().catch(() => '')
+                                      let json: any = null
+                                      try { json = text ? JSON.parse(text) : null } catch (e) { json = text }
+                                      const isSuccess = res.ok && (json?.status === true || json?.success === true || json?.data?.status === true || json?.data?.success === true || (res.status >= 200 && res.status < 300 && json && !json.error && !json.message?.includes('error')))
+                                      if (isSuccess) {
+                                        const modifiedParts: string[] = []
+                                        if (data.takeProfit !== undefined) modifiedParts.push(`TP: ${data.takeProfit.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                                        if (data.stopLoss !== undefined) modifiedParts.push(`SL: ${data.stopLoss.toLocaleString('en-US', { maximumFractionDigits: 5 })}`)
+                                        const detailMsg = modifiedParts.length > 0 ? `${position.symbol} - ${modifiedParts.join(', ')}` : `${position.symbol} position modified`
+                                        try { onNotify?.({ type: 'success', title: 'Position modified', message: detailMsg }) } catch {}
+                                        setTimeout(() => { setOpenModifyPopover(null) }, 2000)
+                                      } else {
+                                        const errorMsg = json?.message || json?.error || json?.data?.message || `HTTP ${res.status}: ${res.statusText}`
+                                        try { onNotify?.({ type: 'error', title: 'Modify failed', message: String(errorMsg) }) } catch {}
+                                      }
+                                    } catch (e) {
+                                      try { onNotify?.({ type: 'error', title: 'Modify failed', message: e instanceof Error ? e.message : 'Unknown error' }) } catch {}
+                                    }
+                                  }}
+                                  onPartialClose={() => {}}
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <button type="button" title="Close position" onClick={() => { if (onClose) onClose(position.id) }} className="inline-flex items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 h-7 w-7 hover:bg-white/5 text-danger hover:text-danger/80 cursor-pointer border-0 bg-transparent" style={{ position: 'relative', zIndex: 9999 }}>
+                              <X className="h-3.5 w-3.5 pointer-events-none" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {/* Closed positions P/L is already in renderPositionRow, so we don't render it here */}
 
                 {/* Empty State */}
                 {((activeTab === "open" && ((shouldGroupOpen && groupedOpenPositions.length === 0) || (!shouldGroupOpen && openPositions.length === 0))) ||
@@ -1169,6 +1603,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     )}
                   </div>
                 )}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
