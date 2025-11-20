@@ -45,7 +45,7 @@ export interface OrderData {
   risk?: number
 }
 
-type FormType = "one-click" | "regular" | "risk-calculator"
+type FormType = "one-click" | "regular"
 
 const OrderPanel: React.FC<OrderPanelProps> = ({
   symbol = "XAU/USD",
@@ -97,10 +97,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     if (formType === "regular") {
       setTakeProfitMode("price")
       setStopLossMode("price")
-    } else if (formType === "risk-calculator") {
-      setTakeProfitMode("pips")
-      setStopLossMode("pips")
-      setRiskMode("usd")
     }
   }, [formType])
 
@@ -554,7 +550,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
             <SelectContent>
               <SelectItem value="one-click">One-click form</SelectItem>
               <SelectItem value="regular">Regular form</SelectItem>
-              <SelectItem value="risk-calculator">Risk calculator form</SelectItem>
             </SelectContent>
           </Select>
 
@@ -800,135 +795,6 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
             </>
           )}
 
-          {/* RISK CALCULATOR FORM */}
-          {formType === "risk-calculator" && (
-            <>
-              {/* Sell/Buy Buttons with Spread - BORDERED */}
-              {renderPriceButtonsBordered()}
-
-              {/* Percentage Slider */}
-              {renderPercentageSlider()}
-
-              {/* Market/Pending Tabs */}
-              <Tabs value={orderType} onValueChange={(value: string) => setOrderType(value as "market" | "limit" | "pending")}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="market">Market</TabsTrigger>
-                  <TabsTrigger value="pending">Pending</TabsTrigger>
-                </TabsList>
-              </Tabs>
-
-              {/* Open Price - Only show for Pending orders */}
-              {orderType === "pending" && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-medium text-white/80">Open price</div>
-                    <Tooltip delayDuration={300}>
-                      <TooltipTrigger asChild>
-                        <button className="cursor-pointer">
-                          <HelpCircle className="h-3.5 w-3.5 text-white/40" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Set open price for pending order</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  <div className="flex items-stretch border border-white/10 rounded-md overflow-hidden bg-white/[0.02] focus-within:border-[#8B5CF6]">
-                    <Input
-                      type="number"
-                      value={openPrice}
-                      onChange={(e) => setOpenPrice(e.target.value)}
-                      placeholder={currentBuyPrice.toFixed(3)}
-                      className="flex-1 border-0 bg-transparent text-center price-font text-sm h-9 focus-visible:ring-0 focus-visible:ring-offset-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none placeholder:text-white/40"
-                    />
-                    <div className="flex items-center justify-center px-3 text-xs text-white/60 min-w-[50px]">
-                      Stop
-                    </div>
-                    <button
-                      onClick={() => decrementField(openPrice, setOpenPrice)}
-                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
-                    >
-                      <Minus className="h-3.5 w-3.5 text-white/60" />
-                    </button>
-                    <button
-                      onClick={() => incrementField(openPrice, setOpenPrice)}
-                      className="h-9 w-9 flex items-center justify-center hover:bg-white/5  cursor-pointer"
-                    >
-                      <Plus className="h-3.5 w-3.5 text-white/60" />
-                    </button>
-                  </div>
-                  {openPrice && (
-                    <div className="text-xs text-success">
-                      +{((parseFloat(openPrice) - buyPrice) * 10000).toFixed(1)} pips
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Risk */}
-              {renderInputField(
-                "Risk",
-                risk,
-                setRisk,
-                riskMode,
-                (value: string) => setRiskMode(value as "usd" | "percent"),
-                [
-                  { value: "usd", label: "USD" },
-                  { value: "percent", label: "%" }
-                ],
-                true
-              )}
-
-              {/* Stop Loss */}
-              {renderInputField(
-                "Stop Loss",
-                stopLoss,
-                setStopLoss,
-                stopLossMode,
-                (value: string) => setStopLossMode(value as "pips" | "price"),
-                [
-                  { value: "pips", label: "Pips" },
-                  { value: "price", label: "Price" }
-                ],
-                true
-              )}
-
-              {/* Take Profit */}
-              {renderInputField(
-                "Take Profit",
-                takeProfit,
-                setTakeProfit,
-                takeProfitMode,
-                (value: string) => setTakeProfitMode(value as "pips" | "price"),
-                [
-                  { value: "pips", label: "Pips" },
-                  { value: "price", label: "Price" }
-                ],
-                true
-              )}
-
-              {/* Action Buttons - Only show for Pending orders */}
-              {orderType === "pending" && (
-                <div className="space-y-2 pt-1">
-                  <button
-                    onClick={() => {
-                      // Handle Set SL and Risk action
-                      
-                    }}
-                    className="w-full py-2.5 px-4 rounded-md text-sm font-medium bg-white/10 text-white border border-white/20 hover:bg-white/[0.15]  cursor-pointer"
-                  >
-                    Set SL and Risk
-                  </button>
-                  <button
-                    onClick={() => setOrderType("market")}
-                    className="w-full py-2.5 px-4 rounded-md text-sm font-medium bg-white/[0.02] text-white border border-white/10 hover:bg-white/5  cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </>
-          )}
         </div>
       </div>
     </TooltipProvider>
