@@ -1104,7 +1104,8 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 <div className="space-y-1 p-1">
                   <div className="px-2 py-1.5 text-xs font-medium text-white/60">COLUMNS</div>
                   {/* Defensive check for columns.map */}
-                  {columns && columns.map((column) => (
+                  {/* Exclude P/L from column selector - it's always shown in right section */}
+                  {columns && columns.filter(column => column.key !== "pnl").map((column) => (
                     <div
                       key={column.key}
                       className="flex items-center justify-between px-2 py-1.5 hover:bg-white/5 rounded transition-colors"
@@ -1197,6 +1198,7 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                 {columns.find(c => c.key === "position")?.visible && <div>Position</div>}
                 {columns.find(c => c.key === "openTime")?.visible && <div>Open time</div>}
                 {columns.find(c => c.key === "swap")?.visible && <div>Swap, USD</div>}
+                {/* P/L is NOT shown in left section - only in right section */}
                 </div>
               </div>
 
@@ -1219,9 +1221,23 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
               <div 
                 ref={bodyScrollRef}
                 onScroll={handleBodyScroll}
-                className="flex-1 overflow-y-auto overflow-x-auto scrollbar-thin"
+                className="flex-1 overflow-y-auto overflow-x-auto scrollbar-thin relative"
                 style={{ scrollBehavior: "smooth" }}
               >
+                {/* Empty State - Centered absolutely OVER the table content */}
+                {((activeTab === "open" && ((shouldGroupOpen && groupedOpenPositions.length === 0) || (!shouldGroupOpen && openPositions.length === 0))) ||
+                  (activeTab === "pending" && pendingPositions.length === 0) ||
+                  (activeTab === "closed" && closedPositions.length === 0)) && (
+                  <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
+                    <div className="flex flex-col items-center justify-center gap-2 text-white/40 text-sm">
+                      <div>No {activeTab} positions</div>
+                      {activeTab === "closed" && (
+                        <div className="text-xs text-white/20">Check browser console for debugging info</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex min-w-max">
                   {/* Left Section - All rows scroll together */}
                   <div className="flex-1">
@@ -1591,18 +1607,6 @@ const PositionsTable: React.FC<PositionsTableProps> = ({
                     )
                   })}
                   {/* Closed positions P/L is already in renderPositionRow, so we don't render it here */}
-
-                {/* Empty State */}
-                {((activeTab === "open" && ((shouldGroupOpen && groupedOpenPositions.length === 0) || (!shouldGroupOpen && openPositions.length === 0))) ||
-                  (activeTab === "pending" && pendingPositions.length === 0) ||
-                  (activeTab === "closed" && closedPositions.length === 0)) && (
-                  <div className="flex flex-col items-center justify-center h-32 text-white/40 text-sm gap-2">
-                    <div>No {activeTab} positions</div>
-                    {activeTab === "closed" && (
-                      <div className="text-xs text-white/20">Check browser console for debugging info</div>
-                    )}
-                  </div>
-                )}
                   </div>
                 </div>
               </div>
