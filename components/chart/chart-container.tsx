@@ -65,13 +65,74 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
       }
       
       return new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) {
-          resolve()
+        // Check if script already loaded
+        const existing = document.querySelector(`script[src="${src}"]`)
+        if (existing) {
+          // Check if script is already loaded by checking if it's in window
+          if (src.includes('charting_library.standalone.js') && window.TradingView) {
+            resolve()
+            return
+          }
+          if (src.includes('custom-datafeed.js') && window.CustomDatafeed) {
+            resolve()
+            return
+          }
+          // Script tag exists but not loaded yet - wait for it
+          if (existing.getAttribute('data-loaded') === 'true') {
+            resolve()
+            return
+          }
+          // Wait for existing script to load
+          existing.addEventListener('load', () => {
+            existing.setAttribute('data-loaded', 'true')
+            resolve()
+          })
+          existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)))
           return
         }
+        
+        // Try to load from cache first (if supported)
+        const cachedScript = sessionStorage.getItem(`script_cache_${src}`)
+        if (cachedScript) {
+          try {
+            // Inject cached script directly
+            const script = document.createElement('script')
+            script.textContent = cachedScript
+            script.setAttribute('data-src', src)
+            script.setAttribute('data-loaded', 'true')
+            document.head.appendChild(script)
+            resolve()
+            return
+          } catch (e) {
+            console.warn('[Chart] Failed to load cached script, fetching fresh:', e)
+          }
+        }
+        
         const script = document.createElement('script')
         script.src = src
-        script.onload = () => resolve()
+        script.setAttribute('data-src', src)
+        script.crossOrigin = 'anonymous'
+        
+        // Cache script content for future loads
+        script.onload = () => {
+          script.setAttribute('data-loaded', 'true')
+          // Cache script content if possible (for small scripts)
+          if (src.includes('custom-datafeed.js')) {
+            try {
+              fetch(src, { cache: 'force-cache' }).then(res => {
+                if (res.ok) {
+                  res.text().then(text => {
+                    if (text.length < 500000) { // Only cache scripts < 500KB
+                      sessionStorage.setItem(`script_cache_${src}`, text)
+                    }
+                  }).catch(() => {})
+                }
+              }).catch(() => {})
+            } catch {}
+          }
+          resolve()
+        }
+        
         script.onerror = () => reject(new Error(`Failed to load ${src}`))
         document.head.appendChild(script)
       })
@@ -88,28 +149,54 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         // Clear any previous errors
         setError(null)
         
-        // OPTIMIZED: Load scripts in parallel for faster initialization
-        const scriptsToLoad = [
-          '/charting_library/charting_library.standalone.js',
-          '/datafeeds/custom-datafeed.js'
-        ]
+        // OPTIMIZED: Check if scripts are already loaded (from previous chart instance)
+        const tradingViewReady = typeof window.TradingView !== 'undefined'
+        const datafeedReady = typeof window.CustomDatafeed !== 'undefined'
         
-        // Only load SignalR if needed (disabled for now)
-        // await loadScript('https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js')
-        // await loadScript('/datafeeds/signalr-datafeed.js')
-        
-        await Promise.all(scriptsToLoad.map(loadScript))
+        if (tradingViewReady && datafeedReady) {
+          console.log('[Chart] Scripts already loaded, skipping script loading')
+        } else {
+          // OPTIMIZED: Load scripts in parallel with aggressive caching
+          const scriptsToLoad = [
+            '/charting_library/charting_library.standalone.js',
+            '/datafeeds/custom-datafeed.js'
+          ]
+          
+          console.log('[Chart] Loading scripts:', scriptsToLoad)
+          const startTime = performance.now()
+          
+          // Prefetch scripts aggressively for faster loading
+          scriptsToLoad.forEach(src => {
+            if (!document.querySelector(`link[href="${src}"]`)) {
+              const link = document.createElement('link')
+              link.rel = 'prefetch'
+              link.as = 'script'
+              link.href = src
+              link.crossOrigin = 'anonymous'
+              document.head.appendChild(link)
+            }
+          })
+          
+          await Promise.all(scriptsToLoad.map(loadScript))
+          
+          const loadTime = performance.now() - startTime
+          console.log('[Chart] Scripts loaded in', loadTime.toFixed(0), 'ms')
+        }
 
-        // Wait a bit for TradingView to be fully available after script loads
-        let retries = 10
-        while (!window.TradingView && retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 100))
-          retries--
+        // Wait for TradingView to be fully available (reduced wait time)
+        if (!window.TradingView) {
+          let retries = 3
+          while (!window.TradingView && retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 50))
+            retries--
+          }
         }
 
         if (!window.TradingView) {
           throw new Error('TradingView not loaded - please refresh the page')
         }
+        
+        console.log('[Chart] TradingView ready, initializing chart...')
 
         // Use local proxy routes to avoid CORS issues
         // Proxy routes will forward to https://metaapi.zuperior.com/api with correct case
@@ -137,6 +224,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
 
         const normalizedSymbol = normalizeSymbol(symbol)
         console.log('[Chart] Creating widget with symbol:', normalizedSymbol, 'interval:', interval)
+        const widgetStartTime = performance.now()
         const widget = new window.TradingView.widget({
           symbol: normalizedSymbol,
           interval: interval,
@@ -149,6 +237,15 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             'use_localstorage_for_settings',
             'save_chart_properties_to_local_storage',
             'study_templates',
+            'header_symbol_search', // Disable for faster load
+            'header_compare', // Disable for faster load
+            'header_screenshot', // Disable if not needed
+            'header_chart_type', // Can disable if not needed
+            'display_market_status', // Disable for faster load
+          ],
+          enabled_features: [
+            'study_templates',
+            'side_toolbar_in_fullscreen_mode',
           ],
           theme: 'dark',
           fullscreen: false,
@@ -156,6 +253,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
           // Disable study templates loading to avoid 404 errors
           custom_css_url: undefined,
           saveload_adapter: null,
+          loading_screen: { backgroundColor: '#01040D', foregroundColor: '#01040D' }, // Faster perceived load
           overrides: {
             "paneProperties.background": "#01040D",
             "paneProperties.vertGridProperties.color": "#2a2e39",
@@ -174,11 +272,29 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
         })
 
         widgetRef.current = widget
-        // Lines will be created lazily after first successful tick in the updater
-        console.log('[Chart] Widget created successfully')
+        const widgetTime = performance.now() - widgetStartTime
+        console.log('[Chart] Widget created successfully in', widgetTime.toFixed(0), 'ms')
         
         // Clear error on successful creation
         setError(null)
+        
+        // Preload datafeed to warm cache
+        if (typeof datafeed.onReady === 'function') {
+          try {
+            datafeed.onReady(() => {
+              console.log('[Chart] Datafeed ready, chart fully initialized')
+            })
+          } catch {}
+        }
+        
+        // Preload datafeed to warm cache
+        if (typeof datafeed.onReady === 'function') {
+          try {
+            datafeed.onReady(() => {
+              console.log('[Chart] Datafeed ready, chart fully initialized')
+            })
+          } catch {}
+        }
 
         // Hook into toolbar to intercept + button click
         if (onOpenOrderPanel && widget.onChartReady) {

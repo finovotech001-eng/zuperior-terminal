@@ -25,9 +25,14 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        {/* Preload chart scripts for faster loading */}
-        <link rel="preload" href="/charting_library/charting_library.standalone.js" as="script" />
-        <link rel="preload" href="/datafeeds/custom-datafeed.js" as="script" />
+        {/* Aggressive preload and prefetch for chart scripts */}
+        <link rel="preload" href="/charting_library/charting_library.standalone.js" as="script" crossOrigin="anonymous" />
+        <link rel="preload" href="/datafeeds/custom-datafeed.js" as="script" crossOrigin="anonymous" />
+        <link rel="prefetch" href="/charting_library/charting_library.standalone.js" as="script" crossOrigin="anonymous" />
+        <link rel="prefetch" href="/datafeeds/custom-datafeed.js" as="script" crossOrigin="anonymous" />
+        {/* DNS prefetch for faster connection */}
+        <link rel="dns-prefetch" href="/charting_library" />
+        <link rel="dns-prefetch" href="/datafeeds" />
       </head>
       <body className="antialiased" suppressHydrationWarning>
         <Provider>

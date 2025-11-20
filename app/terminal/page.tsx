@@ -40,6 +40,25 @@ import dynamic from 'next/dynamic'
 
 // Dynamically import ChartContainer with SSR disabled to prevent self/window errors during build
 // Using inline require check to ensure it's never evaluated during build
+// Preload chart scripts immediately when this module loads (in browser only)
+if (typeof window !== 'undefined') {
+  // Aggressively preload chart scripts on page load
+  const preloadScripts = [
+    '/charting_library/charting_library.standalone.js',
+    '/datafeeds/custom-datafeed.js'
+  ]
+  preloadScripts.forEach(src => {
+    const link = document.createElement('link')
+    link.rel = 'preload'
+    link.as = 'script'
+    link.href = src
+    link.crossOrigin = 'anonymous'
+    if (!document.querySelector(`link[href="${src}"]`)) {
+      document.head.appendChild(link)
+    }
+  })
+}
+
 const ChartContainer = dynamic(
   () => {
     // This will only execute in browser at runtime, never during build
@@ -48,7 +67,7 @@ const ChartContainer = dynamic(
     }
     return import("@/components/chart/chart-container").then(mod => ({ default: mod.ChartContainer }))
   },
-  { 
+  {
     ssr: false,
     loading: () => <div className="w-full h-full bg-[#01040D] rounded-lg flex items-center justify-center">
       <div className="text-white/60">Loading chart...</div>

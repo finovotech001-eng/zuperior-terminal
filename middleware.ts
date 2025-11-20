@@ -32,6 +32,15 @@ async function verifyJWT(token: string) {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Add aggressive cache headers for charting library and datafeeds (static assets)
+  if (pathname.startsWith('/charting_library/') || pathname.startsWith('/datafeeds/')) {
+    const response = NextResponse.next();
+    // Cache for 1 year (365 days) - these are static files that rarely change
+    response.headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    response.headers.set('Expires', new Date(Date.now() + 31536000000).toUTCString());
+    return response;
+  }
+
   // skip public paths (including favicon which is handled by Next.js)
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p)) || pathname === '/favicon.ico') {
     return NextResponse.next();
