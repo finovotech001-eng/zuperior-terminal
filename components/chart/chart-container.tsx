@@ -52,7 +52,7 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
   }, [positions])
   
   // Helper function to create position lines - uses positions from props.
-  // This version uses the Drawings API (createShape) only, so it works with the plain Charting Library.
+  // This version uses the Drawings API (createShape) so it works with the plain Charting Library.
   const createPositionLines = useCallback((chart: any, positionsForLines: Position[], chartSymbol: string) => {
     if (!chart || typeof chart.createShape !== 'function') {
       console.warn('[Chart] createPositionLines: chart or createShape unavailable')
@@ -100,17 +100,49 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
 
       const qtyText = (pos.volume ?? 0).toFixed(2)
       const pnlText = formatPositionPnl(pos)
-      const positionType = pos.type || 'Buy'
-      const lineText = `${positionType} ${qtyText} ${pnlText}`
+
+      // Normalize side robustly – support variations like "buy", "SELL", numeric flags, etc.
+      let side: 'Buy' | 'Sell' = 'Buy'
+      if (typeof pos.type === 'string') {
+        const t = pos.type.toLowerCase()
+        if (t.includes('sell')) side = 'Sell'
+        else if (t.includes('buy')) side = 'Buy'
+      } else if (typeof (pos as any).Type === 'string') {
+        const t = String((pos as any).Type).toLowerCase()
+        if (t.includes('sell')) side = 'Sell'
+        else if (t.includes('buy')) side = 'Buy'
+      }
+
+      const lineText = `${side} ${qtyText} ${pnlText}`
+      // Buy = blue, Sell = red
+      const color = side === 'Buy' ? '#2563EB' : '#EF4444'
 
       try {
-        void chart.createShape(
-          { price },
-          {
-            shape: 'horizontal_line',
-            text: lineText,
-          }
-        )
+        // Create the horizontal line, then apply color via setProperties
+        void chart
+          .createShape(
+            { price },
+            {
+              shape: 'horizontal_line',
+              text: lineText,
+              lock: true,
+              disableSelection: true,
+              disableSave: true,
+              disableUndo: true,
+            } as any
+          )
+          .then((id: any) => {
+            if (!id || typeof chart.getShapeById !== 'function') return
+            const shape = chart.getShapeById(id)
+            if (shape && typeof shape.setProperties === 'function') {
+              try {
+                shape.setProperties({
+                  linecolor: color,
+                  textcolor: color,
+                } as any)
+              } catch {}
+            }
+          })
       } catch (err) {
         console.error('[Chart] Error creating position shape:', err)
       }
@@ -390,6 +422,8 @@ export function ChartContainer({ symbol = "BTCUSD", interval = '1', className, a
             "mainSeriesProperties.candleStyle.borderDownColor": "#EF4444",
             "mainSeriesProperties.candleStyle.wickUpColor": "#16A34A",
             "mainSeriesProperties.candleStyle.wickDownColor": "#EF4444",
+            // Disable price labels for horizontal line drawings to avoid repeated values on the price scale
+            "linetoolhorzline.showPrice": false,
           }
         })
 
