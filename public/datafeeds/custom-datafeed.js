@@ -10,7 +10,22 @@
 class CustomDatafeed {
     constructor(baseOrConfig = '/apis') {
         const cfg = (baseOrConfig && typeof baseOrConfig === 'object') ? baseOrConfig : { baseUrl: baseOrConfig };
-        this.apiUrl = (cfg.baseUrl || '/apis').replace(/\/$/, '');
+        const normalizeBase = (val, fallback) => {
+            const base = (val || fallback || '').replace(/\/$/, '');
+            // Ensure we always hit the upstream /api prefix when using a direct domain
+            if (base && !base.endsWith('/api') && base.startsWith('http')) {
+                return `${base}/api`;
+            }
+            return base || '/apis';
+        };
+        this.apiUrl = normalizeBase(cfg.baseUrl, '/apis');
+        // fallbackApiUrl allows bypassing Next.js proxy if it fails (CORS-permitting)
+        this.fallbackApiUrl = normalizeBase(
+            cfg.fallbackBaseUrl ||
+            (typeof window !== 'undefined' ? window.__ZUPERIOR_DIRECT_API_BASE__ : undefined) ||
+            'https://metaapi.zuperior.com/api',
+            'https://metaapi.zuperior.com/api'
+        );
         this.accountId = cfg.accountId || null;
         this.subscribers = {};
         this.lastBars = {};
@@ -93,7 +108,7 @@ class CustomDatafeed {
     async getBars(symbolInfo, resolution, periodParams, onResult, onError) {
         const { from, to, firstDataRequest } = periodParams;
         const timeframe = this.getTimeframe(resolution);
-        const count = firstDataRequest ? 1000 : 500;
+        const count = firstDataRequest ? 450 : 250; // smaller payload to load faster
         
         // Normalize symbol - remove 'm' suffix for API call
         const apiSymbol = this.normalizeSymbol(symbolInfo.name);
@@ -119,30 +134,64 @@ class CustomDatafeed {
             to: to ? new Date(to * 1000).toISOString() : null
         });
 
+        const baseCandidates = [this.apiUrl, this.fallbackApiUrl].filter(Boolean);
+
         for (const sym of uniqueCandidates) {
             try {
-                const apiUrl = `${this.apiUrl}/chart/candle/history/${sym}?timeframe=${timeframe}&count=${count}`;
-                console.log('[CustomDatafeed] Fetching:', apiUrl);
-                
-                const response = await fetch(apiUrl, { 
-                    headers: { 'Accept': 'application/json' },
-                    cache: 'no-cache' 
-                });
-        
-                console.log('[CustomDatafeed] Response status:', response.status, response.statusText, 'for', sym);
+                let data = null;
+                let lastStatus = 0;
 
-                if (!response.ok) {
-                    const errorText = await response.text().catch(() => '');
-                    console.warn('[CustomDatafeed] Response not OK:', response.status, response.statusText, errorText.substring(0, 200));
-                    continue;
+                const buildHistoryUrl = (base, symbol) => {
+                    // MetaAPI requires capital C in Chart for history
+                    const needsCapitalChart = /metaapi|zuperior/i.test(base);
+                    const pathPrefix = needsCapitalChart ? 'Chart' : 'chart';
+                    return `${base}/${pathPrefix}/candle/history/${symbol}?timeframe=${timeframe}&count=${count}`;
+                };
+
+                const fetchWithTimeout = async (url, ms = 4500) => {
+                    const ctrl = new AbortController();
+                    const t = setTimeout(() => ctrl.abort(), ms);
+                    try {
+                        return await fetch(url, { headers: { 'Accept': 'application/json' }, cache: 'no-cache', signal: ctrl.signal });
+                    } finally {
+                        clearTimeout(t);
+                    }
+                };
+
+                for (const base of baseCandidates) {
+                    const apiUrl = buildHistoryUrl(base, sym);
+                    console.log('[CustomDatafeed] Fetching:', apiUrl);
+                    
+                    const response = await fetchWithTimeout(apiUrl).catch(() => null);
+            
+                    if (!response) {
+                        console.warn('[CustomDatafeed] No response (timeout/abort) for', apiUrl);
+                        continue;
+                    }
+
+                    lastStatus = response.status;
+                    console.log('[CustomDatafeed] Response status:', response.status, response.statusText, 'for', sym, 'via', base);
+
+                    if (!response.ok) {
+                        const errorText = await response.text().catch(() => '');
+                        console.warn('[CustomDatafeed] Response not OK:', response.status, response.statusText, errorText.substring(0, 200));
+                        continue;
+                    }
+
+                    data = await response.json().catch(() => null);
+                    console.log('[CustomDatafeed] Received data for', sym, 'via', base, ':', {
+                        isArray: Array.isArray(data),
+                        length: Array.isArray(data) ? data.length : 'N/A',
+                        firstItem: Array.isArray(data) && data.length > 0 ? data[0] : data
+                    });
+
+                    if (data) break;
                 }
 
-                const data = await response.json();
-                console.log('[CustomDatafeed] Received data for', sym, ':', {
-                    isArray: Array.isArray(data),
-                    length: Array.isArray(data) ? data.length : 'N/A',
-                    firstItem: Array.isArray(data) && data.length > 0 ? data[0] : data
-                });
+                if (!data) {
+                    console.warn('[CustomDatafeed] No data returned for', sym, 'after trying', baseCandidates.length, 'bases');
+                    continue;
+                }
 
                 if (!Array.isArray(data)) {
                     console.error('[CustomDatafeed] Data is not an array for:', sym, 'Got:', typeof data, data);
@@ -290,6 +339,7 @@ class CustomDatafeed {
         const timeframe = this.getTimeframe(resolution);
         const tfInt = parseInt(timeframe);
         const apiSymbol = this.normalizeSymbol(symbolInfo.name);
+        const baseCandidates = [this.apiUrl, this.fallbackApiUrl].filter(Boolean);
         
         console.log('[CustomDatafeed] subscribeBars:', {
             symbol: symbolInfo.name,
@@ -305,14 +355,28 @@ class CustomDatafeed {
                 try {
                     // Fetch both current candle (OHLC) and live tick (bid/ask) in parallel for smooth updates
                     const [candleResponse, tickResponse] = await Promise.all([
-                        fetch(`${this.apiUrl}/chart/candle/current/${apiSymbol}?timeframe=1`, { 
-                            headers: { 'Accept': 'application/json' },
-                            cache: 'no-cache' 
-                        }).catch(() => null),
-                        fetch(`${this.apiUrl}/livedata/tick/${apiSymbol}`, { 
-                            headers: { 'Accept': 'application/json' },
-                            cache: 'no-cache' 
-                        }).catch(() => null)
+                        (async () => {
+                            for (const base of baseCandidates) {
+                                const url = `${base}/chart/candle/current/${apiSymbol}?timeframe=1`;
+                                const resp = await fetch(url, { 
+                                    headers: { 'Accept': 'application/json' },
+                                    cache: 'no-cache' 
+                                }).catch(() => null);
+                                if (resp && resp.ok) return resp;
+                            }
+                            return null;
+                        })(),
+                        (async () => {
+                            for (const base of baseCandidates) {
+                                const url = `${base}/livedata/tick/${apiSymbol}`;
+                                const resp = await fetch(url, { 
+                                    headers: { 'Accept': 'application/json' },
+                                    cache: 'no-cache' 
+                                }).catch(() => null);
+                                if (resp && resp.ok) return resp;
+                            }
+                            return null;
+                        })()
                     ]);
 
                     let candleData = null;
@@ -454,14 +518,28 @@ class CustomDatafeed {
         const pollAgg = async () => {
             try {
                     const [candleResponse, tickResponse] = await Promise.all([
-                        fetch(`${this.apiUrl}/chart/candle/current/${apiSymbol}?timeframe=${tfInt}`, {
-                            headers: { 'Accept': 'application/json' },
-                            cache: 'no-cache'
-                        }).catch(() => null),
-                        fetch(`${this.apiUrl}/livedata/tick/${apiSymbol}`, {
-                            headers: { 'Accept': 'application/json' },
-                            cache: 'no-cache'
-                        }).catch(() => null)
+                        (async () => {
+                            for (const base of baseCandidates) {
+                                const url = `${base}/chart/candle/current/${apiSymbol}?timeframe=${tfInt}`;
+                                const resp = await fetch(url, {
+                                    headers: { 'Accept': 'application/json' },
+                                    cache: 'no-cache'
+                                }).catch(() => null);
+                                if (resp && resp.ok) return resp;
+                            }
+                            return null;
+                        })(),
+                        (async () => {
+                            for (const base of baseCandidates) {
+                                const url = `${base}/livedata/tick/${apiSymbol}`;
+                                const resp = await fetch(url, {
+                                    headers: { 'Accept': 'application/json' },
+                                    cache: 'no-cache'
+                                }).catch(() => null);
+                                if (resp && resp.ok) return resp;
+                            }
+                            return null;
+                        })()
                     ]);
 
                     let candleData = null;
